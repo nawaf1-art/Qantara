@@ -69,9 +69,9 @@ The repository now includes a runnable browser-to-gateway transport spike with:
 - browser playback of gateway PCM audio
 - validated faster-whisper transcription of recent captured audio
 - mock runtime turn submission and assistant text streaming
-- optional Piper TTS with synthetic fallback
+- locally validated Piper runtime path with synthetic fallback still available
 
-This is a real validation slice, not just design documentation. The current M0 spike has now validated the first STT candidate path through faster-whisper, while TTS validation and later runtime binding still remain open.
+This is a real validation slice, not just design documentation. The current M0 spike has now validated the first STT candidate path through faster-whisper. Piper itself is now installed and synthesizing locally on this machine, but browser-path TTS validation still remains open alongside later runtime binding.
 
 ## Quick Start
 

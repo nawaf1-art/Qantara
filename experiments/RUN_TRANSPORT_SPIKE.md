@@ -12,8 +12,8 @@ Run the current transport spike in a consistent way and record the results in th
 
 Optional:
 
-- `piper` installed
-- `QANTARA_PIPER_MODEL` pointing to a Piper voice model
+- `piper-tts` installed in the repo `.venv`
+- `QANTARA_PIPER_MODEL` pointing to a Piper voice model, or the default local test model at `models/piper/en_US-lessac-medium.onnx`
 
 ## Start Gateway
 
@@ -72,6 +72,7 @@ http://<your-lan-ip>:8899/spike
 If Piper is configured:
 
 - submit a mock turn and confirm spoken output is produced through Piper instead of tone fallback
+- confirm the browser `TTS` status changes to `piper`
 
 ### 3. Microphone Transport
 

@@ -38,13 +38,15 @@
 
 ### TTS
 
-- Piper available: no, not on the current machine
-- first-audio feel: only the synthetic fallback path has been observed so far
-- fallback tone used: yes
-- current result: Piper not validated in this environment yet
+- Piper runtime available: yes
+- local voice model installed: `models/piper/en_US-lessac-medium.onnx`
+- direct synthesis outside the browser spike: working
+- first-audio feel through browser playback: not yet recorded
+- fallback tone used: yes, during the earlier pre-Piper runs
+- current result: Piper runtime validated locally, browser-path validation still pending
 
 ### Follow-Ups
 
-- install Piper and a usable voice model, or choose the replacement TTS candidate
-- decide whether Piper remains the first TTS candidate after a real run
+- run a browser `Mock Turn` against the live secure spike and confirm Piper playback is used instead of synthetic fallback
+- decide whether Piper remains the first TTS candidate after that browser-path run
 - continue tightening browser VAD and endpoint behavior from real observations

@@ -18,7 +18,7 @@ The project has moved beyond planning-only status. It now includes:
 - a runnable browser-to-gateway transport spike
 - a mock downstream adapter path
 - a validated first STT candidate path through faster-whisper
-- an optional but not yet validated first TTS candidate path through Piper
+- a locally validated Piper runtime path, with browser-path validation still pending
 
 ## What Is Decided
 
@@ -106,10 +106,11 @@ Validated by actual testing:
 - browser mic capture works through the current HTTPS spike path
 - WebSocket/WSS transport is working for the current M0 slice
 - faster-whisper is functioning as the first real STT candidate in this environment
+- the Piper runtime and first local voice model now synthesize successfully on this machine
 
 Not yet validated by actual experiment results:
 
-- whether Piper is a practical first TTS engine in your environment
+- whether Piper playback through the browser spike is practical enough to keep as the first TTS engine
 - whether the browser VAD threshold is tuned well enough for ongoing use
 - whether playback clear behavior is strong enough for later barge-in work
 
@@ -140,6 +141,14 @@ Optional Piper setup:
 export QANTARA_PIPER_MODEL=/absolute/path/to/voice.onnx
 ```
 
+If you place the current test voice model at:
+
+```text
+models/piper/en_US-lessac-medium.onnx
+```
+
+the spike will auto-detect it without an environment variable.
+
 Optional faster-whisper setup:
 
 ```bash
@@ -163,7 +172,7 @@ QANTARA_SPIKE_HOST=0.0.0.0 QANTARA_SPIKE_PORT=8899 ./.venv/bin/python gateway/tr
 The main unresolved technical risks are:
 
 - VAD threshold quality and false positives
-- first-audio latency and control quality for Piper
+- first-audio latency and control quality for Piper through the browser playback path
 - missing real interruption and cancellation behavior
 
 ## Definition Of A Good M0 State
@@ -183,7 +192,7 @@ The highest-value next steps are:
 
 1. Run the transport spike and record real observations in the notes file.
 2. Mark faster-whisper as the current first STT candidate.
-3. Install and validate Piper, or replace it as the first TTS candidate.
+3. Validate Piper through the browser playback path, or replace it as the first TTS candidate.
 4. Tune VAD threshold and transport framing from actual results.
 
 ## Repository Interpretation
