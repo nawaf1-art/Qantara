@@ -66,6 +66,7 @@ The repository now includes a runnable browser-to-gateway transport spike with:
 - browser microphone capture and PCM streaming over WebSocket
 - gateway-side transport event logging
 - browser playback of gateway PCM audio
+- optional faster-whisper transcription of recent captured audio
 - mock runtime turn submission and assistant text streaming
 - optional Piper TTS with synthetic fallback
 

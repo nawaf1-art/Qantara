@@ -65,7 +65,18 @@ If Piper is configured:
 - confirm final assistant text appears
 - confirm playback occurs afterward
 
-### 5. Disconnect Recovery
+### 5. Recent Audio Transcription
+
+- start the microphone
+- speak a short sentence
+- click `Transcribe Recent Audio`
+- confirm a transcript result appears
+
+If faster-whisper is not installed:
+
+- confirm the fallback transcript result appears instead of a hard failure
+
+### 6. Disconnect Recovery
 
 - click `Disconnect`
 - reconnect again
@@ -84,6 +95,7 @@ Minimum notes:
 - playback startup feel
 - whether `Clear Playback` was responsive
 - whether VAD threshold felt too sensitive or too weak
+- whether the transcription result was useful or only placeholder fallback
 - whether WebSocket transport still looks acceptable for M1
 
 ## Failure Conditions To Watch
