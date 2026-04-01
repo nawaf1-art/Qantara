@@ -141,7 +141,12 @@
         <button id="disconnectBtn" class="warn" disabled>Disconnect</button>
         <button id="micBtn" disabled>Start Mic</button>
         <button id="toneBtn" disabled>Request Tone</button>
+        <button id="mockTurnBtn" disabled>Mock Turn</button>
         <button id="clearBtn" disabled>Clear Playback</button>
+      </div>
+
+      <div class="controls">
+        <input id="mockInput" type="text" value="hello from the browser spike" style="flex: 1; min-width: 260px; padding: 10px 14px; border-radius: 999px; border: 1px solid var(--line); font: inherit;">
       </div>
 
       <div class="status-grid">
@@ -167,6 +172,7 @@
     const disconnectBtn = document.getElementById("disconnectBtn");
     const micBtn = document.getElementById("micBtn");
     const toneBtn = document.getElementById("toneBtn");
+    const mockTurnBtn = document.getElementById("mockTurnBtn");
     const clearBtn = document.getElementById("clearBtn");
 
     let socket = null;
@@ -200,6 +206,7 @@
       disconnectBtn.disabled = !connected;
       micBtn.disabled = !connected;
       toneBtn.disabled = !connected;
+      mockTurnBtn.disabled = !connected;
       clearBtn.disabled = !connected;
     }
 
@@ -397,7 +404,18 @@
 
       socket.onmessage = async (event) => {
         if (typeof event.data === "string") {
-          log(`control ${event.data}`);
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload.type === "assistant_text_delta") {
+              log(`assistant delta: ${payload.text}`);
+            } else if (payload.type === "assistant_text_final") {
+              log(`assistant final: ${payload.text}`);
+            } else {
+              log(`control ${event.data}`);
+            }
+          } catch {
+            log(`control ${event.data}`);
+          }
           return;
         }
 
@@ -437,6 +455,9 @@
     disconnectBtn.addEventListener("click", () => disconnect());
     micBtn.addEventListener("click", async () => startMic());
     toneBtn.addEventListener("click", () => sendJson({ type: "request_tone" }));
+    mockTurnBtn.addEventListener("click", () => {
+      sendJson({ type: "submit_mock_turn", text: $("mockInput").value });
+    });
     clearBtn.addEventListener("click", () => {
       nextPlaybackAt = playbackContext ? playbackContext.currentTime : 0;
       setPlaybackState("idle");
