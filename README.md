@@ -87,6 +87,10 @@ Current adapter selection:
 - `QANTARA_ADAPTER=runtime_skeleton`
 - `QANTARA_ADAPTER=session_gateway_http`
 
+Local validation backend:
+
+- [gateway/fake_session_backend/server.py](/home/nawaf/Projects/Qantara/gateway/fake_session_backend/server.py)
+
 ## Quick Start
 
 Install the current spike dependency:

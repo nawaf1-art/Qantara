@@ -1,4 +1,4 @@
-.PHONY: spike-install spike-run spike-run-venv spike-run-lan-venv spike-clean
+.PHONY: spike-install spike-run spike-run-venv spike-run-lan-venv fake-backend-run fake-backend-run-venv spike-clean
 
 spike-install:
 	pip install -r gateway/transport_spike/requirements.txt
@@ -11,6 +11,12 @@ spike-run-venv:
 
 spike-run-lan-venv:
 	QANTARA_SPIKE_HOST=$${QANTARA_SPIKE_HOST:-0.0.0.0} QANTARA_SPIKE_PORT=$${QANTARA_SPIKE_PORT:-8899} ./.venv/bin/python gateway/transport_spike/server.py
+
+fake-backend-run:
+	QANTARA_FAKE_BACKEND_HOST=$${QANTARA_FAKE_BACKEND_HOST:-127.0.0.1} QANTARA_FAKE_BACKEND_PORT=$${QANTARA_FAKE_BACKEND_PORT:-19110} python3 gateway/fake_session_backend/server.py
+
+fake-backend-run-venv:
+	QANTARA_FAKE_BACKEND_HOST=$${QANTARA_FAKE_BACKEND_HOST:-127.0.0.1} QANTARA_FAKE_BACKEND_PORT=$${QANTARA_FAKE_BACKEND_PORT:-19110} ./.venv/bin/python gateway/fake_session_backend/server.py
 
 spike-clean:
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

@@ -64,6 +64,7 @@ Source:
 - runtime skeleton adapter: [`adapters/runtime_skeleton.py`](/home/nawaf/Projects/Qantara/adapters/runtime_skeleton.py)
 - session-oriented HTTP adapter: [`adapters/session_gateway_http.py`](/home/nawaf/Projects/Qantara/adapters/session_gateway_http.py)
 - session gateway contract: [`SESSION_GATEWAY_CONTRACT.md`](/home/nawaf/Projects/Qantara/SESSION_GATEWAY_CONTRACT.md)
+- local fake session backend: [`gateway/fake_session_backend/server.py`](/home/nawaf/Projects/Qantara/gateway/fake_session_backend/server.py)
 - optional Piper path: [`gateway/transport_spike/tts_piper.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/tts_piper.py)
 - validated first STT path: [`gateway/transport_spike/stt_faster_whisper.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/stt_faster_whisper.py)
 - run notes template: [`experiments/notes/transport-spike.md`](/home/nawaf/Projects/Qantara/experiments/notes/transport-spike.md)
@@ -93,6 +94,7 @@ The current spike does not yet provide:
 - validated real STT behavior from actual local runs
 - a real adapter framework path that stays decoupled from the user's current local agents
 - the first concrete backend contract shape for a session-oriented adapter
+- a local fake backend that implements the concrete session-oriented contract for end-to-end adapter validation
 - real endpointing logic beyond simple browser-side VAD hints
 - real downstream runtime integration
 - robust barge-in semantics across active generation
