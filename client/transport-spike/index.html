@@ -185,6 +185,8 @@
     const JSON_KIND = 0x7b; // "{"
     const VAD_START_RMS = 0.03;
     const VAD_STOP_RMS = 0.015;
+    const VAD_START_FRAMES = 3;
+    const VAD_STOP_FRAMES = 5;
 
     const connectBtn = document.getElementById("connectBtn");
     const disconnectBtn = document.getElementById("disconnectBtn");
@@ -209,6 +211,10 @@
     let mockTurnPending = false;
     let transcribePending = false;
     let clearRequestedAt = null;
+    let clearPending = false;
+    let speechCandidateFrames = 0;
+    let silenceCandidateFrames = 0;
+    const activePlaybackSources = new Set();
 
     function $(id) {
       return document.getElementById(id);
@@ -232,7 +238,7 @@
       toneBtn.disabled = !connected;
       mockTurnBtn.disabled = !connected || mockTurnPending;
       transcribeBtn.disabled = !connected || transcribePending;
-      clearBtn.disabled = !connected;
+      clearBtn.disabled = !connected || clearPending;
     }
 
     function setMicState(value) {
@@ -262,6 +268,12 @@
 
     function setClearAckMs(value) {
       updateText("clearAckMs", value == null ? "-" : `${value} ms`);
+    }
+
+    function setClearPending(value) {
+      clearPending = value;
+      clearBtn.disabled = !socket || socket.readyState !== WebSocket.OPEN || value;
+      clearBtn.textContent = value ? "Clearing..." : "Clear Playback";
     }
 
     function appendAssistantDelta(text) {
@@ -359,6 +371,7 @@
       const source = playbackContext.createBufferSource();
       source.buffer = buffer;
       source.connect(playbackContext.destination);
+      activePlaybackSources.add(source);
 
       const now = playbackContext.currentTime;
       nextPlaybackAt = Math.max(nextPlaybackAt, now + 0.02);
@@ -369,10 +382,23 @@
       nextPlaybackAt += duration;
 
       source.onended = () => {
+        activePlaybackSources.delete(source);
         if (playbackContext.currentTime >= nextPlaybackAt - 0.03) {
           setPlaybackState("idle");
         }
       };
+    }
+
+    function clearPlaybackQueue() {
+      nextPlaybackAt = playbackContext ? playbackContext.currentTime : 0;
+      for (const source of activePlaybackSources) {
+        try {
+          source.onended = null;
+          source.stop();
+        } catch {}
+      }
+      activePlaybackSources.clear();
+      setPlaybackState("idle");
     }
 
     function sendJson(message) {
@@ -411,13 +437,36 @@
         }
         rms = Math.sqrt(rms / input.length);
         setVadRms(rms);
-        const nextSpeech = vadSpeech ? rms > VAD_STOP_RMS : rms > VAD_START_RMS;
-        if (nextSpeech !== vadSpeech) {
-          vadSpeech = nextSpeech;
-          const state = nextSpeech ? "speech" : "silence";
-          setVadState(state);
-          sendJson({ type: "vad_state", state, rms: Number(rms.toFixed(4)) });
-          log(`vad ${state} rms=${rms.toFixed(4)}`);
+        if (vadSpeech) {
+          if (rms > VAD_STOP_RMS) {
+            silenceCandidateFrames = 0;
+          } else {
+            silenceCandidateFrames += 1;
+          }
+          if (silenceCandidateFrames >= VAD_STOP_FRAMES) {
+            vadSpeech = false;
+            silenceCandidateFrames = 0;
+            speechCandidateFrames = 0;
+            const state = "silence";
+            setVadState(state);
+            sendJson({ type: "vad_state", state, rms: Number(rms.toFixed(4)) });
+            log(`vad ${state} rms=${rms.toFixed(4)}`);
+          }
+        } else {
+          if (rms > VAD_START_RMS) {
+            speechCandidateFrames += 1;
+          } else {
+            speechCandidateFrames = 0;
+          }
+          if (speechCandidateFrames >= VAD_START_FRAMES) {
+            vadSpeech = true;
+            speechCandidateFrames = 0;
+            silenceCandidateFrames = 0;
+            const state = "speech";
+            setVadState(state);
+            sendJson({ type: "vad_state", state, rms: Number(rms.toFixed(4)) });
+            log(`vad ${state} rms=${rms.toFixed(4)}`);
+          }
         }
 
         const downsampled = downsample(input, micContext.sampleRate, TARGET_SAMPLE_RATE);
@@ -464,6 +513,8 @@
       processorNode = null;
       micActive = false;
       vadSpeech = false;
+      speechCandidateFrames = 0;
+      silenceCandidateFrames = 0;
       setMicState("stopped");
       setVadState("silence");
       setVadRms(0);
@@ -482,16 +533,19 @@
         setSocketState("connected");
         setFirstAudioMs(null);
         setClearAckMs(null);
+        setClearPending(false);
         sendJson({ type: "session_init", client_name: "browser-transport-spike" });
         log("socket connected");
       };
 
       socket.onclose = () => {
         stopMic();
+        clearPlaybackQueue();
         setSocketState("disconnected");
         setPlaybackState("idle");
         setMockTurnPending(false);
         setTranscribePending(false);
+        setClearPending(false);
         log("socket disconnected");
       };
 
@@ -526,8 +580,15 @@
             } else if (payload.type === "playback_cleared") {
               const clearAckMs = clearRequestedAt == null ? null : Math.round(performance.now() - clearRequestedAt);
               setClearAckMs(clearAckMs);
-              clearRequestedAt = null;
               log(`playback cleared ack${clearAckMs == null ? "" : ` ${clearAckMs} ms`}`);
+            } else if (payload.type === "playback_stopped") {
+              const clearStopMs = clearRequestedAt == null ? null : Math.round(performance.now() - clearRequestedAt);
+              if (clearStopMs != null) {
+                setClearAckMs(clearStopMs);
+              }
+              clearRequestedAt = null;
+              setClearPending(false);
+              log(`playback stopped (${payload.reason})${clearStopMs == null ? "" : ` ${clearStopMs} ms`}`);
             } else {
               log(`control ${event.data}`);
             }
@@ -589,9 +650,10 @@
       sendJson({ type: "transcribe_recent_audio" });
     });
     clearBtn.addEventListener("click", () => {
-      nextPlaybackAt = playbackContext ? playbackContext.currentTime : 0;
-      setPlaybackState("idle");
+      if (clearPending) return;
+      clearPlaybackQueue();
       clearRequestedAt = performance.now();
+      setClearPending(true);
       sendJson({ type: "clear_playback" });
       log("playback clear requested");
     });

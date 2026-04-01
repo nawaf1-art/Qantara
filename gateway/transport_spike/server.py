@@ -97,6 +97,7 @@ async def send_tone(session: Session) -> None:
     first_frame_sent = False
     for offset in range(0, total_samples, FRAME_SAMPLES):
         if generation != session.playback_generation:
+            await session.websocket.send_str(json.dumps({"type": "playback_stopped", "reason": "cleared", "kind": "synthetic_tone"}))
             await session.emit("playback_stopped", "playback", {"reason": "cleared"})
             return
         frame = []
@@ -136,6 +137,7 @@ async def send_tone(session: Session) -> None:
         await asyncio.sleep(len(frame) / TARGET_SAMPLE_RATE)
 
     if sent_any:
+        await session.websocket.send_str(json.dumps({"type": "playback_stopped", "reason": "tone_complete", "kind": "synthetic_tone"}))
         await session.emit("playback_stopped", "playback", {"reason": "tone_complete"})
 
 
@@ -154,6 +156,7 @@ async def send_pcm_samples(
     first_frame_sent = False
     for offset in range(0, len(samples), FRAME_SAMPLES):
         if generation != session.playback_generation:
+            await session.websocket.send_str(json.dumps({"type": "playback_stopped", "reason": "cleared", "kind": kind}))
             await session.emit("playback_stopped", "playback", {"reason": "cleared"})
             return
 
@@ -199,7 +202,9 @@ async def send_pcm_samples(
         await asyncio.sleep(len(frame) / sample_rate)
 
     if sent_any:
-        await session.emit("playback_stopped", "playback", {"reason": f"{kind}_complete"})
+        reason = f"{kind}_complete"
+        await session.websocket.send_str(json.dumps({"type": "playback_stopped", "reason": reason, "kind": kind}))
+        await session.emit("playback_stopped", "playback", {"reason": reason})
 
 
 async def speak_text(session: Session, text: str) -> None:
