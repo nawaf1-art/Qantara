@@ -32,6 +32,12 @@ The gateway listens on:
 ws://127.0.0.1:8765/ws
 ```
 
+The gateway also serves the browser spike client at:
+
+```text
+http://127.0.0.1:8765/spike
+```
+
 ## Optional Piper TTS
 
 If `piper` is installed locally and a voice model path is available, the spike can synthesize mock assistant text with Piper instead of using the synthetic tone fallback.

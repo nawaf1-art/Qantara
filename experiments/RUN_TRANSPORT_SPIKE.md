@@ -1,0 +1,96 @@
+# Run Transport Spike
+
+## Goal
+
+Run the current transport spike in a consistent way and record the results in the transport notes file.
+
+## Prerequisites
+
+- Python 3 available
+- browser with microphone permission support
+- headset preferred
+
+Optional:
+
+- `piper` installed
+- `QANTARA_PIPER_MODEL` pointing to a Piper voice model
+
+## Start Gateway
+
+From the repo root:
+
+```bash
+pip install -r gateway/transport_spike/requirements.txt
+python3 gateway/transport_spike/server.py
+```
+
+Open:
+
+```text
+http://127.0.0.1:8765/spike
+```
+
+## Test Sequence
+
+### 1. Connection
+
+- click `Connect`
+- confirm the socket state changes to `connected`
+- confirm the gateway prints session events
+
+### 2. Playback
+
+- click `Request Tone`
+- confirm playback starts
+- click `Clear Playback`
+- confirm playback stops quickly
+
+If Piper is configured:
+
+- submit a mock turn and confirm spoken output is produced through Piper instead of tone fallback
+
+### 3. Microphone Transport
+
+- click `Start Mic`
+- speak for a few seconds
+- confirm `Frames Sent` continues increasing
+- confirm `VAD` flips between `speech` and `silence`
+- confirm the gateway logs `input_audio_frame_received` events
+
+### 4. Mock Turn Flow
+
+- enter sample text in the mock input
+- click `Mock Turn`
+- confirm assistant text deltas appear in the browser
+- confirm final assistant text appears
+- confirm playback occurs afterward
+
+### 5. Disconnect Recovery
+
+- click `Disconnect`
+- reconnect again
+- note whether the browser and gateway recover predictably
+
+## What To Record
+
+Record findings in:
+
+- [`experiments/notes/transport-spike.md`](/home/nawaf/Projects/Qantara/experiments/notes/transport-spike.md)
+
+Minimum notes:
+
+- browser used
+- whether headset or speakers were used
+- playback startup feel
+- whether `Clear Playback` was responsive
+- whether VAD threshold felt too sensitive or too weak
+- whether WebSocket transport still looks acceptable for M1
+
+## Failure Conditions To Watch
+
+- erratic frame cadence
+- repeated disconnects
+- stale playback after clear
+- browser mic permission instability
+- VAD flipping constantly during silence
+- immediate evidence that WebRTC is required sooner than expected

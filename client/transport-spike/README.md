@@ -6,6 +6,16 @@ Thin browser client for the M0 transport spike.
 
 ## Run
 
+Preferred:
+
+Run the gateway and open:
+
+```text
+http://127.0.0.1:8765/spike
+```
+
+Alternative:
+
 Serve this directory with any static file server, for example:
 
 ```bash

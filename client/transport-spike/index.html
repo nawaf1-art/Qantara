@@ -154,9 +154,15 @@
         <div class="stat"><span class="stat-label">Mic</span><span id="micState">stopped</span></div>
         <div class="stat"><span class="stat-label">Playback</span><span id="playbackState">idle</span></div>
         <div class="stat"><span class="stat-label">VAD</span><span id="vadState">silence</span></div>
+        <div class="stat"><span class="stat-label">Last RMS</span><span id="vadRms">0.0000</span></div>
         <div class="stat"><span class="stat-label">Frames Sent</span><span id="framesSent">0</span></div>
         <div class="stat"><span class="stat-label">Frames Received</span><span id="framesReceived">0</span></div>
         <div class="stat"><span class="stat-label">Sample Rate</span><span id="sampleRate">16000</span></div>
+      </div>
+
+      <div class="panel" style="margin-top: 0; padding: 14px;">
+        <span class="stat-label">Assistant Text</span>
+        <div id="assistantText" style="min-height: 48px; line-height: 1.5;"></div>
       </div>
 
       <pre id="log"></pre>
@@ -187,6 +193,7 @@
     let framesReceived = 0;
     let micActive = false;
     let vadSpeech = false;
+    let assistantText = "";
 
     function $(id) {
       return document.getElementById(id);
@@ -223,6 +230,20 @@
 
     function setVadState(value) {
       updateText("vadState", value);
+    }
+
+    function setVadRms(value) {
+      updateText("vadRms", value.toFixed(4));
+    }
+
+    function appendAssistantDelta(text) {
+      assistantText += text;
+      $("assistantText").textContent = assistantText;
+    }
+
+    function replaceAssistantText(text) {
+      assistantText = text;
+      $("assistantText").textContent = assistantText;
     }
 
     function encodePcmFrame(samples) {
@@ -345,6 +366,7 @@
           rms += input[i] * input[i];
         }
         rms = Math.sqrt(rms / input.length);
+        setVadRms(rms);
         const nextSpeech = rms > 0.018;
         if (nextSpeech !== vadSpeech) {
           vadSpeech = nextSpeech;
@@ -377,6 +399,7 @@
       micActive = true;
       setMicState("running");
       setVadState("silence");
+      setVadRms(0);
       updateText("sampleRate", TARGET_SAMPLE_RATE);
       sendJson({ type: "mic_stream_started", sample_rate: TARGET_SAMPLE_RATE });
       log("microphone capture started");
@@ -399,6 +422,7 @@
       vadSpeech = false;
       setMicState("stopped");
       setVadState("silence");
+      setVadRms(0);
       sendJson({ type: "mic_stream_stopped" });
       log("microphone capture stopped");
     }
@@ -430,8 +454,10 @@
           try {
             const payload = JSON.parse(event.data);
             if (payload.type === "assistant_text_delta") {
+              appendAssistantDelta(payload.text);
               log(`assistant delta: ${payload.text}`);
             } else if (payload.type === "assistant_text_final") {
+              replaceAssistantText(payload.text);
               log(`assistant final: ${payload.text}`);
             } else {
               log(`control ${event.data}`);
@@ -479,6 +505,7 @@
     micBtn.addEventListener("click", async () => startMic());
     toneBtn.addEventListener("click", () => sendJson({ type: "request_tone" }));
     mockTurnBtn.addEventListener("click", () => {
+      replaceAssistantText("");
       sendJson({ type: "submit_mock_turn", text: $("mockInput").value });
     });
     clearBtn.addEventListener("click", () => {

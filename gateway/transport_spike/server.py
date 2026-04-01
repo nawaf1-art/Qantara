@@ -9,6 +9,7 @@ from aiohttp import WSMsgType, web
 
 CURRENT_DIR = os.path.dirname(__file__)
 REPO_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
+CLIENT_SPIKE_DIR = os.path.join(REPO_ROOT, "client", "transport-spike")
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
@@ -281,7 +282,7 @@ async def index_handler(_: web.Request) -> web.StreamResponse:
     return web.Response(
         text=(
             "Qantara transport spike gateway is running.\n"
-            "Open client/transport-spike/index.html with a static file server and connect to ws://host:8765/ws\n"
+            "Open http://host:8765/spike to use the browser client.\n"
         ),
         content_type="text/plain",
     )
@@ -291,6 +292,7 @@ def create_app() -> web.Application:
     app = web.Application()
     app.router.add_get("/", index_handler)
     app.router.add_get("/ws", websocket_handler)
+    app.router.add_static("/spike", CLIENT_SPIKE_DIR, show_index=True)
     return app
 
 
