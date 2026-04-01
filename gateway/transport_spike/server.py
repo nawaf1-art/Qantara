@@ -2,6 +2,7 @@ import asyncio
 import json
 import math
 import os
+import ssl
 import sys
 import time
 import uuid
@@ -27,6 +28,8 @@ PIPER_VOICE_PATH = os.environ.get("QANTARA_PIPER_MODEL")
 FASTER_WHISPER_MODEL = os.environ.get("QANTARA_WHISPER_MODEL", "base.en")
 DEFAULT_HOST = os.environ.get("QANTARA_SPIKE_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("QANTARA_SPIKE_PORT", "8765"))
+TLS_CERT_FILE = os.environ.get("QANTARA_TLS_CERT")
+TLS_KEY_FILE = os.environ.get("QANTARA_TLS_KEY")
 
 
 def utc_now() -> str:
@@ -332,7 +335,8 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
 
 async def index_handler(_: web.Request) -> web.StreamResponse:
     request = _
-    spike_url = f"http://{request.host}/spike"
+    scheme = "https" if request.secure else "http"
+    spike_url = f"{scheme}://{request.host}/spike"
     return web.Response(
         text=(
             "Qantara transport spike gateway is running.\n"
@@ -355,5 +359,19 @@ def create_app() -> web.Application:
     return app
 
 
+def create_ssl_context() -> ssl.SSLContext | None:
+    if not TLS_CERT_FILE or not TLS_KEY_FILE:
+        return None
+
+    context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    context.load_cert_chain(TLS_CERT_FILE, TLS_KEY_FILE)
+    return context
+
+
 if __name__ == "__main__":
-    web.run_app(create_app(), host=DEFAULT_HOST, port=DEFAULT_PORT)
+    web.run_app(
+        create_app(),
+        host=DEFAULT_HOST,
+        port=DEFAULT_PORT,
+        ssl_context=create_ssl_context(),
+    )

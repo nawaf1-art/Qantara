@@ -31,6 +31,8 @@ Why:
 - automatic HTTPS support when certificate trust is set up correctly
 - easy reverse proxy behavior for a single local service
 
+If Caddy is not available, Qantara can also run the current spike directly with a self-signed certificate using Python's TLS support. That is less convenient than a trusted local CA, but it removes the `ERR_SSL_PROTOCOL_ERROR` class of failure.
+
 ## Gateway Topology
 
 Recommended topology:
@@ -59,6 +61,51 @@ Example flow:
 2. Run the Python spike on `127.0.0.1:8899`
 3. Start Caddy with the provided config
 4. Trust the generated local CA on devices that need browser mic access
+
+## Direct TLS Fallback
+
+If you do not have Caddy installed, you can generate a self-signed certificate and run the Python spike directly over HTTPS.
+
+Config template:
+
+- [`openssl-qantara.cnf`](/home/nawaf/Projects/Qantara/ops/openssl-qantara.cnf)
+
+Example certificate generation:
+
+```bash
+mkdir -p ops/certs
+openssl req -x509 -nodes -days 30 \
+  -newkey rsa:2048 \
+  -keyout ops/certs/qantara-key.pem \
+  -out ops/certs/qantara-cert.pem \
+  -config ops/openssl-qantara.cnf
+```
+
+Then run the spike with TLS:
+
+```bash
+QANTARA_SPIKE_HOST=0.0.0.0 \
+QANTARA_SPIKE_PORT=9443 \
+QANTARA_TLS_CERT=ops/certs/qantara-cert.pem \
+QANTARA_TLS_KEY=ops/certs/qantara-key.pem \
+./.venv/bin/python gateway/transport_spike/server.py
+```
+
+Open:
+
+```text
+https://192.168.68.59:9443/spike
+```
+
+Important:
+
+- a self-signed certificate still has to be trusted by the client device
+- if the device does not trust the certificate, browser microphone access may still be blocked
+- the best path remains a locally trusted CA or proper internal TLS setup
+
+Windows trust help:
+
+- [`TRUST_CERT_WINDOWS.md`](/home/nawaf/Projects/Qantara/ops/TRUST_CERT_WINDOWS.md)
 
 ## Practical Notes
 

@@ -123,3 +123,4 @@ Important:
 - it is usually not enough for microphone access from another device
 - for LAN mic access, serve the spike over `HTTPS` and let the client use `WSS`
 - see [`ops/README.md`](/home/nawaf/Projects/Qantara/ops/README.md)
+- if Caddy is not installed, the repo also documents a direct self-signed TLS fallback
