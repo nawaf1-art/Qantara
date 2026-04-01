@@ -91,3 +91,15 @@ Then open:
 ```text
 http://127.0.0.1:8765/spike
 ```
+
+If `8765` is already in use, choose another port:
+
+```bash
+QANTARA_SPIKE_PORT=8899 make spike-run-venv
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8899/spike
+```

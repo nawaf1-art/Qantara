@@ -30,6 +30,18 @@ Open:
 http://127.0.0.1:8765/spike
 ```
 
+If the default port is already in use:
+
+```bash
+QANTARA_SPIKE_PORT=8899 ./.venv/bin/python gateway/transport_spike/server.py
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8899/spike
+```
+
 ## Test Sequence
 
 ### 1. Connection

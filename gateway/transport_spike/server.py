@@ -25,6 +25,8 @@ TONE_SECONDS = 1.25
 FRAME_SAMPLES = 640
 PIPER_VOICE_PATH = os.environ.get("QANTARA_PIPER_MODEL")
 FASTER_WHISPER_MODEL = os.environ.get("QANTARA_WHISPER_MODEL", "base.en")
+DEFAULT_HOST = os.environ.get("QANTARA_SPIKE_HOST", "127.0.0.1")
+DEFAULT_PORT = int(os.environ.get("QANTARA_SPIKE_PORT", "8765"))
 
 
 def utc_now() -> str:
@@ -354,4 +356,4 @@ def create_app() -> web.Application:
 
 
 if __name__ == "__main__":
-    web.run_app(create_app(), host="0.0.0.0", port=8765)
+    web.run_app(create_app(), host=DEFAULT_HOST, port=DEFAULT_PORT)

@@ -141,6 +141,12 @@ Optional faster-whisper setup:
 export QANTARA_WHISPER_MODEL=base.en
 ```
 
+If the default port is already occupied, run the spike on another local port:
+
+```bash
+QANTARA_SPIKE_PORT=8899 ./.venv/bin/python gateway/transport_spike/server.py
+```
+
 ## Current Risk Areas
 
 The main unresolved technical risks are:
