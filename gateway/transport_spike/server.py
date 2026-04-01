@@ -14,6 +14,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from adapters.mock_adapter import MockAdapter
+from gateway.transport_spike.stt_faster_whisper import FasterWhisperSTT
 from gateway.transport_spike.tts_piper import PiperTTS
 
 
@@ -23,6 +24,7 @@ TONE_HZ = 440.0
 TONE_SECONDS = 1.25
 FRAME_SAMPLES = 640
 PIPER_VOICE_PATH = os.environ.get("QANTARA_PIPER_MODEL")
+FASTER_WHISPER_MODEL = os.environ.get("QANTARA_WHISPER_MODEL", "base.en")
 
 
 def utc_now() -> str:
@@ -40,6 +42,8 @@ class Session:
         self.frames_out = 0
         self.playback_generation = 0
         self.last_vad_state = "silence"
+        self.recent_pcm: list[int] = []
+        self.recent_pcm_limit = TARGET_SAMPLE_RATE * 6
 
     async def emit(self, event_name: str, source: str, payload: dict) -> None:
         record = {
@@ -57,6 +61,7 @@ class Session:
 
 ADAPTER = MockAdapter()
 PIPER = PiperTTS(voice_path=PIPER_VOICE_PATH)
+STT = FasterWhisperSTT(model_name=FASTER_WHISPER_MODEL)
 
 
 def encode_pcm_frame(samples: list[int]) -> bytes:
@@ -236,6 +241,47 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                     await session.emit("recoverable_error", "gateway", {"component": "control", "message": "empty mock turn"})
                 else:
                     await stream_mock_assistant(session, transcript)
+            elif message_type == "transcribe_recent_audio":
+                await session.emit(
+                    "transcription_requested",
+                    "browser",
+                    {
+                        "available_samples": len(session.recent_pcm),
+                        "engine": "faster-whisper" if STT.available else "fallback",
+                    },
+                )
+                if not session.recent_pcm:
+                    await session.websocket.send_str(json.dumps({"type": "transcript_result", "text": "", "engine": "none"}))
+                elif STT.available:
+                    try:
+                        text = await STT.transcribe(session.recent_pcm, TARGET_SAMPLE_RATE)
+                        await session.emit(
+                            "final_transcript_ready",
+                            "speech",
+                            {"char_count": len(text), "engine": "faster-whisper"},
+                        )
+                        await session.websocket.send_str(
+                            json.dumps({"type": "transcript_result", "text": text, "engine": "faster-whisper"})
+                        )
+                    except Exception as exc:
+                        await session.emit(
+                            "recoverable_error",
+                            "speech",
+                            {"component": "stt", "message": str(exc), "engine": "faster-whisper"},
+                        )
+                        await session.websocket.send_str(
+                            json.dumps({"type": "transcript_result", "text": "", "engine": "faster-whisper", "error": str(exc)})
+                        )
+                else:
+                    fallback = f"[stt unavailable] captured {len(session.recent_pcm)} samples"
+                    await session.emit(
+                        "final_transcript_ready",
+                        "speech",
+                        {"char_count": len(fallback), "engine": "fallback"},
+                    )
+                    await session.websocket.send_str(
+                        json.dumps({"type": "transcript_result", "text": fallback, "engine": "fallback"})
+                    )
             elif message_type == "vad_state":
                 session.last_vad_state = payload.get("state", "unknown")
                 event_name = "speech_start_detected" if session.last_vad_state == "speech" else "speech_end_detected"
@@ -257,6 +303,10 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
 
             session.frames_in += 1
             samples = (len(msg.data) - 1) // 2
+            for i in range(1, len(msg.data), 2):
+                session.recent_pcm.append(int.from_bytes(msg.data[i:i + 2], "little", signed=True))
+            if len(session.recent_pcm) > session.recent_pcm_limit:
+                session.recent_pcm = session.recent_pcm[-session.recent_pcm_limit:]
             await session.emit(
                 "input_audio_frame_received",
                 "gateway",

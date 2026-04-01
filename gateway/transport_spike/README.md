@@ -49,3 +49,15 @@ export QANTARA_PIPER_MODEL=/absolute/path/to/voice.onnx
 ```
 
 If Piper is unavailable, the gateway falls back to the synthetic tone path automatically.
+
+## Optional faster-whisper STT
+
+If `faster-whisper` is installed, the spike can transcribe the recent microphone buffer.
+
+Optional model selection:
+
+```bash
+export QANTARA_WHISPER_MODEL=base.en
+```
+
+If faster-whisper is unavailable, the spike returns a fallback placeholder transcript instead of failing the whole session.

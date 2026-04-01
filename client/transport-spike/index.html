@@ -142,6 +142,7 @@
         <button id="micBtn" disabled>Start Mic</button>
         <button id="toneBtn" disabled>Request Tone</button>
         <button id="mockTurnBtn" disabled>Mock Turn</button>
+        <button id="transcribeBtn" disabled>Transcribe Recent Audio</button>
         <button id="clearBtn" disabled>Clear Playback</button>
       </div>
 
@@ -165,6 +166,11 @@
         <div id="assistantText" style="min-height: 48px; line-height: 1.5;"></div>
       </div>
 
+      <div class="panel" style="margin-top: 12px; padding: 14px;">
+        <span class="stat-label">Transcript Result</span>
+        <div id="transcriptText" style="min-height: 48px; line-height: 1.5;"></div>
+      </div>
+
       <pre id="log"></pre>
     </section>
   </main>
@@ -180,6 +186,7 @@
     const micBtn = document.getElementById("micBtn");
     const toneBtn = document.getElementById("toneBtn");
     const mockTurnBtn = document.getElementById("mockTurnBtn");
+    const transcribeBtn = document.getElementById("transcribeBtn");
     const clearBtn = document.getElementById("clearBtn");
 
     let socket = null;
@@ -216,6 +223,7 @@
       micBtn.disabled = !connected;
       toneBtn.disabled = !connected;
       mockTurnBtn.disabled = !connected;
+      transcribeBtn.disabled = !connected;
       clearBtn.disabled = !connected;
     }
 
@@ -244,6 +252,10 @@
     function replaceAssistantText(text) {
       assistantText = text;
       $("assistantText").textContent = assistantText;
+    }
+
+    function setTranscriptText(text) {
+      $("transcriptText").textContent = text;
     }
 
     function encodePcmFrame(samples) {
@@ -459,6 +471,9 @@
             } else if (payload.type === "assistant_text_final") {
               replaceAssistantText(payload.text);
               log(`assistant final: ${payload.text}`);
+            } else if (payload.type === "transcript_result") {
+              setTranscriptText(payload.text || "");
+              log(`transcript (${payload.engine}): ${payload.text || "<empty>"}`);
             } else {
               log(`control ${event.data}`);
             }
@@ -507,6 +522,10 @@
     mockTurnBtn.addEventListener("click", () => {
       replaceAssistantText("");
       sendJson({ type: "submit_mock_turn", text: $("mockInput").value });
+    });
+    transcribeBtn.addEventListener("click", () => {
+      setTranscriptText("");
+      sendJson({ type: "transcribe_recent_audio" });
     });
     clearBtn.addEventListener("click", () => {
       nextPlaybackAt = playbackContext ? playbackContext.currentTime : 0;
