@@ -51,6 +51,7 @@ class Session:
         self.last_vad_state = "silence"
         self.recent_pcm: list[int] = []
         self.recent_pcm_limit = TARGET_SAMPLE_RATE * 6
+        self.last_tts_started_ms: float | None = None
 
     async def emit(self, event_name: str, source: str, payload: dict) -> None:
         record = {
@@ -93,6 +94,7 @@ async def send_tone(session: Session) -> None:
     await session.emit("playback_started", "playback", {"kind": "synthetic_tone"})
 
     sent_any = False
+    first_frame_sent = False
     for offset in range(0, total_samples, FRAME_SAMPLES):
         if generation != session.playback_generation:
             await session.emit("playback_stopped", "playback", {"reason": "cleared"})
@@ -104,6 +106,24 @@ async def send_tone(session: Session) -> None:
         await session.websocket.send_bytes(encode_pcm_frame(frame))
         session.frames_out += 1
         sent_any = True
+        if not first_frame_sent:
+            first_frame_sent = True
+            await session.websocket.send_str(
+                json.dumps(
+                    {
+                        "type": "playback_metrics",
+                        "engine": "synthetic",
+                        "kind": "synthetic_tone",
+                        "tts_to_first_audio_ms": 0,
+                        "synthesis_ms": 0,
+                    }
+                )
+            )
+            await session.emit(
+                "playback_first_frame_sent",
+                "playback",
+                {"kind": "synthetic_tone", "tts_to_first_audio_ms": 0},
+            )
         await session.emit(
             "output_audio_frame_sent",
             "playback",
@@ -124,11 +144,14 @@ async def send_pcm_samples(
     samples: list[int],
     sample_rate: int,
     kind: str,
+    tts_started_ms: float | None = None,
+    synthesis_ms: float | None = None,
 ) -> None:
     generation = session.playback_generation
     await session.emit("playback_started", "playback", {"kind": kind, "sample_rate": sample_rate})
 
     sent_any = False
+    first_frame_sent = False
     for offset in range(0, len(samples), FRAME_SAMPLES):
         if generation != session.playback_generation:
             await session.emit("playback_stopped", "playback", {"reason": "cleared"})
@@ -138,6 +161,31 @@ async def send_pcm_samples(
         await session.websocket.send_bytes(encode_pcm_frame(frame))
         session.frames_out += 1
         sent_any = True
+        if not first_frame_sent:
+            first_frame_sent = True
+            first_audio_ms = None
+            if tts_started_ms is not None:
+                first_audio_ms = round((time.monotonic() * 1000) - tts_started_ms, 3)
+            await session.websocket.send_str(
+                json.dumps(
+                    {
+                        "type": "playback_metrics",
+                        "engine": "piper" if kind == "piper_tts" else "synthetic",
+                        "kind": kind,
+                        "tts_to_first_audio_ms": first_audio_ms,
+                        "synthesis_ms": synthesis_ms,
+                    }
+                )
+            )
+            await session.emit(
+                "playback_first_frame_sent",
+                "playback",
+                {
+                    "kind": kind,
+                    "tts_to_first_audio_ms": first_audio_ms,
+                    "synthesis_ms": synthesis_ms,
+                },
+            )
         await session.emit(
             "output_audio_frame_sent",
             "playback",
@@ -156,6 +204,7 @@ async def send_pcm_samples(
 
 async def speak_text(session: Session, text: str) -> None:
     engine = "piper" if PIPER.available else "synthetic"
+    session.last_tts_started_ms = time.monotonic() * 1000
     await session.emit("tts_chunk_ready", "playback", {"char_count": len(text), "engine": engine})
     await session.websocket.send_str(
         json.dumps(
@@ -170,8 +219,22 @@ async def speak_text(session: Session, text: str) -> None:
 
     if PIPER.available:
         try:
+            synthesis_started_ms = time.monotonic() * 1000
             samples = await PIPER.synthesize(text)
-            await send_pcm_samples(session, samples, PIPER.sample_rate, "piper_tts")
+            synthesis_ms = round((time.monotonic() * 1000) - synthesis_started_ms, 3)
+            await session.emit(
+                "tts_chunk_ready",
+                "playback",
+                {"char_count": len(text), "engine": "piper", "sample_count": len(samples), "synthesis_ms": synthesis_ms},
+            )
+            await send_pcm_samples(
+                session,
+                samples,
+                PIPER.sample_rate,
+                "piper_tts",
+                tts_started_ms=session.last_tts_started_ms,
+                synthesis_ms=synthesis_ms,
+            )
             return
         except Exception as exc:
             await session.emit(
@@ -267,6 +330,14 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
             elif message_type == "clear_playback":
                 session.playback_generation += 1
                 await session.emit("playback_queue_cleared", "browser", {})
+                await ws.send_str(
+                    json.dumps(
+                        {
+                            "type": "playback_cleared",
+                            "generation": session.playback_generation,
+                        }
+                    )
+                )
             elif message_type == "submit_mock_turn":
                 transcript = payload.get("text", "").strip()
                 if not transcript:

@@ -68,6 +68,7 @@ The goal is to make latency and failure analysis possible from the first gateway
 
 - `tts_chunk_ready`
 - `playback_started`
+- `playback_first_frame_sent`
 - `playback_stopped`
 - `playback_queue_cleared`
 
@@ -127,6 +128,15 @@ Recommended payload:
 - `chunk_index`
 - `chunk_ms`
 - `chunk_bytes`
+- `synthesis_ms`
+
+### `playback_first_frame_sent`
+
+Recommended payload:
+
+- `kind`
+- `tts_to_first_audio_ms`
+- `synthesis_ms`
 
 ### `interruption_detected`
 

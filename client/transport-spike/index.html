@@ -160,6 +160,8 @@
         <div class="stat"><span class="stat-label">Frames Sent</span><span id="framesSent">0</span></div>
         <div class="stat"><span class="stat-label">Frames Received</span><span id="framesReceived">0</span></div>
         <div class="stat"><span class="stat-label">Sample Rate</span><span id="sampleRate">16000</span></div>
+        <div class="stat"><span class="stat-label">First Audio</span><span id="firstAudioMs">-</span></div>
+        <div class="stat"><span class="stat-label">Clear Ack</span><span id="clearAckMs">-</span></div>
       </div>
 
       <div class="panel" style="margin-top: 0; padding: 14px;">
@@ -206,6 +208,7 @@
     let assistantText = "";
     let mockTurnPending = false;
     let transcribePending = false;
+    let clearRequestedAt = null;
 
     function $(id) {
       return document.getElementById(id);
@@ -251,6 +254,14 @@
 
     function setVadRms(value) {
       updateText("vadRms", value.toFixed(4));
+    }
+
+    function setFirstAudioMs(value) {
+      updateText("firstAudioMs", value == null ? "-" : `${value} ms`);
+    }
+
+    function setClearAckMs(value) {
+      updateText("clearAckMs", value == null ? "-" : `${value} ms`);
     }
 
     function appendAssistantDelta(text) {
@@ -469,6 +480,8 @@
 
       socket.onopen = () => {
         setSocketState("connected");
+        setFirstAudioMs(null);
+        setClearAckMs(null);
         sendJson({ type: "session_init", client_name: "browser-transport-spike" });
         log("socket connected");
       };
@@ -505,6 +518,16 @@
               const statusText = payload.reason ? `${payload.engine} (${payload.reason})` : payload.engine;
               setTtsState(statusText);
               log(`tts status: ${statusText}`);
+            } else if (payload.type === "playback_metrics") {
+              setFirstAudioMs(payload.tts_to_first_audio_ms);
+              log(
+                `playback metrics: engine=${payload.engine} tts_to_first_audio_ms=${payload.tts_to_first_audio_ms ?? "-"} synthesis_ms=${payload.synthesis_ms ?? "-"}`
+              );
+            } else if (payload.type === "playback_cleared") {
+              const clearAckMs = clearRequestedAt == null ? null : Math.round(performance.now() - clearRequestedAt);
+              setClearAckMs(clearAckMs);
+              clearRequestedAt = null;
+              log(`playback cleared ack${clearAckMs == null ? "" : ` ${clearAckMs} ms`}`);
             } else {
               log(`control ${event.data}`);
             }
@@ -568,6 +591,7 @@
     clearBtn.addEventListener("click", () => {
       nextPlaybackAt = playbackContext ? playbackContext.currentTime : 0;
       setPlaybackState("idle");
+      clearRequestedAt = performance.now();
       sendJson({ type: "clear_playback" });
       log("playback clear requested");
     });

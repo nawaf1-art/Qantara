@@ -73,6 +73,7 @@ If Piper is configured:
 
 - submit a mock turn and confirm spoken output is produced through Piper instead of tone fallback
 - confirm the browser `TTS` status changes to `piper`
+- note the browser `First Audio` measurement
 
 ### 3. Microphone Transport
 
@@ -107,6 +108,13 @@ If faster-whisper is not installed:
 - reconnect again
 - note whether the browser and gateway recover predictably
 
+### 7. Playback Clear Timing
+
+- start a `Mock Turn`
+- click `Clear Playback` while audio is active
+- note the browser `Clear Ack` measurement
+- note whether audible stop feels immediate enough for future barge-in work
+
 ## What To Record
 
 Record findings in:
@@ -119,6 +127,8 @@ Minimum notes:
 - whether headset or speakers were used
 - playback startup feel
 - whether `Clear Playback` was responsive
+- observed `First Audio` timing for Piper
+- observed `Clear Ack` timing
 - whether VAD threshold felt too sensitive or too weak
 - whether the transcription result was useful or only placeholder fallback
 - whether WebSocket transport still looks acceptable for M1
