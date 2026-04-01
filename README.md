@@ -71,3 +71,23 @@ The repository now includes a runnable browser-to-gateway transport spike with:
 - optional Piper TTS with synthetic fallback
 
 This is a real validation slice, not just design documentation, but M0 is not complete until actual runs are performed and recorded.
+
+## Quick Start
+
+Install the current spike dependency:
+
+```bash
+make spike-install
+```
+
+Run the current gateway-hosted spike:
+
+```bash
+make spike-run
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8765/spike
+```
