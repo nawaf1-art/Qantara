@@ -153,6 +153,7 @@
         <div class="stat"><span class="stat-label">Socket</span><span id="socketState">disconnected</span></div>
         <div class="stat"><span class="stat-label">Mic</span><span id="micState">stopped</span></div>
         <div class="stat"><span class="stat-label">Playback</span><span id="playbackState">idle</span></div>
+        <div class="stat"><span class="stat-label">VAD</span><span id="vadState">silence</span></div>
         <div class="stat"><span class="stat-label">Frames Sent</span><span id="framesSent">0</span></div>
         <div class="stat"><span class="stat-label">Frames Received</span><span id="framesReceived">0</span></div>
         <div class="stat"><span class="stat-label">Sample Rate</span><span id="sampleRate">16000</span></div>
@@ -185,6 +186,7 @@
     let framesSent = 0;
     let framesReceived = 0;
     let micActive = false;
+    let vadSpeech = false;
 
     function $(id) {
       return document.getElementById(id);
@@ -217,6 +219,10 @@
 
     function setPlaybackState(value) {
       updateText("playbackState", value);
+    }
+
+    function setVadState(value) {
+      updateText("vadState", value);
     }
 
     function encodePcmFrame(samples) {
@@ -334,6 +340,20 @@
 
       processorNode.onaudioprocess = (event) => {
         const input = event.inputBuffer.getChannelData(0);
+        let rms = 0;
+        for (let i = 0; i < input.length; i += 1) {
+          rms += input[i] * input[i];
+        }
+        rms = Math.sqrt(rms / input.length);
+        const nextSpeech = rms > 0.018;
+        if (nextSpeech !== vadSpeech) {
+          vadSpeech = nextSpeech;
+          const state = nextSpeech ? "speech" : "silence";
+          setVadState(state);
+          sendJson({ type: "vad_state", state, rms: Number(rms.toFixed(4)) });
+          log(`vad ${state} rms=${rms.toFixed(4)}`);
+        }
+
         const downsampled = downsample(input, micContext.sampleRate, TARGET_SAMPLE_RATE);
         const pcm = floatToInt16(downsampled);
         const merged = new Int16Array(pending.length + pcm.length);
@@ -356,6 +376,7 @@
       processorNode.connect(micContext.destination);
       micActive = true;
       setMicState("running");
+      setVadState("silence");
       updateText("sampleRate", TARGET_SAMPLE_RATE);
       sendJson({ type: "mic_stream_started", sample_rate: TARGET_SAMPLE_RATE });
       log("microphone capture started");
@@ -375,7 +396,9 @@
       sourceNode = null;
       processorNode = null;
       micActive = false;
+      vadSpeech = false;
       setMicState("stopped");
+      setVadState("silence");
       sendJson({ type: "mic_stream_stopped" });
       log("microphone capture stopped");
     }

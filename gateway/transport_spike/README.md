@@ -31,3 +31,15 @@ The gateway listens on:
 ```text
 ws://127.0.0.1:8765/ws
 ```
+
+## Optional Piper TTS
+
+If `piper` is installed locally and a voice model path is available, the spike can synthesize mock assistant text with Piper instead of using the synthetic tone fallback.
+
+Set:
+
+```bash
+export QANTARA_PIPER_MODEL=/absolute/path/to/voice.onnx
+```
+
+If Piper is unavailable, the gateway falls back to the synthetic tone path automatically.

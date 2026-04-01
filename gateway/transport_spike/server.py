@@ -13,6 +13,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from adapters.mock_adapter import MockAdapter
+from gateway.transport_spike.tts_piper import PiperTTS
 
 
 PCM_KIND = 0x01
@@ -20,6 +21,7 @@ TARGET_SAMPLE_RATE = 16000
 TONE_HZ = 440.0
 TONE_SECONDS = 1.25
 FRAME_SAMPLES = 640
+PIPER_VOICE_PATH = os.environ.get("QANTARA_PIPER_MODEL")
 
 
 def utc_now() -> str:
@@ -36,6 +38,7 @@ class Session:
         self.frames_in = 0
         self.frames_out = 0
         self.playback_generation = 0
+        self.last_vad_state = "silence"
 
     async def emit(self, event_name: str, source: str, payload: dict) -> None:
         record = {
@@ -52,6 +55,7 @@ class Session:
 
 
 ADAPTER = MockAdapter()
+PIPER = PiperTTS(voice_path=PIPER_VOICE_PATH)
 
 
 def encode_pcm_frame(samples: list[int]) -> bytes:
@@ -98,6 +102,59 @@ async def send_tone(session: Session) -> None:
         await session.emit("playback_stopped", "playback", {"reason": "tone_complete"})
 
 
+async def send_pcm_samples(
+    session: Session,
+    samples: list[int],
+    sample_rate: int,
+    kind: str,
+) -> None:
+    generation = session.playback_generation
+    await session.emit("playback_started", "playback", {"kind": kind, "sample_rate": sample_rate})
+
+    sent_any = False
+    for offset in range(0, len(samples), FRAME_SAMPLES):
+        if generation != session.playback_generation:
+            await session.emit("playback_stopped", "playback", {"reason": "cleared"})
+            return
+
+        frame = samples[offset:offset + FRAME_SAMPLES]
+        await session.websocket.send_bytes(encode_pcm_frame(frame))
+        session.frames_out += 1
+        sent_any = True
+        await session.emit(
+            "output_audio_frame_sent",
+            "playback",
+            {
+                "frame_index": session.frames_out,
+                "frame_samples": len(frame),
+                "sample_rate": sample_rate,
+                "kind": kind,
+            },
+        )
+        await asyncio.sleep(len(frame) / sample_rate)
+
+    if sent_any:
+        await session.emit("playback_stopped", "playback", {"reason": f"{kind}_complete"})
+
+
+async def speak_text(session: Session, text: str) -> None:
+    await session.emit("tts_chunk_ready", "playback", {"char_count": len(text), "engine": "piper" if PIPER.available else "synthetic"})
+
+    if PIPER.available:
+        try:
+            samples = await PIPER.synthesize(text)
+            await send_pcm_samples(session, samples, PIPER.sample_rate, "piper_tts")
+            return
+        except Exception as exc:
+            await session.emit(
+                "recoverable_error",
+                "playback",
+                {"component": "tts", "message": str(exc), "engine": "piper"},
+            )
+
+    await send_tone(session)
+
+
 async def stream_mock_assistant(session: Session, transcript: str) -> None:
     if session.runtime_session_handle is None:
         session.runtime_session_handle = await ADAPTER.start_or_resume_session(
@@ -136,6 +193,7 @@ async def stream_mock_assistant(session: Session, transcript: str) -> None:
                 {"turn_handle": turn_handle, "final_chars": len(event["text"])},
             )
             await session.websocket.send_str(json.dumps({"type": "assistant_text_final", "text": event["text"]}))
+            await speak_text(session, event["text"])
 
 
 async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
@@ -177,6 +235,14 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                     await session.emit("recoverable_error", "gateway", {"component": "control", "message": "empty mock turn"})
                 else:
                     await stream_mock_assistant(session, transcript)
+            elif message_type == "vad_state":
+                session.last_vad_state = payload.get("state", "unknown")
+                event_name = "speech_start_detected" if session.last_vad_state == "speech" else "speech_end_detected"
+                await session.emit(
+                    event_name,
+                    "browser",
+                    {"state": session.last_vad_state, "rms": payload.get("rms")},
+                )
             else:
                 await session.emit("recoverable_error", "gateway", {"component": "control", "message": f"unknown control {message_type}"})
 
