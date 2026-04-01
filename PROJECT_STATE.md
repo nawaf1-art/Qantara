@@ -147,6 +147,12 @@ If the default port is already occupied, run the spike on another local port:
 QANTARA_SPIKE_PORT=8899 ./.venv/bin/python gateway/transport_spike/server.py
 ```
 
+To expose the spike to other devices on the LAN:
+
+```bash
+QANTARA_SPIKE_HOST=0.0.0.0 QANTARA_SPIKE_PORT=8899 ./.venv/bin/python gateway/transport_spike/server.py
+```
+
 ## Current Risk Areas
 
 The main unresolved technical risks are:

@@ -42,6 +42,18 @@ Then open:
 http://127.0.0.1:8899/spike
 ```
 
+For LAN access from another device:
+
+```bash
+QANTARA_SPIKE_HOST=0.0.0.0 QANTARA_SPIKE_PORT=8899 ./.venv/bin/python gateway/transport_spike/server.py
+```
+
+Then open:
+
+```text
+http://<your-lan-ip>:8899/spike
+```
+
 ## Test Sequence
 
 ### 1. Connection

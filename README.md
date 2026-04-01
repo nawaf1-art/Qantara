@@ -103,3 +103,15 @@ Then open:
 ```text
 http://127.0.0.1:8899/spike
 ```
+
+To expose the spike on your LAN from this machine:
+
+```bash
+make spike-run-lan-venv
+```
+
+Then open from another device on the same network:
+
+```text
+http://<your-lan-ip>:8899/spike
+```
