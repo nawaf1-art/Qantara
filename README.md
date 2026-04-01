@@ -1,0 +1,55 @@
+# Qantara
+
+Qantara is a LAN-first, real-time voice interface for OpenClaw-compatible agent runtimes.
+
+The primary user experience is not push-to-talk. Qantara is designed for full-duplex conversation:
+
+- continuous listening while the assistant is speaking
+- barge-in interruption at any time
+- local-first speech processing with no required external network path
+
+## Goals
+
+- Provide a low-latency voice channel around an OpenClaw-compatible agent and session model
+- Preserve the downstream agent runtime as the source of truth for tools and conversation state
+- Run safely on a private LAN with strong permission boundaries for voice-triggered actions
+
+## Initial Product Direction
+
+Qantara should start as an external LAN voice gateway beside the downstream agent runtime, not as a tightly coupled in-process plugin.
+
+This keeps the first version easier to iterate on while the protocol, cancellation rules, and interruption handling are still being proven. A native OpenClaw plugin remains a later optimization if runtime hooks prove sufficient and the external protocol stabilizes.
+
+The repository intentionally does not assume any specific local OpenClaw agent, model, gateway host, or deployment topology yet. Those integration details are deferred until a later validation phase.
+
+The initial client target should be browser-first. A browser client keeps installation friction low on a private LAN, makes internal testing easier, and is sufficient to prove the audio transport, session model, and interruption behavior before investing in a dedicated desktop shell.
+
+## V1 Scope
+
+- Single user, single active session
+- Browser-first LAN client using WebAudio and WebSocket
+- Always-on microphone streaming
+- Voice activity detection and endpointing
+- Local streaming STT with partial and final transcripts
+- Downstream runtime turn submission through a narrow integration boundary
+- Text-first or near-streaming response playback path
+- Local TTS with immediate playback cancel on user interruption
+- Event timeline and latency instrumentation from day one
+
+## Non-Goals For V1
+
+- Telephony-first workflows
+- Multi-user conferencing
+- General internet-facing deployment
+- Complex speaker-mode echo cancellation beyond a constrained headset-first setup
+
+## Core Design Principle
+
+Qantara should behave as a voice channel adapter around a downstream conversation API, not as a replacement for the runtime model behind it.
+
+## Documents
+
+- [`PLAN.md`](/home/nawaf/Projects/Qantara/PLAN.md): implementation phases, milestones, and key decisions
+- [`ARCHITECTURE.md`](/home/nawaf/Projects/Qantara/ARCHITECTURE.md): runtime model, state machine, transport, and risk areas
+- [`DECISIONS.md`](/home/nawaf/Projects/Qantara/DECISIONS.md): architectural decisions and deferred choices
+- [`MILESTONES.md`](/home/nawaf/Projects/Qantara/MILESTONES.md): delivery checklist and exit criteria tracking
