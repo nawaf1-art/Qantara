@@ -53,3 +53,20 @@ Qantara should behave as a voice channel adapter around a downstream conversatio
 - [`ARCHITECTURE.md`](/home/nawaf/Projects/Qantara/ARCHITECTURE.md): runtime model, state machine, transport, and risk areas
 - [`DECISIONS.md`](/home/nawaf/Projects/Qantara/DECISIONS.md): architectural decisions and deferred choices
 - [`MILESTONES.md`](/home/nawaf/Projects/Qantara/MILESTONES.md): delivery checklist and exit criteria tracking
+- [`PROJECT_STATE.md`](/home/nawaf/Projects/Qantara/PROJECT_STATE.md): current checkpoint, implemented scope, and next steps
+- [`M0_EXPERIMENTS.md`](/home/nawaf/Projects/Qantara/M0_EXPERIMENTS.md): explicit M0 validation program
+- [`experiments/RUN_TRANSPORT_SPIKE.md`](/home/nawaf/Projects/Qantara/experiments/RUN_TRANSPORT_SPIKE.md): how to run the current spike and record results
+
+## Current Status
+
+Qantara is currently in `M0: Technical Validation`.
+
+The repository now includes a runnable browser-to-gateway transport spike with:
+
+- browser microphone capture and PCM streaming over WebSocket
+- gateway-side transport event logging
+- browser playback of gateway PCM audio
+- mock runtime turn submission and assistant text streaming
+- optional Piper TTS with synthetic fallback
+
+This is a real validation slice, not just design documentation, but M0 is not complete until actual runs are performed and recorded.
