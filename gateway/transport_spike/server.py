@@ -329,19 +329,26 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
 
 
 async def index_handler(_: web.Request) -> web.StreamResponse:
+    request = _
+    spike_url = f"http://{request.host}/spike"
     return web.Response(
         text=(
             "Qantara transport spike gateway is running.\n"
-            "Open http://host:8765/spike to use the browser client.\n"
+            f"Open {spike_url} to use the browser client.\n"
         ),
         content_type="text/plain",
     )
+
+
+async def spike_handler(request: web.Request) -> web.StreamResponse:
+    raise web.HTTPFound("/spike/index.html")
 
 
 def create_app() -> web.Application:
     app = web.Application()
     app.router.add_get("/", index_handler)
     app.router.add_get("/ws", websocket_handler)
+    app.router.add_get("/spike", spike_handler)
     app.router.add_static("/spike", CLIENT_SPIKE_DIR, show_index=True)
     return app
 
