@@ -26,6 +26,8 @@ TONE_SECONDS = 1.25
 FRAME_SAMPLES = 640
 PIPER_VOICE_PATH = os.environ.get("QANTARA_PIPER_MODEL")
 FASTER_WHISPER_MODEL = os.environ.get("QANTARA_WHISPER_MODEL", "base.en")
+FASTER_WHISPER_DEVICE = os.environ.get("QANTARA_WHISPER_DEVICE", "cpu")
+FASTER_WHISPER_COMPUTE = os.environ.get("QANTARA_WHISPER_COMPUTE", "int8")
 DEFAULT_HOST = os.environ.get("QANTARA_SPIKE_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("QANTARA_SPIKE_PORT", "8765"))
 TLS_CERT_FILE = os.environ.get("QANTARA_TLS_CERT")
@@ -66,7 +68,11 @@ class Session:
 
 ADAPTER = MockAdapter()
 PIPER = PiperTTS(voice_path=PIPER_VOICE_PATH)
-STT = FasterWhisperSTT(model_name=FASTER_WHISPER_MODEL)
+STT = FasterWhisperSTT(
+    model_name=FASTER_WHISPER_MODEL,
+    device=FASTER_WHISPER_DEVICE,
+    compute_type=FASTER_WHISPER_COMPUTE,
+)
 
 
 def encode_pcm_frame(samples: list[int]) -> bytes:
@@ -268,6 +274,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                         await session.websocket.send_str(
                             json.dumps({"type": "transcript_result", "text": text, "engine": "faster-whisper"})
                         )
+                        session.recent_pcm.clear()
                     except Exception as exc:
                         await session.emit(
                             "recoverable_error",
@@ -287,6 +294,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                     await session.websocket.send_str(
                         json.dumps({"type": "transcript_result", "text": fallback, "engine": "fallback"})
                     )
+                    session.recent_pcm.clear()
             elif message_type == "vad_state":
                 session.last_vad_state = payload.get("state", "unknown")
                 event_name = "speech_start_detected" if session.last_vad_state == "speech" else "speech_end_detected"

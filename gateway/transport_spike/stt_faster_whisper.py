@@ -4,8 +4,15 @@ import wave
 
 
 class FasterWhisperSTT:
-    def __init__(self, model_name: str = "base.en") -> None:
+    def __init__(
+        self,
+        model_name: str = "base.en",
+        device: str = "cpu",
+        compute_type: str = "int8",
+    ) -> None:
         self.model_name = model_name
+        self.device = device
+        self.compute_type = compute_type
         self._model = None
         self._import_error = None
 
@@ -25,7 +32,11 @@ class FasterWhisperSTT:
         if not self.available:
             raise RuntimeError(f"faster-whisper unavailable: {self._import_error}")
         if self._model is None:
-            self._model = self._WhisperModel(self.model_name, device="auto", compute_type="auto")
+            self._model = self._WhisperModel(
+                self.model_name,
+                device=self.device,
+                compute_type=self.compute_type,
+            )
         return self._model
 
     @staticmethod

@@ -67,11 +67,11 @@ The repository now includes a runnable browser-to-gateway transport spike with:
 - browser microphone capture and PCM streaming over WebSocket
 - gateway-side transport event logging
 - browser playback of gateway PCM audio
-- optional faster-whisper transcription of recent captured audio
+- validated faster-whisper transcription of recent captured audio
 - mock runtime turn submission and assistant text streaming
 - optional Piper TTS with synthetic fallback
 
-This is a real validation slice, not just design documentation, but M0 is not complete until actual runs are performed and recorded.
+This is a real validation slice, not just design documentation. The current M0 spike has now validated the first STT candidate path through faster-whisper, while TTS validation and later runtime binding still remain open.
 
 ## Quick Start
 

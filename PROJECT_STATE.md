@@ -17,6 +17,7 @@ The project has moved beyond planning-only status. It now includes:
 - a locked gateway direction
 - a runnable browser-to-gateway transport spike
 - a mock downstream adapter path
+- a validated first STT candidate path through faster-whisper
 - an optional first TTS candidate path through Piper
 
 ## What Is Decided
@@ -59,6 +60,7 @@ Source:
 - gateway server: [`gateway/transport_spike/server.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/server.py)
 - mock adapter: [`adapters/mock_adapter.py`](/home/nawaf/Projects/Qantara/adapters/mock_adapter.py)
 - optional Piper path: [`gateway/transport_spike/tts_piper.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/tts_piper.py)
+- validated first STT path: [`gateway/transport_spike/stt_faster_whisper.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/stt_faster_whisper.py)
 - run notes template: [`experiments/notes/transport-spike.md`](/home/nawaf/Projects/Qantara/experiments/notes/transport-spike.md)
 
 ## What The Current Spike Can Do
@@ -72,7 +74,7 @@ The current runnable spike can:
 - send PCM16 audio frames from gateway to browser
 - play returned PCM audio in the browser
 - emit basic browser-side VAD state changes using an RMS threshold
-- request transcription of the recent audio buffer through an optional faster-whisper path
+- request transcription of the recent audio buffer through a working faster-whisper path
 - submit mock text turns to a runtime-agnostic mock adapter
 - stream mock assistant text deltas and final text back to the browser
 - optionally synthesize assistant text through Piper when configured
@@ -99,13 +101,17 @@ Validated by implementation:
 - the Python gateway spike compiles successfully
 - the transport spike is runnable from a single process
 
+Validated by actual testing:
+
+- browser mic capture works through the current HTTPS spike path
+- WebSocket/WSS transport is working for the current M0 slice
+- faster-whisper is functioning as the first real STT candidate in this environment
+
 Not yet validated by actual experiment results:
 
-- real browser audio behavior on your machine
-- real frame cadence and reconnect stability
-- whether WebSocket PCM remains acceptable after hands-on use
-- whether the browser VAD threshold is usable
-- whether faster-whisper is a practical first STT engine in your environment
+- whether Piper is a practical first TTS engine in your environment
+- whether the browser VAD threshold is tuned well enough for ongoing use
+- whether playback clear behavior is strong enough for later barge-in work
 - whether Piper is a practical first TTS engine in your environment
 
 That distinction matters. The repo contains a runnable validation slice, but M0 is not complete until those runs are executed and recorded.
@@ -157,11 +163,8 @@ QANTARA_SPIKE_HOST=0.0.0.0 QANTARA_SPIKE_PORT=8899 ./.venv/bin/python gateway/tr
 
 The main unresolved technical risks are:
 
-- WebSocket transport behavior under real browser testing
 - VAD threshold quality and false positives
-- first useful transcription latency and operational cost for faster-whisper
 - first-audio latency and control quality for Piper
-- missing real STT path
 - missing real interruption and cancellation behavior
 
 ## Definition Of A Good M0 State
@@ -180,9 +183,9 @@ Qantara reaches a good M0 state when:
 The highest-value next steps are:
 
 1. Run the transport spike and record real observations in the notes file.
-2. Tune VAD threshold and transport framing from actual results.
-3. Validate the faster-whisper path with real recent-audio transcription tests.
-4. Decide whether Piper remains the first TTS candidate after real local testing.
+2. Mark faster-whisper as the current first STT candidate.
+3. Validate whether Piper remains the first TTS candidate after real local testing.
+4. Tune VAD threshold and transport framing from actual results.
 
 ## Repository Interpretation
 

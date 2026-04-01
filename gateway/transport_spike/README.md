@@ -60,4 +60,11 @@ Optional model selection:
 export QANTARA_WHISPER_MODEL=base.en
 ```
 
+Recommended compatibility defaults:
+
+```bash
+export QANTARA_WHISPER_DEVICE=cpu
+export QANTARA_WHISPER_COMPUTE=int8
+```
+
 If faster-whisper is unavailable, the spike returns a fallback placeholder transcript instead of failing the whole session.

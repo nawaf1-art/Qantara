@@ -180,6 +180,8 @@
     const FRAMES_PER_PACKET = 640;
     const PCM_KIND = 0x01;
     const JSON_KIND = 0x7b; // "{"
+    const VAD_START_RMS = 0.03;
+    const VAD_STOP_RMS = 0.015;
 
     const connectBtn = document.getElementById("connectBtn");
     const disconnectBtn = document.getElementById("disconnectBtn");
@@ -201,6 +203,8 @@
     let micActive = false;
     let vadSpeech = false;
     let assistantText = "";
+    let mockTurnPending = false;
+    let transcribePending = false;
 
     function $(id) {
       return document.getElementById(id);
@@ -222,8 +226,8 @@
       disconnectBtn.disabled = !connected;
       micBtn.disabled = !connected;
       toneBtn.disabled = !connected;
-      mockTurnBtn.disabled = !connected;
-      transcribeBtn.disabled = !connected;
+      mockTurnBtn.disabled = !connected || mockTurnPending;
+      transcribeBtn.disabled = !connected || transcribePending;
       clearBtn.disabled = !connected;
     }
 
@@ -256,6 +260,18 @@
 
     function setTranscriptText(text) {
       $("transcriptText").textContent = text;
+    }
+
+    function setMockTurnPending(value) {
+      mockTurnPending = value;
+      mockTurnBtn.disabled = !socket || socket.readyState !== WebSocket.OPEN || value;
+      mockTurnBtn.textContent = value ? "Mock Turn..." : "Mock Turn";
+    }
+
+    function setTranscribePending(value) {
+      transcribePending = value;
+      transcribeBtn.disabled = !socket || socket.readyState !== WebSocket.OPEN || value;
+      transcribeBtn.textContent = value ? "Transcribing..." : "Transcribe Recent Audio";
     }
 
     function encodePcmFrame(samples) {
@@ -379,7 +395,7 @@
         }
         rms = Math.sqrt(rms / input.length);
         setVadRms(rms);
-        const nextSpeech = rms > 0.018;
+        const nextSpeech = vadSpeech ? rms > VAD_STOP_RMS : rms > VAD_START_RMS;
         if (nextSpeech !== vadSpeech) {
           vadSpeech = nextSpeech;
           const state = nextSpeech ? "speech" : "silence";
@@ -456,6 +472,8 @@
         stopMic();
         setSocketState("disconnected");
         setPlaybackState("idle");
+        setMockTurnPending(false);
+        setTranscribePending(false);
         log("socket disconnected");
       };
 
@@ -472,9 +490,11 @@
               log(`assistant delta: ${payload.text}`);
             } else if (payload.type === "assistant_text_final") {
               replaceAssistantText(payload.text);
+              setMockTurnPending(false);
               log(`assistant final: ${payload.text}`);
             } else if (payload.type === "transcript_result") {
               setTranscriptText(payload.text || "");
+              setTranscribePending(false);
               log(`transcript (${payload.engine}): ${payload.text || "<empty>"}`);
             } else {
               log(`control ${event.data}`);
@@ -525,11 +545,15 @@
     micBtn.addEventListener("click", async () => startMic());
     toneBtn.addEventListener("click", () => sendJson({ type: "request_tone" }));
     mockTurnBtn.addEventListener("click", () => {
+      if (mockTurnPending) return;
       replaceAssistantText("");
+      setMockTurnPending(true);
       sendJson({ type: "submit_mock_turn", text: $("mockInput").value });
     });
     transcribeBtn.addEventListener("click", () => {
+      if (transcribePending) return;
       setTranscriptText("");
+      setTranscribePending(true);
       sendJson({ type: "transcribe_recent_audio" });
     });
     clearBtn.addEventListener("click", () => {
