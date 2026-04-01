@@ -73,6 +73,12 @@ The repository now includes a runnable browser-to-gateway transport spike with:
 
 This is a real validation slice, not just design documentation. The current M0 spike has now validated the first STT candidate path through faster-whisper and the first TTS candidate path through Piper. Later runtime binding and interruption hardening still remain open.
 
+Current measured baseline:
+
+- Piper first-audio is roughly `1.7s`
+- local browser playback clear is effectively immediate
+- backend playback-stop telemetry is still separate from user-perceived audible stop timing
+
 ## Quick Start
 
 Install the current spike dependency:

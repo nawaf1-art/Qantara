@@ -112,7 +112,6 @@ Validated by actual testing:
 Not yet validated by actual experiment results:
 
 - whether the browser VAD threshold is tuned well enough for ongoing use
-- whether playback clear behavior is strong enough for later barge-in work
 
 That distinction matters. The repo contains a runnable validation slice, but M0 is not complete until those runs are executed and recorded.
 
@@ -172,7 +171,7 @@ QANTARA_SPIKE_HOST=0.0.0.0 QANTARA_SPIKE_PORT=8899 ./.venv/bin/python gateway/tr
 The main unresolved technical risks are:
 
 - VAD threshold quality and false positives
-- first-audio latency and control quality for Piper under repeated runs
+- first-audio latency for Piper under repeated runs, currently around `1.7s`
 - missing real interruption and cancellation behavior
 
 ## Definition Of A Good M0 State
@@ -190,10 +189,10 @@ Qantara reaches a good M0 state when:
 
 The highest-value next steps are:
 
-1. Run the transport spike and record real observations in the notes file.
-2. Mark faster-whisper as the current first STT candidate.
-3. Characterize Piper playback latency and clear behavior under repeated runs.
-4. Tune VAD threshold and transport framing from actual results.
+1. Reduce Piper first-audio latency from the current ~`1.7s` baseline if possible.
+2. Tune VAD threshold and transport framing from actual results.
+3. Start the real runtime adapter path in parallel with the next M0 refinements.
+4. Keep backend playback-stop telemetry distinct from user-perceived audible stop timing.
 
 ## Repository Interpretation
 
