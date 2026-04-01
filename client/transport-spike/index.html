@@ -441,7 +441,8 @@
 
     function connect() {
       const host = window.location.hostname || "127.0.0.1";
-      socket = new WebSocket(`ws://${host}:8765/ws`);
+      const port = window.location.port || "8765";
+      socket = new WebSocket(`ws://${host}:${port}/ws`);
       socket.binaryType = "arraybuffer";
 
       socket.onopen = () => {
