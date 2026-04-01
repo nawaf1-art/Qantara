@@ -53,6 +53,7 @@ Qantara should behave as a voice channel adapter around a downstream conversatio
 - [`ARCHITECTURE.md`](/home/nawaf/Projects/Qantara/ARCHITECTURE.md): runtime model, state machine, transport, and risk areas
 - [`DECISIONS.md`](/home/nawaf/Projects/Qantara/DECISIONS.md): architectural decisions and deferred choices
 - [`BACKEND_ADAPTER_TARGETS.md`](/home/nawaf/Projects/Qantara/BACKEND_ADAPTER_TARGETS.md): candidate backend shapes and the recommended first adapter target
+- [`SESSION_GATEWAY_CONTRACT.md`](/home/nawaf/Projects/Qantara/SESSION_GATEWAY_CONTRACT.md): first concrete session-oriented backend contract shape
 - [`MILESTONES.md`](/home/nawaf/Projects/Qantara/MILESTONES.md): delivery checklist and exit criteria tracking
 - [`PROJECT_STATE.md`](/home/nawaf/Projects/Qantara/PROJECT_STATE.md): current checkpoint, implemented scope, and next steps
 - [`M0_EXPERIMENTS.md`](/home/nawaf/Projects/Qantara/M0_EXPERIMENTS.md): explicit M0 validation program
@@ -84,6 +85,7 @@ Current adapter selection:
 
 - `QANTARA_ADAPTER=mock`
 - `QANTARA_ADAPTER=runtime_skeleton`
+- `QANTARA_ADAPTER=session_gateway_http`
 
 ## Quick Start
 

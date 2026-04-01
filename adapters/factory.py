@@ -4,6 +4,7 @@ import os
 
 from adapters.base import AdapterConfig, RuntimeAdapter
 from adapters.mock_adapter import MockAdapter
+from adapters.session_gateway_http import SessionGatewayHTTPAdapter
 from adapters.runtime_skeleton import RuntimeSkeletonAdapter
 
 
@@ -19,5 +20,7 @@ def create_adapter(config: AdapterConfig | None = None) -> RuntimeAdapter:
         return MockAdapter(config)
     if config.kind in {"runtime", "runtime_skeleton", "real"}:
         return RuntimeSkeletonAdapter(config)
+    if config.kind in {"session_gateway", "session_gateway_http", "http"}:
+        return SessionGatewayHTTPAdapter(config)
 
     raise ValueError(f"unsupported adapter kind: {config.kind}")

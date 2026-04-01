@@ -62,6 +62,8 @@ Source:
 - adapter factory: [`adapters/factory.py`](/home/nawaf/Projects/Qantara/adapters/factory.py)
 - mock adapter: [`adapters/mock_adapter.py`](/home/nawaf/Projects/Qantara/adapters/mock_adapter.py)
 - runtime skeleton adapter: [`adapters/runtime_skeleton.py`](/home/nawaf/Projects/Qantara/adapters/runtime_skeleton.py)
+- session-oriented HTTP adapter: [`adapters/session_gateway_http.py`](/home/nawaf/Projects/Qantara/adapters/session_gateway_http.py)
+- session gateway contract: [`SESSION_GATEWAY_CONTRACT.md`](/home/nawaf/Projects/Qantara/SESSION_GATEWAY_CONTRACT.md)
 - optional Piper path: [`gateway/transport_spike/tts_piper.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/tts_piper.py)
 - validated first STT path: [`gateway/transport_spike/stt_faster_whisper.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/stt_faster_whisper.py)
 - run notes template: [`experiments/notes/transport-spike.md`](/home/nawaf/Projects/Qantara/experiments/notes/transport-spike.md)
@@ -79,7 +81,7 @@ The current runnable spike can:
 - emit basic browser-side VAD state changes using an RMS threshold
 - request transcription of the recent audio buffer through a working faster-whisper path
 - select a downstream adapter by configuration
-- submit text turns through either the mock adapter or runtime skeleton adapter
+- submit text turns through the selected adapter
 - stream assistant text back to the browser through the configured adapter
 - optionally synthesize assistant text through Piper when configured
 - fall back to a synthetic tone path when Piper is unavailable
@@ -90,6 +92,7 @@ The current spike does not yet provide:
 
 - validated real STT behavior from actual local runs
 - a real adapter framework path that stays decoupled from the user's current local agents
+- the first concrete backend contract shape for a session-oriented adapter
 - real endpointing logic beyond simple browser-side VAD hints
 - real downstream runtime integration
 - robust barge-in semantics across active generation
