@@ -38,12 +38,13 @@
 
 ### TTS
 
-- Piper available: not confirmed
-- first-audio feel: not measured precisely yet
+- Piper available: no, not on the current machine
+- first-audio feel: only the synthetic fallback path has been observed so far
 - fallback tone used: yes
+- current result: Piper not validated in this environment yet
 
 ### Follow-Ups
 
-- validate whether Piper is actually available or still falling back to tone
-- decide whether Piper remains the first TTS candidate
+- install Piper and a usable voice model, or choose the replacement TTS candidate
+- decide whether Piper remains the first TTS candidate after a real run
 - continue tightening browser VAD and endpoint behavior from real observations

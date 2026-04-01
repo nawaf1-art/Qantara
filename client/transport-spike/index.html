@@ -154,6 +154,7 @@
         <div class="stat"><span class="stat-label">Socket</span><span id="socketState">disconnected</span></div>
         <div class="stat"><span class="stat-label">Mic</span><span id="micState">stopped</span></div>
         <div class="stat"><span class="stat-label">Playback</span><span id="playbackState">idle</span></div>
+        <div class="stat"><span class="stat-label">TTS</span><span id="ttsState">unknown</span></div>
         <div class="stat"><span class="stat-label">VAD</span><span id="vadState">silence</span></div>
         <div class="stat"><span class="stat-label">Last RMS</span><span id="vadRms">0.0000</span></div>
         <div class="stat"><span class="stat-label">Frames Sent</span><span id="framesSent">0</span></div>
@@ -238,6 +239,10 @@
 
     function setPlaybackState(value) {
       updateText("playbackState", value);
+    }
+
+    function setTtsState(value) {
+      updateText("ttsState", value);
     }
 
     function setVadState(value) {
@@ -496,6 +501,10 @@
               setTranscriptText(payload.text || "");
               setTranscribePending(false);
               log(`transcript (${payload.engine}): ${payload.text || "<empty>"}`);
+            } else if (payload.type === "tts_status") {
+              const statusText = payload.reason ? `${payload.engine} (${payload.reason})` : payload.engine;
+              setTtsState(statusText);
+              log(`tts status: ${statusText}`);
             } else {
               log(`control ${event.data}`);
             }

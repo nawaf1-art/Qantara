@@ -18,7 +18,7 @@ The project has moved beyond planning-only status. It now includes:
 - a runnable browser-to-gateway transport spike
 - a mock downstream adapter path
 - a validated first STT candidate path through faster-whisper
-- an optional first TTS candidate path through Piper
+- an optional but not yet validated first TTS candidate path through Piper
 
 ## What Is Decided
 
@@ -112,7 +112,6 @@ Not yet validated by actual experiment results:
 - whether Piper is a practical first TTS engine in your environment
 - whether the browser VAD threshold is tuned well enough for ongoing use
 - whether playback clear behavior is strong enough for later barge-in work
-- whether Piper is a practical first TTS engine in your environment
 
 That distinction matters. The repo contains a runnable validation slice, but M0 is not complete until those runs are executed and recorded.
 
@@ -184,7 +183,7 @@ The highest-value next steps are:
 
 1. Run the transport spike and record real observations in the notes file.
 2. Mark faster-whisper as the current first STT candidate.
-3. Validate whether Piper remains the first TTS candidate after real local testing.
+3. Install and validate Piper, or replace it as the first TTS candidate.
 4. Tune VAD threshold and transport framing from actual results.
 
 ## Repository Interpretation

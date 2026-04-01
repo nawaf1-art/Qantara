@@ -155,7 +155,18 @@ async def send_pcm_samples(
 
 
 async def speak_text(session: Session, text: str) -> None:
-    await session.emit("tts_chunk_ready", "playback", {"char_count": len(text), "engine": "piper" if PIPER.available else "synthetic"})
+    engine = "piper" if PIPER.available else "synthetic"
+    await session.emit("tts_chunk_ready", "playback", {"char_count": len(text), "engine": engine})
+    await session.websocket.send_str(
+        json.dumps(
+            {
+                "type": "tts_status",
+                "engine": engine,
+                "available": PIPER.available,
+                "reason": None if PIPER.available else "piper unavailable or no model configured",
+            }
+        )
+    )
 
     if PIPER.available:
         try:
@@ -167,6 +178,16 @@ async def speak_text(session: Session, text: str) -> None:
                 "recoverable_error",
                 "playback",
                 {"component": "tts", "message": str(exc), "engine": "piper"},
+            )
+            await session.websocket.send_str(
+                json.dumps(
+                    {
+                        "type": "tts_status",
+                        "engine": "synthetic",
+                        "available": False,
+                        "reason": f"piper failed: {exc}",
+                    }
+                )
             )
 
     await send_tone(session)
