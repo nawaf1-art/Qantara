@@ -211,6 +211,245 @@ At this stage, the research supports these conclusions:
 - `Home Assistant Assist` and `Wyoming` are valuable more for protocol and modularity lessons than direct implementation reuse
 - `LiveKit Agents` is strategically relevant if the project expands beyond a lightweight LAN gateway
 
+## Focused Comparisons
+
+### 1. WebSocket PCM Versus WebRTC
+
+#### WebSocket PCM
+
+Strengths:
+
+- easiest transport to prototype and debug
+- fits a browser-first LAN MVP with a thin custom client
+- keeps signaling and server logic simple
+- works well on controlled local networks
+
+Weaknesses:
+
+- no built-in media-layer echo cancellation
+- less robust handling for real-time media edge cases
+- fewer built-in transport diagnostics than WebRTC
+- likely to need more custom logic for jitter, timing, and media behavior
+
+When it fits Qantara:
+
+- M0 and M1
+- headset-first usage
+- one client, one session, controlled LAN conditions
+
+#### WebRTC
+
+Strengths:
+
+- purpose-built for real-time bidirectional media
+- browser ecosystem already supports media-oriented features and stats
+- much better fit for full-duplex audio and echo-sensitive interaction
+- stronger long-term path if Qantara becomes a serious realtime voice product
+
+Weaknesses:
+
+- more moving parts
+- signaling and session setup are more complex
+- can be unnecessary overhead for the earliest local prototype
+
+When it fits Qantara:
+
+- once speaker-mode or non-headset use becomes important
+- if barge-in reliability becomes limited by media behavior rather than gateway logic
+- if Qantara starts needing more robust client-facing real-time media handling
+
+Recommendation:
+
+- start with `WebSocket PCM` for the headset-first LAN MVP
+- treat `WebRTC` as the planned upgrade path, not as a rejected option
+- keep the gateway transport abstraction clean enough to swap later
+
+Why:
+
+- Pipecat explicitly positions WebSocket transports as suitable for prototyping and controlled environments, while recommending WebRTC-based transports for production client/server applications
+- LiveKit treats WebRTC as the core transport for real-time media and agent frontends
+- MDN confirms browser-level echo cancellation support, but Qantara should not assume that alone solves full-duplex speaker-mode voice UX
+
+### 2. Pipecat Versus Custom Gateway
+
+#### Pipecat
+
+Strengths:
+
+- closest framework match to Qantara's intended pipeline
+- already models transports, STT, TTS, frames, and client SDKs
+- likely the fastest path to a serious prototype
+- reduces integration glue for supported components
+
+Weaknesses:
+
+- introduces framework coupling
+- may constrain how Qantara wants to model interruptions and runtime boundaries
+- can hide complexity at first and then force adaptation later
+
+Best use for Qantara:
+
+- evaluation prototype
+- reference implementation
+- fast exploration of transport and audio orchestration choices
+
+#### Custom Gateway
+
+Strengths:
+
+- full control over session model, cancellation semantics, and runtime adapter contract
+- smallest dependency surface
+- easier to keep architecture aligned with Qantara's exact needs
+
+Weaknesses:
+
+- more engineering work up front
+- more transport and media details must be implemented directly
+- slower route to the first working end-to-end demo
+
+Best use for Qantara:
+
+- long-term core architecture if Qantara needs strict control and a narrow runtime boundary
+
+Recommendation:
+
+- do not commit the production architecture to Pipecat yet
+- evaluate Pipecat in M0 as a comparison path
+- keep the core project architecture based on a `custom gateway with optional framework-assisted prototype`
+
+Why:
+
+- Pipecat is highly relevant, but Qantara's biggest hard problems are not just pipeline wiring. They are interruption semantics, adapter boundaries, and long-term control of the session model.
+
+### 3. Piper Versus Kokoro Versus Other Local TTS
+
+#### Piper
+
+Strengths:
+
+- lightweight local deployment
+- fast and practical for low-latency self-hosted use
+- simple fit for an MVP
+
+Weaknesses:
+
+- official `rhasspy/piper` repo is archived
+- voice quality is good enough for many cases but not likely the ceiling
+- ecosystem direction should be treated cautiously because of repo movement
+
+Best use for Qantara:
+
+- latency-first baseline
+- dependable first offline TTS benchmark
+
+#### Kokoro
+
+Strengths:
+
+- unusually strong quality-to-size profile
+- open-weight model with Apache-licensed weights
+- attractive candidate when user experience quality matters early
+
+Weaknesses:
+
+- packaging and runtime path may be less minimal than Piper
+- real operational latency must be validated in Qantara's target setup
+- the ecosystem is moving quickly, so implementation choices may shift
+
+Best use for Qantara:
+
+- quality-first candidate for the first serious conversational demo
+
+#### Other Local TTS
+
+Notable alternative:
+
+- `Coqui XTTS`
+
+Why it matters:
+
+- supports streaming inference and voice cloning
+- stronger feature set in some scenarios than the simpler local engines
+
+Why it is not the first default for Qantara:
+
+- heavier than Qantara needs for the first headset-first LAN MVP
+- voice cloning is not part of the current project goal
+
+Recommendation:
+
+- benchmark `Piper` and `Kokoro` first under identical local conditions
+- keep `XTTS` as a secondary option if voice quality or feature needs exceed what those two provide
+
+Provisional conclusion:
+
+- `Piper` is the safer first latency baseline
+- `Kokoro` is the stronger first quality candidate
+- Qantara should not lock either choice until first-audio timing and interruption behavior are measured locally
+
+### 4. faster-whisper Versus whisper.cpp
+
+#### faster-whisper
+
+Strengths:
+
+- strong performance on modern GPU and CPU paths
+- mature Python integration surface
+- practical default choice for a Python-based gateway
+- supports VAD filtering and batched inference
+
+Weaknesses:
+
+- more Python-centric than whisper.cpp
+- deployment details depend more on Python packaging and CUDA library alignment
+
+Best use for Qantara:
+
+- leading STT candidate for a Python gateway
+- fast M0 and M1 development
+
+#### whisper.cpp
+
+Strengths:
+
+- lightweight C/C++ implementation
+- broad portability across CPU-first and edge-like environments
+- strong option for systems that want low dependency overhead
+- includes real-time microphone example and many platform targets
+
+Weaknesses:
+
+- lower-level integration path than faster-whisper in a Python-heavy stack
+- Qantara would likely need more glue around streaming and orchestration
+
+Best use for Qantara:
+
+- fallback or alternative if Python packaging, CUDA setup, or deployment constraints become painful
+- future option if Qantara wants a leaner runtime core
+
+Recommendation:
+
+- start with `faster-whisper`
+- keep `whisper.cpp` as the fallback and control-first alternative
+
+Why:
+
+- Qantara is already architecturally closer to a Python async gateway than a low-level native audio application
+- faster-whisper appears to offer the best path to a fast prototype without giving up local deployment
+
+## Working Recommendations
+
+If Qantara started implementation tomorrow, the research currently points to this stack:
+
+- transport: `WebSocket PCM` first, designed to allow later WebRTC migration
+- gateway: `custom async gateway`, with `Pipecat` evaluated in parallel as a reference path
+- browser VAD: `@ricky0123/vad`
+- STT first candidate: `faster-whisper`
+- STT fallback: `whisper.cpp`
+- TTS first benchmark pair: `Piper` and `Kokoro`
+
+This is not yet a final architecture lock. It is the most defensible starting point based on current research.
+
 ## Recommended Reading Order
 
 1. Pipecat transport guidance and examples
