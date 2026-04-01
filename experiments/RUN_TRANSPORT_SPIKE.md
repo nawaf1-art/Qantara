@@ -14,6 +14,7 @@ Optional:
 
 - `piper-tts` installed in the repo `.venv`
 - `QANTARA_PIPER_MODEL` pointing to a Piper voice model, or the default local test model at `models/piper/en_US-lessac-medium.onnx`
+- `QANTARA_ADAPTER=mock` or `QANTARA_ADAPTER=runtime_skeleton`
 
 ## Start Gateway
 

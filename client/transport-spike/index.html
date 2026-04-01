@@ -155,6 +155,7 @@
         <div class="stat"><span class="stat-label">Mic</span><span id="micState">stopped</span></div>
         <div class="stat"><span class="stat-label">Playback</span><span id="playbackState">idle</span></div>
         <div class="stat"><span class="stat-label">TTS</span><span id="ttsState">unknown</span></div>
+        <div class="stat"><span class="stat-label">Adapter</span><span id="adapterState">unknown</span></div>
         <div class="stat"><span class="stat-label">VAD</span><span id="vadState">silence</span></div>
         <div class="stat"><span class="stat-label">Last RMS</span><span id="vadRms">0.0000</span></div>
         <div class="stat"><span class="stat-label">Frames Sent</span><span id="framesSent">0</span></div>
@@ -252,6 +253,10 @@
 
     function setTtsState(value) {
       updateText("ttsState", value);
+    }
+
+    function setAdapterState(value) {
+      updateText("adapterState", value);
     }
 
     function setVadState(value) {
@@ -572,6 +577,14 @@
               const statusText = payload.reason ? `${payload.engine} (${payload.reason})` : payload.engine;
               setTtsState(statusText);
               log(`tts status: ${statusText}`);
+            } else if (payload.type === "session_ready") {
+              if (payload.adapter_kind) {
+                const adapterText = payload.adapter_detail
+                  ? `${payload.adapter_kind} (${payload.adapter_health}: ${payload.adapter_detail})`
+                  : `${payload.adapter_kind} (${payload.adapter_health})`;
+                setAdapterState(adapterText);
+              }
+              log(`control ${event.data}`);
             } else if (payload.type === "playback_metrics") {
               setFirstAudioMs(payload.tts_to_first_audio_ms);
               log(

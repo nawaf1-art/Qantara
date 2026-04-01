@@ -14,7 +14,7 @@ CLIENT_SPIKE_DIR = os.path.join(REPO_ROOT, "client", "transport-spike")
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from adapters.mock_adapter import MockAdapter
+from adapters.factory import create_adapter, load_adapter_config
 from gateway.transport_spike.stt_faster_whisper import FasterWhisperSTT
 from gateway.transport_spike.tts_piper import PiperTTS
 
@@ -67,7 +67,8 @@ class Session:
         print(json.dumps(record), flush=True)
 
 
-ADAPTER = MockAdapter()
+ADAPTER_CONFIG = load_adapter_config()
+ADAPTER = create_adapter(ADAPTER_CONFIG)
 PIPER = PiperTTS(voice_path=PIPER_VOICE_PATH)
 STT = FasterWhisperSTT(
     model_name=FASTER_WHISPER_MODEL,
@@ -261,16 +262,25 @@ async def speak_text(session: Session, text: str) -> None:
     await send_tone(session)
 
 
-async def stream_mock_assistant(session: Session, transcript: str) -> None:
+async def ensure_adapter_session(session: Session) -> None:
     if session.runtime_session_handle is None:
         session.runtime_session_handle = await ADAPTER.start_or_resume_session(
             {"client_name": "browser-transport-spike", "session_id": session.session_id}
         )
+        health = await ADAPTER.check_health()
         await session.emit(
             "adapter_session_ready",
             "adapter",
-            {"runtime_session_handle": session.runtime_session_handle},
+            {
+                "runtime_session_handle": session.runtime_session_handle,
+                "adapter_kind": ADAPTER.adapter_kind,
+                "adapter_health": health.status,
+            },
         )
+
+
+async def stream_assistant_turn(session: Session, transcript: str) -> None:
+    await ensure_adapter_session(session)
 
     session.turn_id = str(uuid.uuid4())
     await session.emit("turn_submit_started", "adapter", {"turn_id": session.turn_id, "transcript": transcript})
@@ -282,6 +292,7 @@ async def stream_mock_assistant(session: Session, transcript: str) -> None:
     await session.emit("turn_submit_accepted", "adapter", {"turn_id": session.turn_id, "turn_handle": turn_handle})
 
     buffered = ""
+    saw_final = False
     await session.emit("assistant_output_started", "adapter", {"turn_handle": turn_handle})
     async for event in ADAPTER.stream_assistant_output(session.runtime_session_handle, turn_handle):
         if event["type"] == "assistant_text_delta":
@@ -293,6 +304,7 @@ async def stream_mock_assistant(session: Session, transcript: str) -> None:
             )
             await session.websocket.send_str(json.dumps({"type": "assistant_text_delta", "text": event["text"]}))
         elif event["type"] == "assistant_text_final":
+            saw_final = True
             await session.emit(
                 "assistant_output_completed",
                 "adapter",
@@ -300,6 +312,15 @@ async def stream_mock_assistant(session: Session, transcript: str) -> None:
             )
             await session.websocket.send_str(json.dumps({"type": "assistant_text_final", "text": event["text"]}))
             await speak_text(session, event["text"])
+
+    if not saw_final and buffered:
+        await session.emit(
+            "assistant_output_completed",
+            "adapter",
+            {"turn_handle": turn_handle, "final_chars": len(buffered), "completed_via": "buffer_flush"},
+        )
+        await session.websocket.send_str(json.dumps({"type": "assistant_text_final", "text": buffered}))
+        await speak_text(session, buffered)
 
 
 async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
@@ -319,7 +340,18 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
 
             if message_type == "session_init":
                 await session.emit("session_ready", "gateway", {"client_name": payload.get("client_name")})
-                await ws.send_str(json.dumps({"type": "session_ready", "session_id": session.session_id}))
+                health = await ADAPTER.check_health()
+                await ws.send_str(
+                    json.dumps(
+                        {
+                            "type": "session_ready",
+                            "session_id": session.session_id,
+                            "adapter_kind": ADAPTER.adapter_kind,
+                            "adapter_health": health.status,
+                            "adapter_detail": health.detail,
+                        }
+                    )
+                )
             elif message_type == "mic_stream_started":
                 await session.emit(
                     "mic_stream_started",
@@ -343,12 +375,12 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                         }
                     )
                 )
-            elif message_type == "submit_mock_turn":
+            elif message_type in {"submit_mock_turn", "submit_turn"}:
                 transcript = payload.get("text", "").strip()
                 if not transcript:
                     await session.emit("recoverable_error", "gateway", {"component": "control", "message": "empty mock turn"})
                 else:
-                    await stream_mock_assistant(session, transcript)
+                    await stream_assistant_turn(session, transcript)
             elif message_type == "transcribe_recent_audio":
                 await session.emit(
                     "transcription_requested",

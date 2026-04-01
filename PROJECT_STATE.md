@@ -16,7 +16,7 @@ The project has moved beyond planning-only status. It now includes:
 - a locked MVP transport decision
 - a locked gateway direction
 - a runnable browser-to-gateway transport spike
-- a mock downstream adapter path
+- a configurable adapter framework with mock and runtime-skeleton paths
 - a validated first STT candidate path through faster-whisper
 - a validated first TTS candidate path through Piper
 
@@ -58,7 +58,10 @@ Source:
 - spike runbook: [`experiments/RUN_TRANSPORT_SPIKE.md`](/home/nawaf/Projects/Qantara/experiments/RUN_TRANSPORT_SPIKE.md)
 - browser client: [`client/transport-spike/index.html`](/home/nawaf/Projects/Qantara/client/transport-spike/index.html)
 - gateway server: [`gateway/transport_spike/server.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/server.py)
+- adapter base types: [`adapters/base.py`](/home/nawaf/Projects/Qantara/adapters/base.py)
+- adapter factory: [`adapters/factory.py`](/home/nawaf/Projects/Qantara/adapters/factory.py)
 - mock adapter: [`adapters/mock_adapter.py`](/home/nawaf/Projects/Qantara/adapters/mock_adapter.py)
+- runtime skeleton adapter: [`adapters/runtime_skeleton.py`](/home/nawaf/Projects/Qantara/adapters/runtime_skeleton.py)
 - optional Piper path: [`gateway/transport_spike/tts_piper.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/tts_piper.py)
 - validated first STT path: [`gateway/transport_spike/stt_faster_whisper.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/stt_faster_whisper.py)
 - run notes template: [`experiments/notes/transport-spike.md`](/home/nawaf/Projects/Qantara/experiments/notes/transport-spike.md)
@@ -75,8 +78,9 @@ The current runnable spike can:
 - play returned PCM audio in the browser
 - emit basic browser-side VAD state changes using an RMS threshold
 - request transcription of the recent audio buffer through a working faster-whisper path
-- submit mock text turns to a runtime-agnostic mock adapter
-- stream mock assistant text deltas and final text back to the browser
+- select a downstream adapter by configuration
+- submit text turns through either the mock adapter or runtime skeleton adapter
+- stream assistant text back to the browser through the configured adapter
 - optionally synthesize assistant text through Piper when configured
 - fall back to a synthetic tone path when Piper is unavailable
 
@@ -85,6 +89,7 @@ The current runnable spike can:
 The current spike does not yet provide:
 
 - validated real STT behavior from actual local runs
+- a real adapter framework path that stays decoupled from the user's current local agents
 - real endpointing logic beyond simple browser-side VAD hints
 - real downstream runtime integration
 - robust barge-in semantics across active generation
@@ -191,7 +196,7 @@ The highest-value next steps are:
 
 1. Reduce Piper first-audio latency from the current ~`1.7s` baseline if possible.
 2. Tune VAD threshold and transport framing from actual results.
-3. Start the real runtime adapter path in parallel with the next M0 refinements.
+3. Replace the runtime skeleton adapter with the first concrete backend adapter when the target runtime contract is chosen.
 4. Keep backend playback-stop telemetry distinct from user-perceived audible stop timing.
 
 ## Repository Interpretation

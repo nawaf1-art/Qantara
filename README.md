@@ -68,7 +68,7 @@ The repository now includes a runnable browser-to-gateway transport spike with:
 - gateway-side transport event logging
 - browser playback of gateway PCM audio
 - validated faster-whisper transcription of recent captured audio
-- mock runtime turn submission and assistant text streaming
+- configurable adapter selection with `mock` and `runtime_skeleton` modes
 - locally validated Piper runtime path with synthetic fallback still available
 
 This is a real validation slice, not just design documentation. The current M0 spike has now validated the first STT candidate path through faster-whisper and the first TTS candidate path through Piper. Later runtime binding and interruption hardening still remain open.
@@ -78,6 +78,11 @@ Current measured baseline:
 - Piper first-audio is roughly `1.7s`
 - local browser playback clear is effectively immediate
 - backend playback-stop telemetry is still separate from user-perceived audible stop timing
+
+Current adapter selection:
+
+- `QANTARA_ADAPTER=mock`
+- `QANTARA_ADAPTER=runtime_skeleton`
 
 ## Quick Start
 
