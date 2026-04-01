@@ -56,6 +56,7 @@ Qantara should behave as a voice channel adapter around a downstream conversatio
 - [`PROJECT_STATE.md`](/home/nawaf/Projects/Qantara/PROJECT_STATE.md): current checkpoint, implemented scope, and next steps
 - [`M0_EXPERIMENTS.md`](/home/nawaf/Projects/Qantara/M0_EXPERIMENTS.md): explicit M0 validation program
 - [`experiments/RUN_TRANSPORT_SPIKE.md`](/home/nawaf/Projects/Qantara/experiments/RUN_TRANSPORT_SPIKE.md): how to run the current spike and record results
+- [`ops/README.md`](/home/nawaf/Projects/Qantara/ops/README.md): LAN HTTPS serving guidance for browser microphone access
 
 ## Current Status
 
@@ -115,3 +116,10 @@ Then open from another device on the same network:
 ```text
 http://<your-lan-ip>:8899/spike
 ```
+
+Important:
+
+- plain `http://<your-lan-ip>` is enough for transport testing
+- it is usually not enough for microphone access from another device
+- for LAN mic access, serve the spike over `HTTPS` and let the client use `WSS`
+- see [`ops/README.md`](/home/nawaf/Projects/Qantara/ops/README.md)

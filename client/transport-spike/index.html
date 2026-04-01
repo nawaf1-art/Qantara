@@ -442,7 +442,8 @@
     function connect() {
       const host = window.location.hostname || "127.0.0.1";
       const port = window.location.port || "8765";
-      socket = new WebSocket(`ws://${host}:${port}/ws`);
+      const wsScheme = window.location.protocol === "https:" ? "wss" : "ws";
+      socket = new WebSocket(`${wsScheme}://${host}:${port}/ws`);
       socket.binaryType = "arraybuffer";
 
       socket.onopen = () => {
@@ -514,6 +515,9 @@
 
     connectBtn.addEventListener("click", async () => {
       await ensurePlaybackContext();
+      if (!window.isSecureContext && window.location.hostname !== "127.0.0.1" && window.location.hostname !== "localhost") {
+        log("warning: microphone access will likely fail on insecure non-localhost origins; use HTTPS for LAN mic access");
+      }
       connect();
     });
 
