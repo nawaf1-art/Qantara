@@ -131,6 +131,11 @@ Why it matters:
 - avoids prematurely coupling the project to a specific local agent topology
 - defines the real adapter surface that the voice gateway must support
 
+Current direction:
+
+- the first concrete backend adapter should target a `session-oriented agent gateway` shape
+- see [`BACKEND_ADAPTER_TARGETS.md`](/home/nawaf/Projects/Qantara/BACKEND_ADAPTER_TARGETS.md)
+
 ### D-008: Assistant Output To TTS Buffering Policy
 
 Status: open
