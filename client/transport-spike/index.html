@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Qantara Transport Spike</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --panel: #fffaf2;
+      --ink: #1f2328;
+      --muted: #636b74;
+      --line: #d5c6b5;
+      --accent: #0f766e;
+      --warn: #a16207;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, #fdf7ee 0, #f4f1ea 45%, #ebe3d5 100%);
+      min-height: 100vh;
+    }
+
+    main {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 2.4rem;
+      font-weight: 600;
+    }
+
+    p {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .panel {
+      background: rgba(255, 250, 242, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 14px 40px rgba(31, 35, 40, 0.08);
+      margin-top: 18px;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid var(--ink);
+      background: var(--panel);
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 10px 14px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    button.warn {
+      color: var(--warn);
+      border-color: var(--warn);
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .stat {
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.6);
+    }
+
+    .stat-label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    code, pre {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.9rem;
+    }
+
+    pre {
+      margin: 0;
+      max-height: 360px;
+      overflow: auto;
+      white-space: pre-wrap;
+      background: #211f1b;
+      color: #eae6df;
+      border-radius: 12px;
+      padding: 14px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Qantara Transport Spike</h1>
+    <p>
+      Thin browser client for the M0 transport spike. It streams PCM16 microphone frames to the
+      gateway over WebSocket and plays PCM16 audio frames returned by the gateway.
+    </p>
+
+    <section class="panel">
+      <div class="controls">
+        <button id="connectBtn" class="primary">Connect</button>
+        <button id="disconnectBtn" class="warn" disabled>Disconnect</button>
+        <button id="micBtn" disabled>Start Mic</button>
+        <button id="toneBtn" disabled>Request Tone</button>
+        <button id="clearBtn" disabled>Clear Playback</button>
+      </div>
+
+      <div class="status-grid">
+        <div class="stat"><span class="stat-label">Socket</span><span id="socketState">disconnected</span></div>
+        <div class="stat"><span class="stat-label">Mic</span><span id="micState">stopped</span></div>
+        <div class="stat"><span class="stat-label">Playback</span><span id="playbackState">idle</span></div>
+        <div class="stat"><span class="stat-label">Frames Sent</span><span id="framesSent">0</span></div>
+        <div class="stat"><span class="stat-label">Frames Received</span><span id="framesReceived">0</span></div>
+        <div class="stat"><span class="stat-label">Sample Rate</span><span id="sampleRate">16000</span></div>
+      </div>
+
+      <pre id="log"></pre>
+    </section>
+  </main>
+
+  <script>
+    const TARGET_SAMPLE_RATE = 16000;
+    const FRAMES_PER_PACKET = 640;
+    const PCM_KIND = 0x01;
+    const JSON_KIND = 0x7b; // "{"
+
+    const connectBtn = document.getElementById("connectBtn");
+    const disconnectBtn = document.getElementById("disconnectBtn");
+    const micBtn = document.getElementById("micBtn");
+    const toneBtn = document.getElementById("toneBtn");
+    const clearBtn = document.getElementById("clearBtn");
+
+    let socket = null;
+    let micContext = null;
+    let captureStream = null;
+    let sourceNode = null;
+    let processorNode = null;
+    let playbackContext = null;
+    let nextPlaybackAt = 0;
+    let framesSent = 0;
+    let framesReceived = 0;
+    let micActive = false;
+
+    function $(id) {
+      return document.getElementById(id);
+    }
+
+    function log(message) {
+      const stamp = new Date().toISOString();
+      $("log").textContent = `[${stamp}] ${message}\n` + $("log").textContent;
+    }
+
+    function updateText(id, value) {
+      $(id).textContent = String(value);
+    }
+
+    function setSocketState(value) {
+      updateText("socketState", value);
+      const connected = value === "connected";
+      connectBtn.disabled = connected;
+      disconnectBtn.disabled = !connected;
+      micBtn.disabled = !connected;
+      toneBtn.disabled = !connected;
+      clearBtn.disabled = !connected;
+    }
+
+    function setMicState(value) {
+      updateText("micState", value);
+      micBtn.textContent = value === "running" ? "Stop Mic" : "Start Mic";
+    }
+
+    function setPlaybackState(value) {
+      updateText("playbackState", value);
+    }
+
+    function encodePcmFrame(samples) {
+      const payload = new ArrayBuffer(1 + samples.length * 2);
+      const view = new DataView(payload);
+      view.setUint8(0, PCM_KIND);
+      for (let i = 0; i < samples.length; i += 1) {
+        view.setInt16(1 + i * 2, samples[i], true);
+      }
+      return payload;
+    }
+
+    function floatToInt16(floatArray) {
+      const pcm = new Int16Array(floatArray.length);
+      for (let i = 0; i < floatArray.length; i += 1) {
+        const sample = Math.max(-1, Math.min(1, floatArray[i]));
+        pcm[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+      }
+      return pcm;
+    }
+
+    function downsample(input, inputRate, targetRate) {
+      if (inputRate === targetRate) {
+        return input;
+      }
+
+      const ratio = inputRate / targetRate;
+      const length = Math.round(input.length / ratio);
+      const output = new Float32Array(length);
+      let offsetResult = 0;
+      let offsetBuffer = 0;
+
+      while (offsetResult < output.length) {
+        const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
+        let accum = 0;
+        let count = 0;
+        for (let i = offsetBuffer; i < nextOffsetBuffer && i < input.length; i += 1) {
+          accum += input[i];
+          count += 1;
+        }
+        output[offsetResult] = count > 0 ? accum / count : 0;
+        offsetResult += 1;
+        offsetBuffer = nextOffsetBuffer;
+      }
+
+      return output;
+    }
+
+    async function ensurePlaybackContext() {
+      if (!playbackContext) {
+        playbackContext = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
+      }
+      if (playbackContext.state === "suspended") {
+        await playbackContext.resume();
+      }
+    }
+
+    async function schedulePlayback(int16Payload) {
+      await ensurePlaybackContext();
+
+      const float32 = new Float32Array(int16Payload.length);
+      for (let i = 0; i < int16Payload.length; i += 1) {
+        float32[i] = int16Payload[i] / 32768;
+      }
+
+      const buffer = playbackContext.createBuffer(1, float32.length, TARGET_SAMPLE_RATE);
+      buffer.copyToChannel(float32, 0);
+
+      const source = playbackContext.createBufferSource();
+      source.buffer = buffer;
+      source.connect(playbackContext.destination);
+
+      const now = playbackContext.currentTime;
+      nextPlaybackAt = Math.max(nextPlaybackAt, now + 0.02);
+      source.start(nextPlaybackAt);
+      setPlaybackState("playing");
+
+      const duration = buffer.duration;
+      nextPlaybackAt += duration;
+
+      source.onended = () => {
+        if (playbackContext.currentTime >= nextPlaybackAt - 0.03) {
+          setPlaybackState("idle");
+        }
+      };
+    }
+
+    function sendJson(message) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      socket.send(JSON.stringify(message));
+    }
+
+    async function startMic() {
+      if (micActive) {
+        stopMic();
+        return;
+      }
+
+      captureStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      micContext = new AudioContext();
+      sourceNode = micContext.createMediaStreamSource(captureStream);
+      processorNode = micContext.createScriptProcessor(2048, 1, 1);
+
+      let pending = new Int16Array(0);
+
+      processorNode.onaudioprocess = (event) => {
+        const input = event.inputBuffer.getChannelData(0);
+        const downsampled = downsample(input, micContext.sampleRate, TARGET_SAMPLE_RATE);
+        const pcm = floatToInt16(downsampled);
+        const merged = new Int16Array(pending.length + pcm.length);
+        merged.set(pending);
+        merged.set(pcm, pending.length);
+
+        let offset = 0;
+        while (merged.length - offset >= FRAMES_PER_PACKET) {
+          const packet = merged.slice(offset, offset + FRAMES_PER_PACKET);
+          socket.send(encodePcmFrame(packet));
+          framesSent += 1;
+          updateText("framesSent", framesSent);
+          offset += FRAMES_PER_PACKET;
+        }
+
+        pending = merged.slice(offset);
+      };
+
+      sourceNode.connect(processorNode);
+      processorNode.connect(micContext.destination);
+      micActive = true;
+      setMicState("running");
+      updateText("sampleRate", TARGET_SAMPLE_RATE);
+      sendJson({ type: "mic_stream_started", sample_rate: TARGET_SAMPLE_RATE });
+      log("microphone capture started");
+    }
+
+    function stopMic() {
+      if (!micActive) {
+        return;
+      }
+
+      processorNode?.disconnect();
+      sourceNode?.disconnect();
+      captureStream?.getTracks().forEach((track) => track.stop());
+      micContext?.close();
+      micContext = null;
+      captureStream = null;
+      sourceNode = null;
+      processorNode = null;
+      micActive = false;
+      setMicState("stopped");
+      sendJson({ type: "mic_stream_stopped" });
+      log("microphone capture stopped");
+    }
+
+    function connect() {
+      const host = window.location.hostname || "127.0.0.1";
+      socket = new WebSocket(`ws://${host}:8765/ws`);
+      socket.binaryType = "arraybuffer";
+
+      socket.onopen = () => {
+        setSocketState("connected");
+        sendJson({ type: "session_init", client_name: "browser-transport-spike" });
+        log("socket connected");
+      };
+
+      socket.onclose = () => {
+        stopMic();
+        setSocketState("disconnected");
+        setPlaybackState("idle");
+        log("socket disconnected");
+      };
+
+      socket.onerror = () => {
+        log("socket error");
+      };
+
+      socket.onmessage = async (event) => {
+        if (typeof event.data === "string") {
+          log(`control ${event.data}`);
+          return;
+        }
+
+        const data = new Uint8Array(event.data);
+        if (data[0] === JSON_KIND) {
+          const text = new TextDecoder().decode(data);
+          log(`control ${text}`);
+          return;
+        }
+
+        if (data[0] !== PCM_KIND) {
+          log(`ignored binary message kind=${data[0]}`);
+          return;
+        }
+
+        framesReceived += 1;
+        updateText("framesReceived", framesReceived);
+        const view = new DataView(data.buffer, data.byteOffset + 1, data.byteLength - 1);
+        const samples = new Int16Array((data.byteLength - 1) / 2);
+        for (let i = 0; i < samples.length; i += 1) {
+          samples[i] = view.getInt16(i * 2, true);
+        }
+        await schedulePlayback(samples);
+      };
+    }
+
+    function disconnect() {
+      stopMic();
+      socket?.close();
+    }
+
+    connectBtn.addEventListener("click", async () => {
+      await ensurePlaybackContext();
+      connect();
+    });
+
+    disconnectBtn.addEventListener("click", () => disconnect());
+    micBtn.addEventListener("click", async () => startMic());
+    toneBtn.addEventListener("click", () => sendJson({ type: "request_tone" }));
+    clearBtn.addEventListener("click", () => {
+      nextPlaybackAt = playbackContext ? playbackContext.currentTime : 0;
+      setPlaybackState("idle");
+      sendJson({ type: "clear_playback" });
+      log("playback clear requested");
+    });
+  </script>
+</body>
+</html>
