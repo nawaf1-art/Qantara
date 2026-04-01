@@ -3,18 +3,24 @@
 ## M0: Technical Validation
 
 - [ ] Define a runtime adapter boundary that does not depend on a specific local OpenClaw deployment
-- [ ] Choose whether to prototype with a custom gateway or evaluate Pipecat first
+- [ ] Write down the custom gateway session model for a single browser client
+- [ ] Prove browser mic capture to the gateway over WebSocket PCM
+- [ ] Prove browser playback of streamed audio from the gateway
+- [ ] Validate WebSocket PCM as the MVP transport under headset-first conditions
+- [ ] Evaluate Pipecat as a reference path against the same MVP requirements
 - [ ] Choose baseline local STT candidate
 - [ ] Choose baseline local TTS candidate
+- [ ] Define the initial TTS chunking rule to test
 - [ ] Define voice event timeline schema
-- [ ] Prove browser mic capture to gateway over LAN
-- [ ] Prove browser playback of streamed audio from the gateway
-- [ ] Evaluate WebSocket PCM as the initial transport and record whether WebRTC is needed later
+- [ ] Confirm the gateway can emit the minimum required timestamps
+- [ ] Record the concrete migration triggers that would justify moving to WebRTC later
 
 Exit criteria:
 
 - Browser client can send audio and receive gateway-driven output on one LAN session
 - The project can proceed on speech, transport, and state-machine work without binding to current local OpenClaw agents
+- The custom gateway remains the chosen implementation path after the Pipecat comparison
+- One STT candidate and one TTS candidate are selected for M1
 
 ## M1: Full-Duplex Foundation
 

@@ -69,9 +69,54 @@ Tradeoff:
 
 - early demos may not reflect open-speaker production use
 
+### D-005: WebSocket-First Transport
+
+Status: accepted
+
+Qantara will start with raw PCM over WebSocket for the browser-to-gateway transport.
+
+Reason:
+
+- fastest path to a controlled LAN MVP
+- simplest transport to debug while the session model is still evolving
+- sufficient for headset-first, single-session validation
+
+Tradeoff:
+
+- weaker media handling and echo resilience than a WebRTC-based path
+- likely not the final transport if speaker-mode and broader client robustness become important
+
+Revisit when:
+
+- Qantara moves beyond headset-first usage
+- speaker-mode full-duplex behavior becomes a primary target
+- transport reliability problems are caused by media-layer limitations rather than gateway logic
+
+### D-006: Custom Gateway With Pipecat Evaluation
+
+Status: accepted
+
+Qantara will use a custom async voice gateway as the primary architecture, while Pipecat will be evaluated as a reference and prototype path during early validation.
+
+Reason:
+
+- preserves control over session state, interruption semantics, and runtime adapter boundaries
+- avoids locking the core architecture to a framework before the hard interaction problems are proven
+- still allows rapid comparison against a framework that closely matches the problem space
+
+Tradeoff:
+
+- more implementation work in the core gateway
+- requires discipline to keep the evaluation path from turning into accidental framework lock-in
+
+Revisit when:
+
+- Pipecat demonstrates a materially better path for Qantara's exact session and interruption model
+- the custom gateway starts reimplementing framework behavior with no strategic benefit
+
 ## Open
 
-### D-005: Downstream Runtime Binding
+### D-007: Downstream Runtime Binding
 
 Status: open
 
@@ -86,7 +131,7 @@ Why it matters:
 - avoids prematurely coupling the project to a specific local agent topology
 - defines the real adapter surface that the voice gateway must support
 
-### D-006: Assistant Output To TTS Buffering Policy
+### D-008: Assistant Output To TTS Buffering Policy
 
 Status: open
 
@@ -100,7 +145,7 @@ Why it matters:
 
 - affects latency, coherence, and interruption quality
 
-### D-007: Interruption Cancel Semantics
+### D-009: Interruption Cancel Semantics
 
 Status: open
 
@@ -114,7 +159,7 @@ Why it matters:
 
 - affects history consistency and downstream race conditions
 
-### D-008: First Local Speech Engines
+### D-010: First Local Speech Engines
 
 Status: open
 
@@ -128,30 +173,30 @@ Why it matters:
 
 - affects boot time, latency, and deployment footprint
 
-### D-009: Gateway Implementation Path
+### D-011: Initial TTS Chunking Rule
 
 Status: open
 
 Decision needed:
 
-- custom async gateway
-- Pipecat-based prototype
-- hybrid approach where Pipecat is used only for evaluation
+- sentence-buffered first chunk
+- punctuation-aware early chunking
+- token-count fast path for first audio
 
 Why it matters:
 
-- affects dependency weight, control over the state machine, and speed of implementation
+- directly affects first-audio latency and spoken coherence
 
-### D-010: Transport Strategy
+### D-012: WebRTC Migration Trigger
 
 Status: open
 
 Decision needed:
 
-- raw PCM over WebSocket
-- WebRTC transport
-- staged approach that starts with WebSocket and evaluates WebRTC later
+- what concrete conditions should trigger migration from WebSocket to WebRTC
+- whether migration should happen at the browser edge only or more broadly in the transport layer
 
 Why it matters:
 
-- affects echo handling, browser complexity, and end-to-end latency characteristics
+- keeps the MVP simple without losing the long-term media path
+- avoids premature transport complexity while preserving a clear escalation rule

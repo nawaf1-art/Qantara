@@ -17,6 +17,8 @@ Rationale:
 
 Defer an in-process OpenClaw plugin until the protocol, state machine, and cancellation semantics are stable.
 
+The primary implementation path is a custom async gateway. Pipecat should still be evaluated in M0 as a comparison path and reference implementation, but it is not the default architecture.
+
 ## Product Requirements
 
 - Full-duplex interaction: the client can keep listening while assistant audio is playing
@@ -45,12 +47,14 @@ Browser-first implications:
 
 ## Suggested Runtime Stack
 
-- Transport: WebSocket
+- Transport: raw PCM over WebSocket for the MVP
 - Audio input format: PCM16 mono 16 kHz
 - VAD: Silero VAD or WebRTC VAD
 - STT candidates: faster-whisper or whisper.cpp streaming path
 - TTS candidates: Piper, Kokoro, or equivalent local engines
 - Concurrency model: async event loop with per-session state
+
+WebRTC remains a later transport path if Qantara outgrows the limitations of a WebSocket-based headset-first MVP.
 
 ## Integration Boundary With The Downstream Runtime
 
@@ -73,16 +77,32 @@ The exact runtime contract remains undecided. Qantara should not assume a specif
 - Whether headset-first deployment is required for the MVP
 - What confirmation gate is needed for high-risk tools
 - Which OpenClaw integration path, if any, should be adopted later
-- Whether a framework such as Pipecat adds enough value over a custom gateway
-- Whether transport should remain WebSocket PCM or move to WebRTC
+- What exact conditions should trigger migration from WebSocket PCM to WebRTC
+- What first-chunk TTS rule best balances latency and speech coherence
 
 ## Phase 0: Technical Validation
 
-- Validate local speech stack candidates without binding to a specific OpenClaw deployment
-- Choose the first local STT and TTS engines based on startup cost, latency, and quality
-- Define event schema for voice timeline tracing
-- Prove a minimal browser client can stream mic audio to the gateway over LAN
-- Decide whether to prototype with a custom gateway or evaluate Pipecat as a reference path
+Run explicit M0 experiments before feature implementation:
+
+1. Transport experiment
+   - prove browser mic capture to the custom gateway over WebSocket PCM
+   - prove browser playback of streamed audio from the gateway
+   - record whether headset-first use exposes any immediate media-layer blockers
+
+2. Gateway shape experiment
+   - define the runtime adapter boundary without binding to a specific local OpenClaw deployment
+   - sketch the custom async gateway session model
+   - evaluate Pipecat as a reference path against the same requirements
+
+3. Speech stack experiment
+   - compare first local STT candidates for latency and implementation friction
+   - compare first local TTS candidates for first-audio speed and usability
+   - define the initial TTS chunking rule to test
+
+4. Observability experiment
+   - define the voice event timeline schema
+   - confirm that the gateway can emit timestamps for each major stage
+   - define minimum measurements required before M1 starts
 
 Exit criteria:
 
@@ -90,6 +110,9 @@ Exit criteria:
 - A mock or adapter boundary exists for finalized turn submission and assistant output streaming
 - Browser audio permission and reconnect flow are understood
 - No assumptions about the eventual local OpenClaw agent topology are required to continue core gateway design
+- The WebSocket transport is good enough for the first implementation milestone
+- The custom gateway remains the preferred implementation path after comparison with Pipecat
+- One STT candidate and one TTS candidate are selected for M1 work
 
 ## Phase 1: Full-Duplex Foundation
 
