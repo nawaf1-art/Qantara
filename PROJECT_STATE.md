@@ -1,5 +1,7 @@
 # Project State
 
+Version: `0.1.0-alpha.1`
+
 ## Checkpoint
 
 This document captures the current state of Qantara as of the latest planning and M0 transport-spike work.
@@ -19,6 +21,8 @@ The project has moved beyond planning-only status. It now includes:
 - a configurable adapter framework with mock and runtime-skeleton paths
 - a validated first STT candidate path through faster-whisper
 - a validated first TTS candidate path through Piper
+- a validated session-oriented adapter path through a local fake backend
+- a validated endpoint-ready speech submission path
 
 ## What Is Decided
 
@@ -81,6 +85,8 @@ The current runnable spike can:
 - play returned PCM audio in the browser
 - emit basic browser-side VAD state changes using an RMS threshold
 - request transcription of the recent audio buffer through a working faster-whisper path
+- mark endpoint-ready after stable silence in the browser
+- submit recent speech through the endpoint-ready flow
 - select a downstream adapter by configuration
 - submit text turns through the selected adapter
 - stream assistant text back to the browser through the configured adapter
@@ -91,11 +97,6 @@ The current runnable spike can:
 
 The current spike does not yet provide:
 
-- validated real STT behavior from actual local runs
-- a real adapter framework path that stays decoupled from the user's current local agents
-- the first concrete backend contract shape for a session-oriented adapter
-- a local fake backend that implements the concrete session-oriented contract for end-to-end adapter validation
-- real endpointing logic beyond simple browser-side VAD hints
 - real downstream runtime integration
 - robust barge-in semantics across active generation
 - production-ready playback buffering
@@ -119,6 +120,7 @@ Validated by actual testing:
 - the Piper runtime and first local voice model now synthesize successfully on this machine
 - Piper playback through the browser spike is working on the current secure LAN path
 - end-to-end cancellation is working across browser, gateway, HTTP adapter, and fake backend
+- endpoint-ready plus submit-recent-speech is working across browser, gateway, STT, HTTP adapter, and fake backend
 
 Not yet validated by actual experiment results:
 
@@ -184,6 +186,7 @@ The main unresolved technical risks are:
 - VAD threshold quality and false positives
 - first-audio latency for Piper under repeated runs, currently around `1.5s` for the first spoken chunk after early chunking
 - the absence of a real backend target beyond the fake validation backend
+- occasional socket disconnects that still need characterization
 
 ## Definition Of A Good M0 State
 
@@ -200,8 +203,8 @@ Qantara reaches a good M0 state when:
 
 The highest-value next steps are:
 
-1. Reduce Piper first-audio latency from the current ~`1.5s` first-chunk baseline if possible.
-2. Tune VAD threshold and transport framing from actual results.
+1. Auto-submit endpoint-ready speech instead of requiring the submit button.
+2. Tune VAD threshold and endpoint timing from actual results.
 3. Replace the fake backend with the first real session-oriented backend target when it is chosen.
 4. Keep backend playback-stop telemetry distinct from user-perceived audible stop timing.
 

@@ -513,6 +513,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                     {
                         "available_samples": len(session.recent_pcm),
                         "engine": "faster-whisper" if STT.available else "fallback",
+                        "submit_turn": bool(payload.get("submit_turn")),
                     },
                 )
                 if not session.recent_pcm:
@@ -528,6 +529,8 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                         await session.websocket.send_str(
                             json.dumps({"type": "transcript_result", "text": text, "engine": "faster-whisper"})
                         )
+                        if payload.get("submit_turn") and text.strip():
+                            await start_assistant_turn(session, text.strip())
                         session.recent_pcm.clear()
                     except Exception as exc:
                         await session.emit(
@@ -549,6 +552,12 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                         json.dumps({"type": "transcript_result", "text": fallback, "engine": "fallback"})
                     )
                     session.recent_pcm.clear()
+            elif message_type == "endpoint_candidate":
+                await session.emit(
+                    "endpoint_timer_started",
+                    "browser",
+                    {"silence_ms": payload.get("silence_ms")},
+                )
             elif message_type == "vad_state":
                 session.last_vad_state = payload.get("state", "unknown")
                 event_name = "speech_start_detected" if session.last_vad_state == "speech" else "speech_end_detected"

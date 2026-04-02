@@ -13,6 +13,7 @@
 - frame cadence: mic capture ran successfully and recent-audio buffer reached roughly 96000 samples during testing
 - resampling issues: none explicitly observed from the browser logs yet
 - disconnect behavior: connection established successfully after HTTPS, WSS, and port fixes
+- endpointing behavior: browser-side endpoint-ready fired successfully after `700 ms` silence and supported recent-speech submission
 
 ### Egress
 
@@ -34,6 +35,7 @@
 
 - faster-whisper available: yes
 - transcription result quality: working and returned repeated spoken text correctly during testing
+- endpoint-driven transcription result: working; recent speech `"Hello, is it me you're looking for?"` transcribed successfully and submitted as a turn
 - transcription latency feel: acceptable for the current M0 spike
 - current result: first validated STT candidate
 
@@ -50,7 +52,7 @@
 
 ### Follow-Ups
 
-- reduce first-audio latency below the current ~`1.5s` early-chunk Piper baseline if possible
+- auto-submit endpoint-ready speech instead of requiring a button
 - continue tightening browser VAD and endpoint behavior from real observations
 - keep backend playback-stop telemetry separate from user-perceived audible stop timing
 - move beyond the fake backend once a real session-oriented backend target is chosen

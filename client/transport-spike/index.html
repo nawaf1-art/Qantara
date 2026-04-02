@@ -143,6 +143,7 @@
         <button id="toneBtn" disabled>Request Tone</button>
         <button id="mockTurnBtn" disabled>Mock Turn</button>
         <button id="transcribeBtn" disabled>Transcribe Recent Audio</button>
+        <button id="submitSpeechBtn" disabled>Submit Recent Speech</button>
         <button id="clearBtn" disabled>Clear Playback</button>
       </div>
 
@@ -157,6 +158,7 @@
         <div class="stat"><span class="stat-label">TTS</span><span id="ttsState">unknown</span></div>
         <div class="stat"><span class="stat-label">Adapter</span><span id="adapterState">unknown</span></div>
         <div class="stat"><span class="stat-label">VAD</span><span id="vadState">silence</span></div>
+        <div class="stat"><span class="stat-label">Endpoint</span><span id="endpointState">idle</span></div>
         <div class="stat"><span class="stat-label">Last RMS</span><span id="vadRms">0.0000</span></div>
         <div class="stat"><span class="stat-label">Frames Sent</span><span id="framesSent">0</span></div>
         <div class="stat"><span class="stat-label">Frames Received</span><span id="framesReceived">0</span></div>
@@ -188,6 +190,7 @@
     const VAD_STOP_RMS = 0.015;
     const VAD_START_FRAMES = 3;
     const VAD_STOP_FRAMES = 5;
+    const ENDPOINT_SILENCE_MS = 700;
 
     const connectBtn = document.getElementById("connectBtn");
     const disconnectBtn = document.getElementById("disconnectBtn");
@@ -195,6 +198,7 @@
     const toneBtn = document.getElementById("toneBtn");
     const mockTurnBtn = document.getElementById("mockTurnBtn");
     const transcribeBtn = document.getElementById("transcribeBtn");
+    const submitSpeechBtn = document.getElementById("submitSpeechBtn");
     const clearBtn = document.getElementById("clearBtn");
 
     let socket = null;
@@ -216,6 +220,7 @@
     let speechCandidateFrames = 0;
     let silenceCandidateFrames = 0;
     const activePlaybackSources = new Set();
+    let endpointTimerId = null;
 
     function $(id) {
       return document.getElementById(id);
@@ -239,6 +244,7 @@
       toneBtn.disabled = !connected;
       mockTurnBtn.disabled = !connected || mockTurnPending;
       transcribeBtn.disabled = !connected || transcribePending;
+      submitSpeechBtn.disabled = !connected || transcribePending || mockTurnPending;
       clearBtn.disabled = !connected || clearPending;
     }
 
@@ -265,6 +271,10 @@
 
     function setVadRms(value) {
       updateText("vadRms", value.toFixed(4));
+    }
+
+    function setEndpointState(value) {
+      updateText("endpointState", value);
     }
 
     function setFirstAudioMs(value) {
@@ -305,6 +315,7 @@
       transcribePending = value;
       transcribeBtn.disabled = !socket || socket.readyState !== WebSocket.OPEN || value;
       transcribeBtn.textContent = value ? "Transcribing..." : "Transcribe Recent Audio";
+      submitSpeechBtn.disabled = !socket || socket.readyState !== WebSocket.OPEN || value || mockTurnPending;
     }
 
     function encodePcmFrame(samples) {
@@ -406,6 +417,25 @@
       setPlaybackState("idle");
     }
 
+    function clearEndpointTimer() {
+      if (endpointTimerId != null) {
+        clearTimeout(endpointTimerId);
+        endpointTimerId = null;
+      }
+      setEndpointState("idle");
+    }
+
+    function scheduleEndpointTimer() {
+      clearEndpointTimer();
+      setEndpointState("pending");
+      sendJson({ type: "endpoint_candidate", silence_ms: ENDPOINT_SILENCE_MS });
+      endpointTimerId = setTimeout(() => {
+        endpointTimerId = null;
+        setEndpointState("ready");
+        log(`endpoint ready after ${ENDPOINT_SILENCE_MS} ms silence`);
+      }, ENDPOINT_SILENCE_MS);
+    }
+
     function sendJson(message) {
       if (!socket || socket.readyState !== WebSocket.OPEN) {
         return;
@@ -454,6 +484,7 @@
             speechCandidateFrames = 0;
             const state = "silence";
             setVadState(state);
+            scheduleEndpointTimer();
             sendJson({ type: "vad_state", state, rms: Number(rms.toFixed(4)) });
             log(`vad ${state} rms=${rms.toFixed(4)}`);
           }
@@ -467,6 +498,7 @@
             vadSpeech = true;
             speechCandidateFrames = 0;
             silenceCandidateFrames = 0;
+            clearEndpointTimer();
             const state = "speech";
             setVadState(state);
             sendJson({ type: "vad_state", state, rms: Number(rms.toFixed(4)) });
@@ -497,6 +529,7 @@
       micActive = true;
       setMicState("running");
       setVadState("silence");
+      setEndpointState("idle");
       setVadRms(0);
       updateText("sampleRate", TARGET_SAMPLE_RATE);
       sendJson({ type: "mic_stream_started", sample_rate: TARGET_SAMPLE_RATE });
@@ -520,8 +553,10 @@
       vadSpeech = false;
       speechCandidateFrames = 0;
       silenceCandidateFrames = 0;
+      clearEndpointTimer();
       setMicState("stopped");
       setVadState("silence");
+      setEndpointState("idle");
       setVadRms(0);
       sendJson({ type: "mic_stream_stopped" });
       log("microphone capture stopped");
@@ -539,6 +574,7 @@
         setFirstAudioMs(null);
         setClearAckMs(null);
         setClearPending(false);
+        setEndpointState("idle");
         sendJson({ type: "session_init", client_name: "browser-transport-spike" });
         log("socket connected");
       };
@@ -551,6 +587,7 @@
         setMockTurnPending(false);
         setTranscribePending(false);
         setClearPending(false);
+        clearEndpointTimer();
         log("socket disconnected");
       };
 
@@ -669,6 +706,13 @@
       setTranscriptText("");
       setTranscribePending(true);
       sendJson({ type: "transcribe_recent_audio" });
+    });
+    submitSpeechBtn.addEventListener("click", () => {
+      if (transcribePending || mockTurnPending) return;
+      setTranscriptText("");
+      setTranscribePending(true);
+      sendJson({ type: "transcribe_recent_audio", submit_turn: true });
+      log("submit recent speech requested");
     });
     clearBtn.addEventListener("click", () => {
       if (clearPending) return;

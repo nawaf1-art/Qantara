@@ -1,5 +1,7 @@
 # Qantara
 
+Version: `0.1.0-alpha.1`
+
 Qantara is a LAN-first, real-time voice interface for OpenClaw-compatible agent runtimes.
 
 The primary user experience is not push-to-talk. Qantara is designed for full-duplex conversation:
@@ -56,6 +58,8 @@ Qantara should behave as a voice channel adapter around a downstream conversatio
 - [`SESSION_GATEWAY_CONTRACT.md`](/home/nawaf/Projects/Qantara/SESSION_GATEWAY_CONTRACT.md): first concrete session-oriented backend contract shape
 - [`MILESTONES.md`](/home/nawaf/Projects/Qantara/MILESTONES.md): delivery checklist and exit criteria tracking
 - [`PROJECT_STATE.md`](/home/nawaf/Projects/Qantara/PROJECT_STATE.md): current checkpoint, implemented scope, and next steps
+- [`ROADMAP.md`](/home/nawaf/Projects/Qantara/ROADMAP.md): versioned milestone path from the current alpha checkpoint
+- [`HANDOFF.md`](/home/nawaf/Projects/Qantara/HANDOFF.md): concise handoff for another coding agent or fork
 - [`M0_EXPERIMENTS.md`](/home/nawaf/Projects/Qantara/M0_EXPERIMENTS.md): explicit M0 validation program
 - [`experiments/RUN_TRANSPORT_SPIKE.md`](/home/nawaf/Projects/Qantara/experiments/RUN_TRANSPORT_SPIKE.md): how to run the current spike and record results
 - [`ops/README.md`](/home/nawaf/Projects/Qantara/ops/README.md): LAN HTTPS serving guidance for browser microphone access
@@ -70,7 +74,9 @@ The repository now includes a runnable browser-to-gateway transport spike with:
 - gateway-side transport event logging
 - browser playback of gateway PCM audio
 - validated faster-whisper transcription of recent captured audio
+- endpoint-ready flow for recent speech submission
 - configurable adapter selection with `mock` and `runtime_skeleton` modes
+- validated `session_gateway_http` adapter path through a local fake backend
 - locally validated Piper runtime path with synthetic fallback still available
 
 This is a real validation slice, not just design documentation. The current M0 spike has now validated the first STT candidate path through faster-whisper and the first TTS candidate path through Piper. Later runtime binding and interruption hardening still remain open.
@@ -81,6 +87,7 @@ Current measured baseline:
 - local browser playback clear is effectively immediate
 - backend playback-stop telemetry is still separate from user-perceived audible stop timing
 - end-to-end cancel is validated through the HTTP adapter and local fake backend
+- endpoint-ready plus submit-recent-speech flow is validated through the HTTP adapter and local fake backend
 
 Current adapter selection:
 

@@ -2,18 +2,18 @@
 
 ## M0: Technical Validation
 
-- [ ] Define a runtime adapter boundary that does not depend on a specific local OpenClaw deployment
-- [ ] Write down the custom gateway session model for a single browser client
-- [ ] Prove browser mic capture to the gateway over WebSocket PCM
-- [ ] Prove browser playback of streamed audio from the gateway
-- [ ] Validate WebSocket PCM as the MVP transport under headset-first conditions
-- [ ] Evaluate Pipecat as a reference path against the same MVP requirements
-- [ ] Choose baseline local STT candidate
-- [ ] Choose baseline local TTS candidate
-- [ ] Define the initial TTS chunking rule to test
-- [ ] Define voice event timeline schema
-- [ ] Confirm the gateway can emit the minimum required timestamps
-- [ ] Record the concrete migration triggers that would justify moving to WebRTC later
+- [x] Define a runtime adapter boundary that does not depend on a specific local OpenClaw deployment
+- [x] Write down the custom gateway session model for a single browser client
+- [x] Prove browser mic capture to the gateway over WebSocket PCM
+- [x] Prove browser playback of streamed audio from the gateway
+- [x] Validate WebSocket PCM as the MVP transport under headset-first conditions
+- [x] Evaluate Pipecat as a reference path against the same MVP requirements
+- [x] Choose baseline local STT candidate
+- [x] Choose baseline local TTS candidate
+- [x] Define the initial TTS chunking rule to test
+- [x] Define voice event timeline schema
+- [x] Confirm the gateway can emit the minimum required timestamps
+- [x] Record the concrete migration triggers that would justify moving to WebRTC later
 
 Exit criteria:
 
