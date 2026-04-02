@@ -193,6 +193,10 @@
     const VAD_STOP_FRAMES = 7;
     const ENDPOINT_SILENCE_MS = 1200;
     const AUTO_SUBMIT_COOLDOWN_MS = 1400;
+    const POST_PLAYBACK_SUBMIT_COOLDOWN_MS = 900;
+    const MIN_SPEECH_MS_FOR_SUBMIT = 700;
+    const MIN_AVG_RMS_FOR_SUBMIT = 0.04;
+    const MIN_PEAK_RMS_FOR_SUBMIT = 0.085;
 
     const connectBtn = document.getElementById("connectBtn");
     const disconnectBtn = document.getElementById("disconnectBtn");
@@ -224,6 +228,13 @@
     const activePlaybackSources = new Set();
     let endpointTimerId = null;
     let lastAutoSubmitAt = 0;
+    let backendTurnActive = false;
+    let playbackActive = false;
+    let playbackCooldownUntil = 0;
+    let speechStartedAt = 0;
+    let speechRmsTotal = 0;
+    let speechRmsSamples = 0;
+    let speechPeakRms = 0;
 
     function $(id) {
       return document.getElementById(id);
@@ -258,6 +269,7 @@
 
     function setPlaybackState(value) {
       updateText("playbackState", value);
+      playbackActive = value === "playing";
     }
 
     function setTtsState(value) {
@@ -434,9 +446,28 @@
       sendJson({ type: "endpoint_candidate", silence_ms: ENDPOINT_SILENCE_MS });
       endpointTimerId = setTimeout(() => {
         endpointTimerId = null;
+        const now = performance.now();
+        const speechDurationMs = speechStartedAt > 0 ? now - speechStartedAt : 0;
+        const averageSpeechRms = speechRmsSamples > 0 ? speechRmsTotal / speechRmsSamples : 0;
+        const strongEnough = averageSpeechRms >= MIN_AVG_RMS_FOR_SUBMIT || speechPeakRms >= MIN_PEAK_RMS_FOR_SUBMIT;
+        if (speechDurationMs < MIN_SPEECH_MS_FOR_SUBMIT || !strongEnough) {
+          setEndpointState("idle");
+          log(
+            `auto-submit skipped for weak speech (duration=${Math.round(speechDurationMs)} ms avg_rms=${averageSpeechRms.toFixed(4)} peak_rms=${speechPeakRms.toFixed(4)})`
+          );
+          speechStartedAt = 0;
+          speechRmsTotal = 0;
+          speechRmsSamples = 0;
+          speechPeakRms = 0;
+          return;
+        }
         setEndpointState("ready");
         log(`endpoint ready after ${ENDPOINT_SILENCE_MS} ms silence`);
         requestRecentSpeechSubmit("auto");
+        speechStartedAt = 0;
+        speechRmsTotal = 0;
+        speechRmsSamples = 0;
+        speechPeakRms = 0;
       }, ENDPOINT_SILENCE_MS);
     }
 
@@ -447,8 +478,26 @@
       if (!micActive || transcribePending || mockTurnPending) {
         return;
       }
+      if (backendTurnActive) {
+        if (mode === "auto") {
+          log("auto-submit skipped while backend turn is active");
+        }
+        return;
+      }
+      if (playbackActive) {
+        if (mode === "auto") {
+          log("auto-submit skipped while assistant playback is active");
+        }
+        return;
+      }
+      const now = performance.now();
+      if (now < playbackCooldownUntil) {
+        if (mode === "auto") {
+          log(`auto-submit skipped during post-playback cooldown (${Math.round(playbackCooldownUntil - now)} ms remaining)`);
+        }
+        return;
+      }
       if (mode === "auto") {
-        const now = performance.now();
         if (now - lastAutoSubmitAt < AUTO_SUBMIT_COOLDOWN_MS) {
           log(`auto-submit skipped during cooldown (${Math.round(now - lastAutoSubmitAt)} ms)`);
           return;
@@ -524,12 +573,21 @@
             vadSpeech = true;
             speechCandidateFrames = 0;
             silenceCandidateFrames = 0;
+            speechStartedAt = performance.now();
+            speechRmsTotal = 0;
+            speechRmsSamples = 0;
+            speechPeakRms = rms;
             clearEndpointTimer();
             const state = "speech";
             setVadState(state);
             sendJson({ type: "vad_state", state, rms: Number(rms.toFixed(4)) });
             log(`vad ${state} rms=${rms.toFixed(4)}`);
           }
+        }
+        if (vadSpeech) {
+          speechRmsTotal += rms;
+          speechRmsSamples += 1;
+          speechPeakRms = Math.max(speechPeakRms, rms);
         }
 
         const downsampled = downsample(input, micContext.sampleRate, TARGET_SAMPLE_RATE);
@@ -579,6 +637,10 @@
       vadSpeech = false;
       speechCandidateFrames = 0;
       silenceCandidateFrames = 0;
+      speechStartedAt = 0;
+      speechRmsTotal = 0;
+      speechRmsSamples = 0;
+      speechPeakRms = 0;
       clearEndpointTimer();
       setMicState("stopped");
       setVadState("silence");
@@ -601,11 +663,13 @@
         setClearAckMs(null);
         setClearPending(false);
         setEndpointState("idle");
+        backendTurnActive = false;
+        playbackCooldownUntil = 0;
         sendJson({ type: "session_init", client_name: "browser-transport-spike" });
         log("socket connected");
       };
 
-      socket.onclose = () => {
+      socket.onclose = (event) => {
         stopMic();
         clearPlaybackQueue();
         setSocketState("disconnected");
@@ -613,12 +677,17 @@
         setMockTurnPending(false);
         setTranscribePending(false);
         setClearPending(false);
+        backendTurnActive = false;
+        playbackCooldownUntil = 0;
         clearEndpointTimer();
-        log("socket disconnected");
+        log(
+          `socket disconnected code=${event.code} clean=${event.wasClean}${event.reason ? ` reason=${event.reason}` : ""}`
+        );
       };
 
-      socket.onerror = () => {
-        log("socket error");
+      socket.onerror = (event) => {
+        const details = event?.message || event?.type || "unknown";
+        log(`socket error (${details})`);
       };
 
       socket.onmessage = async (event) => {
@@ -651,6 +720,12 @@
                 setAdapterState(adapterText);
               }
               log(`control ${event.data}`);
+            } else if (payload.type === "turn_state") {
+              backendTurnActive = payload.state === "active";
+              if (!backendTurnActive && !playbackActive) {
+                playbackCooldownUntil = performance.now() + POST_PLAYBACK_SUBMIT_COOLDOWN_MS;
+              }
+              log(`turn state: ${payload.state}${payload.reason ? ` (${payload.reason})` : ""}`);
             } else if (payload.type === "playback_metrics") {
               setFirstAudioMs(payload.tts_to_first_audio_ms);
               log(
@@ -667,6 +742,7 @@
               }
               clearRequestedAt = null;
               setClearPending(false);
+              playbackCooldownUntil = performance.now() + POST_PLAYBACK_SUBMIT_COOLDOWN_MS;
               log(`playback stopped (${payload.reason})${clearStopMs == null ? "" : ` ${clearStopMs} ms`}`);
             } else if (payload.type === "cancel_status") {
               log(`cancel status: ${JSON.stringify(payload.result)}`);

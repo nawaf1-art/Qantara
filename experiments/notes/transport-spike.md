@@ -6,6 +6,16 @@
 - Browser: LAN browser session over HTTPS
 - Headset used: yes
 
+## Update
+
+- Date: 2026-04-02
+- Browser: LAN browser session over HTTPS
+- Headset used: no
+- current preferred backend baseline:
+  - local Ollama
+  - model: `qwen2.5:7b`
+- recent LAN Ollama experiments were less stable overall and are not the current Alpha baseline
+
 ## Observations
 
 ### Ingress
@@ -16,6 +26,12 @@
 - endpointing behavior: browser-side endpoint-ready fired successfully after `700 ms` silence and now supports auto-submit of recent speech
 - current limitation: auto-submit still over-segments speech when the user keeps talking during assistant playback
 - real backend path: validated against an Ollama-backed session backend using the same HTTP contract
+- current status after recent tuning:
+  - auto-submit overlap is improved by browser-side active-turn and playback gating
+  - some weak or low-value speech fragments are now skipped before STT submission
+  - current open question is whether soft but valid speech is still being skipped too aggressively
+- disconnect characterization:
+  - recent browser disconnects are clean closes (`code=1000`), not transport crashes
 
 ### Egress
 
@@ -52,10 +68,14 @@
 - fallback tone used: yes, during the earlier pre-Piper runs
 - current result: first validated TTS candidate
 - real backend speaking result: working; multi-turn voice interaction now works through the Ollama-backed backend
+- recent local baseline:
+  - first-audio commonly around `1.4s` to `1.6s`
+  - occasional outliers still appear above `2.0s`
 
 ### Follow-Ups
 
-- do not block real backend work on the current auto-submit behavior; treat it as a known interaction-quality limitation for now
-- tighten the real backend prompt and persona policy so identity and response style are consistent
+- keep using the current local Ollama baseline for Alpha validation
+- extend deterministic handling only for recurring real STT variants seen in logs
+- keep validating whether the current weak-speech filter is rejecting too much soft speech
 - keep backend playback-stop telemetry separate from user-perceived audible stop timing
 - move beyond the fake backend once a real session-oriented backend target is chosen

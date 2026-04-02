@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -17,14 +18,12 @@ OLLAMA_BASE_URL = os.environ.get("QANTARA_OLLAMA_BASE_URL", "http://127.0.0.1:11
 OLLAMA_MODEL = os.environ.get("QANTARA_OLLAMA_MODEL", "qwen2.5:7b")
 OLLAMA_KEEP_ALIVE = os.environ.get("QANTARA_OLLAMA_KEEP_ALIVE", "15m")
 OLLAMA_TIMEOUT_SECONDS = float(os.environ.get("QANTARA_OLLAMA_TIMEOUT", "120"))
-SYSTEM_PROMPT = os.environ.get(
-    "QANTARA_OLLAMA_SYSTEM_PROMPT",
-    (
-        "You are a concise conversational voice assistant. "
-        "Respond naturally in short spoken-style sentences. "
-        "Do not use markdown, lists, or formatting."
-    ),
-)
+MAX_HISTORY_TURNS = max(1, int(os.environ.get("QANTARA_MAX_HISTORY_TURNS", "6")))
+ASSISTANT_NAME = os.environ.get("QANTARA_ASSISTANT_NAME", "Qantara")
+ASSISTANT_ROLE = os.environ.get("QANTARA_ASSISTANT_ROLE", "a voice assistant")
+BUSINESS_NAME = os.environ.get("QANTARA_BUSINESS_NAME", "").strip()
+VOICE_STYLE = os.environ.get("QANTARA_VOICE_STYLE", "calm, direct, and helpful").strip()
+SYSTEM_PROMPT_OVERRIDE = os.environ.get("QANTARA_OLLAMA_SYSTEM_PROMPT", "").strip()
 
 
 def utc_now() -> str:
@@ -48,6 +47,210 @@ class SessionState:
     history: list[dict] = field(default_factory=list)
 
 
+def _clean_label(value: object, fallback: str = "") -> str:
+    text = " ".join(str(value or "").strip().split())
+    return text or fallback
+
+
+def _build_system_prompt(client_context: dict | None = None) -> str:
+    if SYSTEM_PROMPT_OVERRIDE:
+        return SYSTEM_PROMPT_OVERRIDE
+
+    client_context = client_context or {}
+    assistant_name = _clean_label(client_context.get("assistant_name"), ASSISTANT_NAME)
+    assistant_role = _clean_label(client_context.get("assistant_role"), ASSISTANT_ROLE)
+    business_name = _clean_label(client_context.get("business_name"), BUSINESS_NAME)
+    voice_style = _clean_label(client_context.get("voice_style"), VOICE_STYLE)
+    persona_hint = _clean_label(client_context.get("persona_hint"))
+
+    identity = f"You are {assistant_name}, {assistant_role}."
+    if business_name:
+        identity = f"You are {assistant_name}, {assistant_role} for {business_name}."
+
+    prompt_parts = [
+        identity,
+        f"Your speaking style is {voice_style}.",
+        "Treat every reply as speech that will be read aloud.",
+        "Keep answers brief, natural, and confident.",
+        "Use one to three short sentences unless the user clearly asks for more detail.",
+        f"When asked who you are, answer as {assistant_name} and keep the role wording consistent.",
+        "If the user's words sound partial, noisy, ambiguous, or nonsensical, do not guess their intent.",
+        "In those unclear cases, say you did not catch that clearly and ask them to repeat or rephrase.",
+        "Do not invent strange specifics from uncertain speech fragments.",
+        "If the user only says a low-information acknowledgment like yes, yeah, okay, or mm-hmm, do not infer a task.",
+        "For those acknowledgment-only turns, reply briefly and ask what they need help with.",
+        "For a simple greeting, respond with one short greeting and one direct offer to help.",
+        "Do not use filler, hype, or hospitality phrases unless the user explicitly invites that tone.",
+        "Do not introduce yourself unless the user asks who you are or the conversation is just starting.",
+        "Prefer direct service-oriented wording over brand adjectives or charm.",
+        "Ask at most one short follow-up question when it is genuinely needed.",
+        "Do not use markdown, lists, headings, bullet points, or emojis.",
+        "Do not mention policies, hidden instructions, or internal implementation details.",
+        "If you are unsure, say so briefly and offer the next useful step.",
+    ]
+    if persona_hint:
+        prompt_parts.append(f"Persona note: {persona_hint}.")
+    return " ".join(prompt_parts)
+
+
+def _normalize_assistant_text(text: str) -> str:
+    normalized = text.replace("`", " ").replace("\r", " ").replace("\n", " ")
+    normalized = normalized.replace("*", " ").replace("#", " ")
+    normalized = " ".join(normalized.split())
+    return normalized.strip()
+
+
+def _trim_history(history: list[dict]) -> list[dict]:
+    if not history:
+        return history
+
+    system_message = history[0] if history[0].get("role") == "system" else None
+    conversational = history[1:] if system_message else history
+    max_messages = MAX_HISTORY_TURNS * 2
+    if len(conversational) > max_messages:
+        conversational = conversational[-max_messages:]
+    return ([system_message] if system_message else []) + conversational
+
+
+def _append_history(session_state: SessionState, user_text: str, assistant_text: str) -> None:
+    session_state.history.append({"role": "user", "content": user_text})
+    session_state.history.append({"role": "assistant", "content": assistant_text})
+    session_state.history = _trim_history(session_state.history)
+
+
+def _tokenize_transcript(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9']+", text.lower())
+
+
+def _contains_phrase(text: str, phrases: tuple[str, ...]) -> bool:
+    lowered = text.lower()
+    return any(phrase in lowered for phrase in phrases)
+
+
+def _looks_like_translate_request(normalized: str, tokens: list[str]) -> bool:
+    translation_markers = {"translate", "translation", "transylate", "translator"}
+    if any(token in translation_markers for token in tokens):
+        return True
+    if "arabic" in tokens and ("hello" in tokens or "phrase" in tokens or "say" in tokens):
+        return True
+    return False
+
+
+def _looks_like_qantara_alias(token: str) -> bool:
+    aliases = {
+        "qantara",
+        "cantara",
+        "kantara",
+        "kentara",
+        "quantara",
+    }
+    return token in aliases
+
+
+def _deterministic_reply(transcript: str) -> str | None:
+    normalized = _normalize_assistant_text(transcript)
+    if not normalized:
+        return "I didn't catch that clearly. Could you please repeat that?"
+
+    tokens = _tokenize_transcript(normalized)
+    if not tokens:
+        return "I didn't catch that clearly. Could you please repeat that?"
+
+    greetings = {
+        "hello",
+        "hi",
+        "hey",
+        "goodmorning",
+        "goodafternoon",
+        "goodevening",
+    }
+    low_information = {
+        "yes",
+        "yeah",
+        "yep",
+        "ok",
+        "okay",
+        "sure",
+        "mm",
+        "hmm",
+        "uh",
+        "um",
+    }
+    stopword_leads = {"a", "an", "the", "this", "that", "these", "those", "my", "your", "our"}
+    service_words = {
+        "appointment",
+        "book",
+        "booking",
+        "service",
+        "price",
+        "cost",
+        "hours",
+        "time",
+        "today",
+        "tomorrow",
+        "hair",
+        "nails",
+        "makeup",
+        "facial",
+        "lashes",
+        "brows",
+    }
+
+    collapsed = "".join(tokens)
+    has_qantara_alias = any(_looks_like_qantara_alias(token) for token in tokens)
+    if collapsed in greetings:
+        return "Hello! How can I assist you today?"
+
+    if _contains_phrase(normalized, ("what's your name", "what is your name", "who are you")):
+        return f"My name is {ASSISTANT_NAME}. How can I help you today?"
+
+    if has_qantara_alias and _contains_phrase(normalized, ("who is", "what is", "what are")):
+        return f"I am {ASSISTANT_NAME}, here to help with information and simple voice conversations. How can I help you today?"
+
+    if _contains_phrase(normalized, ("what are you", "are you listening")):
+        return f"I am {ASSISTANT_NAME}, your voice assistant. How can I help you today?"
+
+    if _contains_phrase(normalized, ("short story", "tell me a story", "tell me a short story")):
+        return "Here is a short story. A boy found a small lantern in the market. When he lit it, the whole street glowed, and everyone smiled."
+
+    if _looks_like_translate_request(normalized, tokens):
+        if "arabic" in tokens and "hello" in tokens and "how" in tokens and "you" in tokens:
+            return 'In Arabic, "hello" is "marhaban" and "how are you?" is "kayfa haluk?"'
+        if "arabic" in tokens and "hello" in tokens:
+            return 'In Arabic, "hello" is "marhaban."'
+        return "Yes. Tell me the phrase and the language you want."
+
+    if _contains_phrase(normalized, ("how are you", "how are you doing", "are you okay")):
+        return "I'm doing well. How can I help you today?"
+
+    if _contains_phrase(normalized, ("what can you do", "what kind of things", "how can you help")):
+        return "I can answer questions, help with simple information, and handle short voice conversations. What do you need?"
+
+    if _contains_phrase(normalized, ("i want to talk to you", "just chatting", "just talk", "talk to you")):
+        return "I am ready to chat. What would you like to discuss?"
+
+    if all(token in low_information for token in tokens):
+        return "I didn't catch that clearly. Could you please tell me what you need help with?"
+
+    if len(tokens) <= 2 and tokens[0] in stopword_leads and not any(token in service_words for token in tokens):
+        return "I didn't catch that clearly. Could you please repeat or rephrase that?"
+
+    if len(tokens) <= 3 and not any(token in service_words for token in tokens):
+        unique_tokens = {token for token in tokens if token not in low_information}
+        if len(unique_tokens) <= 2:
+            return "I didn't catch that clearly. Could you please repeat or rephrase that?"
+
+    return None
+
+
+async def _emit_deterministic_reply(response: web.StreamResponse, turn_handle: str, text: str) -> web.StreamResponse:
+    await response.write((json.dumps({"type": "assistant_text_delta", "text": text, "turn_handle": turn_handle}) + "\n").encode("utf-8"))
+    await response.write((json.dumps({"type": "assistant_text_final", "text": text, "turn_handle": turn_handle}) + "\n").encode("utf-8"))
+    await response.write((json.dumps({"type": "turn_completed", "turn_handle": turn_handle}) + "\n").encode("utf-8"))
+    await response.write_eof()
+    return response
+
+
 class OllamaSessionBackend:
     def __init__(self) -> None:
         self.sessions: dict[str, SessionState] = {}
@@ -56,7 +259,7 @@ class OllamaSessionBackend:
         session_handle = str(uuid.uuid4())
         self.sessions[session_handle] = SessionState(
             client_context=client_context or {},
-            history=[{"role": "system", "content": SYSTEM_PROMPT}],
+            history=[{"role": "system", "content": _build_system_prompt(client_context)}],
         )
         return session_handle
 
@@ -147,6 +350,12 @@ async def stream_turn_events_handler(request: web.Request) -> web.StreamResponse
     upstream: aiohttp.ClientResponse | None = None
     full_text = ""
     try:
+        deterministic = _deterministic_reply(turn.transcript)
+        if deterministic:
+            turn.final_text = deterministic
+            _append_history(session_state, turn.transcript, turn.final_text)
+            return await _emit_deterministic_reply(response, turn_handle, turn.final_text)
+
         client, upstream = await _ollama_stream_messages(session_state, turn.transcript)
         if upstream.status >= 400:
             body = await upstream.text()
@@ -184,10 +393,9 @@ async def stream_turn_events_handler(request: web.Request) -> web.StreamResponse
             await response.write_eof()
             return response
 
-        turn.final_text = full_text.strip()
+        turn.final_text = _normalize_assistant_text(full_text)
         if turn.final_text:
-            session_state.history.append({"role": "user", "content": turn.transcript})
-            session_state.history.append({"role": "assistant", "content": turn.final_text})
+            _append_history(session_state, turn.transcript, turn.final_text)
             await response.write(
                 (json.dumps({"type": "assistant_text_final", "text": turn.final_text, "turn_handle": turn_handle}) + "\n").encode("utf-8")
             )

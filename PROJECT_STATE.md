@@ -26,6 +26,9 @@ The project has moved beyond planning-only status. It now includes:
 - a concrete handoff document for replacing the fake backend with a real backend target
 - a first real local backend target built around Ollama and the same session contract
 - a validated real model-backed conversation path through the Ollama session backend
+- bounded backend history for the local `7b` model
+- deterministic local reply handling for repeated short voice cases
+- browser-side turn gating and weak-speech filtering for hands-free runs
 
 ## What Is Decided
 
@@ -91,12 +94,14 @@ The current runnable spike can:
 - request transcription of the recent audio buffer through a working faster-whisper path
 - mark endpoint-ready after stable silence in the browser
 - auto-submit recent speech through the endpoint-ready flow
+- suppress auto-submit during active turns, active playback, and a short post-playback cooldown
 - select a downstream adapter by configuration
 - submit text turns through the selected adapter
 - stream assistant text back to the browser through the configured adapter
 - optionally synthesize assistant text through Piper when configured
 - fall back to a synthetic tone path when Piper is unavailable
 - route text turns through either the fake backend or the real Ollama-backed backend using the same adapter contract
+- short-circuit recurring short voice cases in the local backend before they hit the model
 
 ## What The Current Spike Does Not Do Yet
 
@@ -126,12 +131,20 @@ Validated by actual testing:
 - Piper playback through the browser spike is working on the current secure LAN path
 - end-to-end cancellation is working across browser, gateway, HTTP adapter, and fake backend
 - endpoint-ready auto-submit is working across browser, gateway, STT, HTTP adapter, and fake backend
-- real model-backed assistant conversation is working across browser, gateway, HTTP adapter, Ollama session backend, and remote Ollama runtime
-- speaking works end to end, but hands-free auto-submit is still too eager during assistant playback and remains a known M0 limitation
+- real model-backed assistant conversation is working across browser, gateway, HTTP adapter, and the local Ollama session backend
+- current local baseline now handles recent high-frequency voice cases with deterministic short replies:
+  - greeting
+  - identity / `Qantara` alias questions
+  - capability prompts
+  - casual chat prompts
+  - short story requests
+  - translation requests
+- hands-free auto-submit overlap is improved by browser-side gating
+- disconnects seen in recent browser logs have been characterized as clean closes, not gateway crashes
 
 Not yet validated by actual experiment results:
 
-- whether the browser VAD threshold is tuned well enough for ongoing use
+- whether the current weak-speech thresholds reject too much soft but valid speech over longer repeated runs
 
 That distinction matters. The repo contains a runnable validation slice, but M0 is not complete until those runs are executed and recorded.
 
@@ -191,10 +204,10 @@ QANTARA_SPIKE_HOST=0.0.0.0 QANTARA_SPIKE_PORT=8899 ./.venv/bin/python gateway/tr
 The main unresolved technical risks are:
 
 - VAD threshold quality and false positives
-- auto-submit currently over-segments speech during assistant playback and should not be treated as production-ready turn policy yet
+- weak-speech filtering may still reject some valid soft speech and needs more repeated-run evidence
 - first-audio latency for Piper under repeated runs, currently around `1.5s` for the first spoken chunk after early chunking
-- response style and identity are not yet stable across prompts in the real backend path
-- occasional socket disconnects that still need characterization
+- response quality outside the currently covered deterministic voice cases still depends on the local `7b` model
+- clean socket closes still occur in the browser, but they are now characterized and are not currently treated as transport failures
 
 ## Definition Of A Good M0 State
 
@@ -211,10 +224,10 @@ Qantara reaches a good M0 state when:
 
 The highest-value next steps are:
 
-1. Tighten real-backend system prompt and response style so identity and tone are consistent.
-2. Improve reconnect behavior after disconnects.
-3. Revisit hands-free turn policy after real backend speaking is validated.
-4. Keep backend playback-stop telemetry distinct from user-perceived audible stop timing.
+1. Keep validating the improved local baseline in repeated real voice runs.
+2. Extend deterministic handling only for recurring real-world STT variants that actually show up in logs.
+3. Keep backend playback-stop telemetry distinct from user-perceived audible stop timing.
+4. Decide whether to keep optimizing `Piper` or evaluate a faster TTS path.
 
 ## Repository Interpretation
 

@@ -13,14 +13,24 @@ Qantara is a LAN-first voice gateway for OpenClaw-compatible agent runtimes. It 
 - browser playback is working
 - `faster-whisper` is validated for STT
 - `Piper` is validated for TTS
-- first spoken chunk is now roughly `1.50s` to `1.52s`
+- first spoken chunk is now commonly around `1.4s` to `1.6s`, with occasional higher outliers
 - local playback clear is effectively immediate
 - session-oriented HTTP adapter path is working
 - local fake backend is working
 - real Ollama session backend is working
 - end-to-end cancel is working
 - endpoint-ready auto-submit flow is working
-- speaking works end to end, but hands-free auto-submit remains too eager during assistant playback
+- hands-free auto-submit is now gated against active turns, active playback, and short post-playback re-entry
+- the local baseline is currently better than the recent LAN Ollama experiments
+- browser-side disconnects observed in recent runs are clean closes (`code=1000`), not transport crashes
+- the local backend now has deterministic fast paths for recurring voice cases:
+  - greeting
+  - identity / `Qantara` alias questions
+  - capability prompts
+  - casual chat prompts
+  - short story requests
+  - translation requests
+- backend history is now bounded to a sliding window for the local `7b` model
 
 ## Runtime Shape
 
@@ -29,7 +39,6 @@ Current runtime chain:
 - browser client
 - Qantara gateway spike
 - `session_gateway_http` adapter
-- local fake backend
 - local Ollama session backend
 
 This intentionally avoids binding to the user's local OpenClaw agents for now.
@@ -65,7 +74,7 @@ Run secure spike:
 
 ```bash
 QANTARA_ADAPTER=session_gateway_http \
-QANTARA_BACKEND_BASE_URL=http://127.0.0.1:19110 \
+QANTARA_BACKEND_BASE_URL=http://127.0.0.1:19120 \
 QANTARA_TLS_CERT=/home/nawaf/Projects/Qantara/ops/certs/qantara-cert.pem \
 QANTARA_TLS_KEY=/home/nawaf/Projects/Qantara/ops/certs/qantara-key.pem \
 QANTARA_SPIKE_HOST=0.0.0.0 \
@@ -81,32 +90,41 @@ https://<lan-ip>:9443/spike
 
 ## Observed Baselines
 
-- first TTS chunk: about `1.50s` to `1.52s`
-- later TTS chunk: about `1.65s` to `1.67s`
+- first TTS chunk: commonly about `1.4s` to `1.6s`
+- occasional first-chunk outliers still occur above `2.0s`
 - local clear acknowledgement: near-immediate
 - local stop after clear: tens of milliseconds
-- real backend first chunks are commonly around `1.4s` to `1.5s`, with later chunks often higher
+- current preferred real backend baseline:
+  - local Ollama on `127.0.0.1:11434`
+  - model: `qwen2.5:7b`
 
 ## Known Weaknesses
 
 - `Piper` is still slow enough to be noticeable
 - VAD is improved but not yet fully tuned
-- auto-submit currently over-segments speech during assistant playback
-- real backend prompt and identity are not stable enough yet
-- socket disconnect behavior still needs characterization
+- weak or junk speech filtering is improved but still heuristic
+- some STT variants still need targeted handling if they recur in real runs
+- response quality is more stable now, but only for the currently covered voice cases
 - real backend integration is no longer deferred; it is active but still early
 
 ## Recommended Next Steps
 
-1. Tighten the real backend system prompt and response style.
-2. Improve reconnect behavior after disconnects.
-3. Revisit hands-free turn policy after real backend speaking is validated.
-4. Decide whether to keep optimizing `Piper` or evaluate a faster TTS path.
+1. Keep validating the improved local baseline in repeated real voice runs.
+2. Extend deterministic handling only for recurring real-world STT variants, not speculatively.
+3. Decide whether to keep optimizing `Piper` or evaluate a faster TTS path.
+4. Revisit browser-side VAD thresholds only if real speech is still being skipped too often.
 
 Latest tuning change:
 
-- browser-side VAD thresholds were tightened, endpoint silence was increased, and auto-submit cooldown was added after the first auto-submit milestone; this still needs validation in repeated runs
-- current decision: do not block real backend work on this; treat it as a known interaction-quality limitation
+- browser-side submit gating now blocks auto-submit during:
+  - active backend turns
+  - active assistant playback
+  - a short post-playback cooldown
+- browser-side weak-speech filtering now skips some low-value speech fragments before STT submission
+- backend-side deterministic reply handling now covers the most common short voice patterns seen in recent runs
+- current decision:
+  - use the local Ollama baseline for Alpha-stage validation
+  - use Claude Code CLI for second-opinion and alternative-solution checks, not as the primary implementation path
 
 ## Notes For Another Coding Agent
 
@@ -114,3 +132,4 @@ Latest tuning change:
 - Do not bind to the user's current local OpenClaw agents unless explicitly requested.
 - Preserve the `session-oriented backend` contract shape.
 - Treat browser-perceived playback stop and backend stop telemetry as different things.
+- Current preferred runtime for validation is local Ollama, not the LAN host experiments.

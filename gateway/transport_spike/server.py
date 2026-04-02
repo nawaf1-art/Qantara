@@ -43,6 +43,7 @@ class Session:
         self.websocket = websocket
         self.session_id = str(uuid.uuid4())
         self.connection_id = str(uuid.uuid4())
+        self.started_monotonic_ms = round(time.monotonic() * 1000, 3)
         self.runtime_session_handle = None
         self.turn_id = None
         self.frames_in = 0
@@ -56,6 +57,7 @@ class Session:
         self.current_turn_task: asyncio.Task | None = None
         self.speech_task: asyncio.Task | None = None
         self.speech_generation = 0
+        self.turns_completed = 0
 
     async def emit(self, event_name: str, source: str, payload: dict) -> None:
         record = {
@@ -323,6 +325,13 @@ def clear_turn_state(session: Session) -> None:
     session.current_turn_task = None
 
 
+async def emit_turn_state(session: Session, state: str, reason: str | None = None) -> None:
+    payload = {"type": "turn_state", "state": state}
+    if reason:
+        payload["reason"] = reason
+    await session.websocket.send_str(json.dumps(payload))
+
+
 async def cancel_active_turn(session: Session, reason: str) -> None:
     if (
         session.runtime_session_handle is None
@@ -362,6 +371,7 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
 
     session.turn_id = str(uuid.uuid4())
     session.speech_generation = session.playback_generation
+    await emit_turn_state(session, "active")
     await session.emit("turn_submit_started", "adapter", {"turn_id": session.turn_id, "transcript": transcript})
     turn_handle = await ADAPTER.submit_user_turn(
         session.runtime_session_handle,
@@ -416,6 +426,7 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                 await session.websocket.send_str(json.dumps({"type": "turn_failed", "message": event.get("message", "turn failed")}))
                 return
             elif event_type == "turn_completed":
+                session.turns_completed += 1
                 await session.emit("assistant_output_completed", "adapter", {"turn_handle": turn_handle, "completed_via": "turn_completed"})
 
         if not saw_final and buffered:
@@ -430,6 +441,7 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                 remaining = buffered[len(spoken_prefix):]
             enqueue_speech(session, remaining.strip())
     finally:
+        await emit_turn_state(session, "idle")
         clear_turn_state(session)
 
 
@@ -447,7 +459,7 @@ async def start_assistant_turn(session: Session, transcript: str) -> None:
 
 
 async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
-    ws = web.WebSocketResponse(max_msg_size=8 * 1024 * 1024)
+    ws = web.WebSocketResponse(max_msg_size=8 * 1024 * 1024, heartbeat=30.0)
     await ws.prepare(request)
 
     session = Session(ws)
@@ -601,8 +613,23 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
         await cancel_active_turn(session, "socket_disconnected")
         if session.current_turn_task is not None and not session.current_turn_task.done():
             session.current_turn_task.cancel()
-        await session.emit("socket_disconnected", "gateway", {})
-        await session.emit("session_closed", "gateway", {})
+        close_payload = {
+            "close_code": ws.close_code,
+            "exception": str(ws.exception()) if ws.exception() else "",
+            "session_duration_ms": round((time.monotonic() * 1000) - session.started_monotonic_ms, 3),
+        }
+        await session.emit("socket_disconnected", "gateway", close_payload)
+        await session.emit(
+            "session_closed",
+            "gateway",
+            {
+                **close_payload,
+                "frames_in": session.frames_in,
+                "frames_out": session.frames_out,
+                "turns_completed": session.turns_completed,
+                "playback_generation": session.playback_generation,
+            },
+        )
 
     return ws
 
