@@ -1,4 +1,4 @@
-.PHONY: spike-install spike-run spike-run-venv spike-run-lan-venv fake-backend-run fake-backend-run-venv spike-clean
+.PHONY: spike-install spike-run spike-run-venv spike-run-lan-venv fake-backend-run fake-backend-run-venv real-backend-run-venv spike-clean
 
 spike-install:
 	pip install -r gateway/transport_spike/requirements.txt
@@ -17,6 +17,9 @@ fake-backend-run:
 
 fake-backend-run-venv:
 	QANTARA_FAKE_BACKEND_HOST=$${QANTARA_FAKE_BACKEND_HOST:-127.0.0.1} QANTARA_FAKE_BACKEND_PORT=$${QANTARA_FAKE_BACKEND_PORT:-19110} ./.venv/bin/python gateway/fake_session_backend/server.py
+
+real-backend-run-venv:
+	QANTARA_REAL_BACKEND_HOST=$${QANTARA_REAL_BACKEND_HOST:-127.0.0.1} QANTARA_REAL_BACKEND_PORT=$${QANTARA_REAL_BACKEND_PORT:-19120} QANTARA_OLLAMA_BASE_URL=$${QANTARA_OLLAMA_BASE_URL:-http://127.0.0.1:11434} QANTARA_OLLAMA_MODEL=$${QANTARA_OLLAMA_MODEL:-qwen2.5:7b} ./.venv/bin/python gateway/ollama_session_backend/server.py
 
 spike-clean:
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

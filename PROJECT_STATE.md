@@ -24,6 +24,7 @@ The project has moved beyond planning-only status. It now includes:
 - a validated session-oriented adapter path through a local fake backend
 - a validated auto-submit endpointing path
 - a concrete handoff document for replacing the fake backend with a real backend target
+- a first real local backend target built around Ollama and the same session contract
 
 ## What Is Decided
 

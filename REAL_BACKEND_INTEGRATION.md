@@ -52,6 +52,19 @@ Reference:
    - final response
    - cancel response
 
+## First Concrete Real Backend
+
+The repo now includes a first concrete real backend target:
+
+- [`gateway/ollama_session_backend/server.py`](/home/nawaf/Projects/Qantara/gateway/ollama_session_backend/server.py)
+
+This backend:
+
+- implements the session gateway contract
+- uses local Ollama streaming under the hood
+- avoids binding Qantara to the user's current OpenClaw agents
+- gives Qantara a real text-generation backend to validate against
+
 ## Environment Variables
 
 Use the existing adapter mode:
