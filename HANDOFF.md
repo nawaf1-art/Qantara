@@ -19,6 +19,7 @@ Qantara is a LAN-first voice gateway for OpenClaw-compatible agent runtimes. It 
 - local fake backend is working
 - end-to-end cancel is working
 - endpoint-ready auto-submit flow is working
+- speaking works end to end, but hands-free auto-submit remains too eager during assistant playback
 
 ## Runtime Shape
 
@@ -87,19 +88,21 @@ https://<lan-ip>:9443/spike
 
 - `Piper` is still slow enough to be noticeable
 - VAD is improved but not yet fully tuned
+- auto-submit currently over-segments speech during assistant playback
 - socket disconnect behavior still needs characterization
 - real backend integration is still deferred
 
 ## Recommended Next Steps
 
-1. Tighten VAD thresholds and endpoint timing from repeated runs.
-2. Decide whether to keep optimizing `Piper` or evaluate a faster TTS path.
-3. Improve reconnect behavior after disconnects.
-4. Replace the fake backend with the first real backend target when that choice is made.
+1. Replace the fake backend with the first real backend target when that choice is made.
+2. Improve reconnect behavior after disconnects.
+3. Revisit hands-free turn policy after real backend speaking is validated.
+4. Decide whether to keep optimizing `Piper` or evaluate a faster TTS path.
 
 Latest tuning change:
 
 - browser-side VAD thresholds were tightened, endpoint silence was increased, and auto-submit cooldown was added after the first auto-submit milestone; this still needs validation in repeated runs
+- current decision: do not block real backend work on this; treat it as a known interaction-quality limitation
 
 ## Notes For Another Coding Agent
 

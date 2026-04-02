@@ -121,6 +121,7 @@ Validated by actual testing:
 - Piper playback through the browser spike is working on the current secure LAN path
 - end-to-end cancellation is working across browser, gateway, HTTP adapter, and fake backend
 - endpoint-ready auto-submit is working across browser, gateway, STT, HTTP adapter, and fake backend
+- speaking works end to end, but hands-free auto-submit is still too eager during assistant playback and remains a known M0 limitation
 
 Not yet validated by actual experiment results:
 
@@ -184,6 +185,7 @@ QANTARA_SPIKE_HOST=0.0.0.0 QANTARA_SPIKE_PORT=8899 ./.venv/bin/python gateway/tr
 The main unresolved technical risks are:
 
 - VAD threshold quality and false positives
+- auto-submit currently over-segments speech during assistant playback and should not be treated as production-ready turn policy yet
 - first-audio latency for Piper under repeated runs, currently around `1.5s` for the first spoken chunk after early chunking
 - the absence of a real backend target beyond the fake validation backend
 - occasional socket disconnects that still need characterization
@@ -203,9 +205,9 @@ Qantara reaches a good M0 state when:
 
 The highest-value next steps are:
 
-1. Validate the latest VAD threshold and endpoint timing pass from actual results.
-2. Replace the fake backend with the first real session-oriented backend target when it is chosen.
-3. Improve reconnect behavior after disconnects.
+1. Replace the fake backend with the first real session-oriented backend target when it is chosen.
+2. Improve reconnect behavior after disconnects.
+3. Revisit hands-free turn policy after real backend speaking is validated.
 4. Keep backend playback-stop telemetry distinct from user-perceived audible stop timing.
 
 ## Repository Interpretation

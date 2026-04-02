@@ -14,6 +14,7 @@
 - resampling issues: none explicitly observed from the browser logs yet
 - disconnect behavior: connection established successfully after HTTPS, WSS, and port fixes
 - endpointing behavior: browser-side endpoint-ready fired successfully after `700 ms` silence and now supports auto-submit of recent speech
+- current limitation: auto-submit still over-segments speech when the user keeps talking during assistant playback
 
 ### Egress
 
@@ -52,6 +53,6 @@
 
 ### Follow-Ups
 
-- validate the latest tighter browser VAD, longer endpoint silence, and auto-submit cooldown settings from real observations
+- do not block real backend work on the current auto-submit behavior; treat it as a known interaction-quality limitation for now
 - keep backend playback-stop telemetry separate from user-perceived audible stop timing
 - move beyond the fake backend once a real session-oriented backend target is chosen
