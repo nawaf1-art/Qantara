@@ -145,6 +145,7 @@
         <button id="transcribeBtn" disabled>Transcribe Recent Audio</button>
         <button id="submitSpeechBtn" disabled>Submit Recent Speech</button>
         <button id="clearBtn" disabled>Clear Playback</button>
+        <button id="autoSubmitBtn">Auto-Submit: OFF</button>
       </div>
 
       <div class="controls">
@@ -186,11 +187,12 @@
     const FRAMES_PER_PACKET = 640;
     const PCM_KIND = 0x01;
     const JSON_KIND = 0x7b; // "{"
-    const VAD_START_RMS = 0.03;
-    const VAD_STOP_RMS = 0.015;
+    const VAD_START_RMS = 0.035;
+    const VAD_STOP_RMS = 0.012;
     const VAD_START_FRAMES = 3;
-    const VAD_STOP_FRAMES = 5;
-    const ENDPOINT_SILENCE_MS = 700;
+    const VAD_STOP_FRAMES = 7;
+    const ENDPOINT_SILENCE_MS = 600;
+    const RMS_EMA_ALPHA = 0.3;
 
     const connectBtn = document.getElementById("connectBtn");
     const disconnectBtn = document.getElementById("disconnectBtn");
@@ -221,6 +223,14 @@
     let silenceCandidateFrames = 0;
     const activePlaybackSources = new Set();
     let endpointTimerId = null;
+    let autoSubmitEnabled = false;
+    let smoothedRms = 0;
+    let reconnectEnabled = false;
+    let reconnectAttempt = 0;
+    let reconnectTimerId = null;
+    let intentionalDisconnect = false;
+    const RECONNECT_BASE_MS = 500;
+    const RECONNECT_MAX_MS = 8000;
 
     function $(id) {
       return document.getElementById(id);
@@ -433,6 +443,13 @@
         endpointTimerId = null;
         setEndpointState("ready");
         log(`endpoint ready after ${ENDPOINT_SILENCE_MS} ms silence`);
+        if (autoSubmitEnabled && !transcribePending && !mockTurnPending) {
+          setTranscriptText("");
+          setTranscribePending(true);
+          replaceAssistantText("");
+          sendJson({ type: "transcribe_recent_audio", submit_turn: true });
+          log("auto-submit: transcribing and submitting recent speech");
+        }
       }, ENDPOINT_SILENCE_MS);
     }
 
@@ -466,11 +483,13 @@
 
       processorNode.onaudioprocess = (event) => {
         const input = event.inputBuffer.getChannelData(0);
-        let rms = 0;
+        let rawRms = 0;
         for (let i = 0; i < input.length; i += 1) {
-          rms += input[i] * input[i];
+          rawRms += input[i] * input[i];
         }
-        rms = Math.sqrt(rms / input.length);
+        rawRms = Math.sqrt(rawRms / input.length);
+        smoothedRms = RMS_EMA_ALPHA * rawRms + (1 - RMS_EMA_ALPHA) * smoothedRms;
+        const rms = smoothedRms;
         setVadRms(rms);
         if (vadSpeech) {
           if (rms > VAD_STOP_RMS) {
@@ -553,6 +572,7 @@
       vadSpeech = false;
       speechCandidateFrames = 0;
       silenceCandidateFrames = 0;
+      smoothedRms = 0;
       clearEndpointTimer();
       setMicState("stopped");
       setVadState("silence");
@@ -575,6 +595,7 @@
         setClearAckMs(null);
         setClearPending(false);
         setEndpointState("idle");
+        reconnectAttempt = 0;
         sendJson({ type: "session_init", client_name: "browser-transport-spike" });
         log("socket connected");
       };
@@ -589,6 +610,10 @@
         setClearPending(false);
         clearEndpointTimer();
         log("socket disconnected");
+        if (reconnectEnabled && !intentionalDisconnect) {
+          scheduleReconnect();
+        }
+        intentionalDisconnect = false;
       };
 
       socket.onerror = () => {
@@ -679,7 +704,29 @@
       };
     }
 
+    function scheduleReconnect() {
+      if (reconnectTimerId != null) return;
+      const delay = Math.min(RECONNECT_BASE_MS * Math.pow(2, reconnectAttempt), RECONNECT_MAX_MS);
+      reconnectAttempt += 1;
+      log(`reconnect scheduled in ${delay} ms (attempt ${reconnectAttempt})`);
+      setSocketState(`reconnecting (${delay} ms)`);
+      reconnectTimerId = setTimeout(() => {
+        reconnectTimerId = null;
+        connect();
+      }, delay);
+    }
+
+    function cancelReconnect() {
+      if (reconnectTimerId != null) {
+        clearTimeout(reconnectTimerId);
+        reconnectTimerId = null;
+      }
+      reconnectAttempt = 0;
+    }
+
     function disconnect() {
+      intentionalDisconnect = true;
+      cancelReconnect();
       stopMic();
       socket?.close();
     }
@@ -689,10 +736,14 @@
       if (!window.isSecureContext && window.location.hostname !== "127.0.0.1" && window.location.hostname !== "localhost") {
         log("warning: microphone access will likely fail on insecure non-localhost origins; use HTTPS for LAN mic access");
       }
+      reconnectEnabled = true;
       connect();
     });
 
-    disconnectBtn.addEventListener("click", () => disconnect());
+    disconnectBtn.addEventListener("click", () => {
+      reconnectEnabled = false;
+      disconnect();
+    });
     micBtn.addEventListener("click", async () => startMic());
     toneBtn.addEventListener("click", () => sendJson({ type: "request_tone" }));
     mockTurnBtn.addEventListener("click", () => {
@@ -721,6 +772,13 @@
       setClearPending(true);
       sendJson({ type: "clear_playback" });
       log("playback clear requested");
+    });
+    document.getElementById("autoSubmitBtn").addEventListener("click", () => {
+      autoSubmitEnabled = !autoSubmitEnabled;
+      const btn = document.getElementById("autoSubmitBtn");
+      btn.textContent = autoSubmitEnabled ? "Auto-Submit: ON" : "Auto-Submit: OFF";
+      btn.classList.toggle("primary", autoSubmitEnabled);
+      log(`auto-submit ${autoSubmitEnabled ? "enabled" : "disabled"}`);
     });
   </script>
 </body>

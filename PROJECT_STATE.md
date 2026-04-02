@@ -203,10 +203,12 @@ Qantara reaches a good M0 state when:
 
 The highest-value next steps are:
 
-1. Auto-submit endpoint-ready speech instead of requiring the submit button.
-2. Tune VAD threshold and endpoint timing from actual results.
+1. ~~Auto-submit endpoint-ready speech instead of requiring the submit button.~~ Done on `explore/hands-free-speed`.
+2. ~~Tune VAD threshold and endpoint timing from actual results.~~ Done on `explore/hands-free-speed`.
 3. Replace the fake backend with the first real session-oriented backend target when it is chosen.
 4. Keep backend playback-stop telemetry distinct from user-perceived audible stop timing.
+5. Validate streaming TTS latency improvement with real runs and record numbers.
+6. Evaluate whether Piper streaming latency is good enough or if an alternative TTS engine is needed.
 
 ## Repository Interpretation
 

@@ -30,7 +30,7 @@ Outcome:
 
 ## R1: Hands-Free M1 Baseline
 
-Status: next
+Status: in progress (explore/hands-free-speed branch)
 
 Goals:
 
@@ -40,6 +40,14 @@ Goals:
 - improve reconnect behavior after disconnects
 - persist session-level event logs for comparison across runs
 
+Implemented on this branch:
+
+- auto-submit toggle on endpoint-ready (browser-side, opt-in)
+- EMA-smoothed RMS for VAD with tuned thresholds (start: 0.035, stop: 0.012)
+- increased VAD stop frames from 5 to 7 to reduce premature endpoint cuts
+- reduced endpoint silence from 700ms to 600ms for faster turn submission
+- WebSocket auto-reconnect with exponential backoff on unexpected disconnect
+
 Exit target:
 
 - one browser user can speak naturally without pressing submit
@@ -47,7 +55,7 @@ Exit target:
 
 ## R2: Lower-Latency Spoken Response
 
-Status: planned
+Status: in progress (explore/hands-free-speed branch)
 
 Goals:
 
@@ -55,6 +63,12 @@ Goals:
 - reduce first spoken chunk latency below the current `~1.5s`
 - decide whether `Piper` remains the default TTS path or becomes the fallback
 - measure chunk-to-chunk cadence more explicitly
+
+Implemented on this branch:
+
+- streaming Piper TTS: audio frames sent to browser as Piper writes to stdout, not after full synthesis
+- progressive text chunking: first chunk triggers at 28 chars or sentence end, later chunks at 60 chars
+- expected first-chunk latency improvement from ~1.5s to the time Piper emits its first stdout bytes
 
 Exit target:
 

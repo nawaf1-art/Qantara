@@ -215,6 +215,76 @@ async def send_pcm_samples(
         await session.emit("playback_stopped", "playback", {"reason": reason})
 
 
+async def send_pcm_stream(
+    session: Session,
+    sample_stream,
+    sample_rate: int,
+    kind: str,
+    tts_started_ms: float | None = None,
+    expected_generation: int | None = None,
+) -> None:
+    """Stream PCM chunks to the browser as they arrive from TTS, without waiting for full synthesis."""
+    generation = session.playback_generation if expected_generation is None else expected_generation
+    if generation != session.playback_generation:
+        return
+    await session.emit("playback_started", "playback", {"kind": kind, "sample_rate": sample_rate})
+
+    sent_any = False
+    first_frame_sent = False
+    total_samples = 0
+    async for samples in sample_stream:
+        if generation != session.playback_generation:
+            await session.websocket.send_str(json.dumps({"type": "playback_stopped", "reason": "cleared", "kind": kind}))
+            await session.emit("playback_stopped", "playback", {"reason": "cleared"})
+            return
+
+        total_samples += len(samples)
+        for offset in range(0, len(samples), FRAME_SAMPLES):
+            if generation != session.playback_generation:
+                await session.websocket.send_str(json.dumps({"type": "playback_stopped", "reason": "cleared", "kind": kind}))
+                await session.emit("playback_stopped", "playback", {"reason": "cleared"})
+                return
+            frame = samples[offset:offset + FRAME_SAMPLES]
+            await session.websocket.send_bytes(encode_pcm_frame(frame))
+            session.frames_out += 1
+            sent_any = True
+            if not first_frame_sent:
+                first_frame_sent = True
+                first_audio_ms = None
+                if tts_started_ms is not None:
+                    first_audio_ms = round((time.monotonic() * 1000) - tts_started_ms, 3)
+                await session.websocket.send_str(
+                    json.dumps(
+                        {
+                            "type": "playback_metrics",
+                            "engine": "piper",
+                            "kind": kind,
+                            "tts_to_first_audio_ms": first_audio_ms,
+                            "streaming": True,
+                        }
+                    )
+                )
+                await session.emit(
+                    "playback_first_frame_sent",
+                    "playback",
+                    {"kind": kind, "tts_to_first_audio_ms": first_audio_ms, "streaming": True},
+                )
+            await asyncio.sleep(len(frame) / sample_rate)
+
+    if sent_any:
+        synthesis_ms = None
+        if tts_started_ms is not None:
+            synthesis_ms = round((time.monotonic() * 1000) - tts_started_ms, 3)
+        await session.emit(
+            "tts_stream_complete",
+            "playback",
+            {"kind": kind, "total_samples": total_samples, "synthesis_ms": synthesis_ms},
+        )
+        reason = f"{kind}_complete"
+        await session.websocket.send_str(json.dumps({"type": "playback_stopped", "reason": reason, "kind": kind}))
+        await session.emit("playback_stopped", "playback", {"reason": reason})
+
+
 async def speak_text(session: Session, text: str, expected_generation: int | None = None) -> None:
     if expected_generation is not None and expected_generation != session.playback_generation:
         return
@@ -234,21 +304,12 @@ async def speak_text(session: Session, text: str, expected_generation: int | Non
 
     if PIPER.available:
         try:
-            synthesis_started_ms = time.monotonic() * 1000
-            samples = await PIPER.synthesize(text)
-            synthesis_ms = round((time.monotonic() * 1000) - synthesis_started_ms, 3)
-            await session.emit(
-                "tts_chunk_ready",
-                "playback",
-                {"char_count": len(text), "engine": "piper", "sample_count": len(samples), "synthesis_ms": synthesis_ms},
-            )
-            await send_pcm_samples(
+            await send_pcm_stream(
                 session,
-                samples,
+                PIPER.synthesize_stream(text),
                 PIPER.sample_rate,
                 "piper_tts",
                 tts_started_ms=session.last_tts_started_ms,
-                synthesis_ms=synthesis_ms,
                 expected_generation=expected_generation,
             )
             return
@@ -372,8 +433,9 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
     await session.emit("turn_submit_accepted", "adapter", {"turn_id": session.turn_id, "turn_handle": turn_handle})
 
     buffered = ""
-    spoken_prefix = ""
+    spoken_so_far = ""
     saw_final = False
+    chunk_index = 0
     try:
         await session.emit("assistant_output_started", "adapter", {"turn_handle": turn_handle})
         async for event in ADAPTER.stream_assistant_output(session.runtime_session_handle, turn_handle):
@@ -386,11 +448,15 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                     {"turn_handle": turn_handle, "delta_chars": len(event["text"]), "buffered_chars": len(buffered)},
                 )
                 await session.websocket.send_str(json.dumps({"type": "assistant_text_delta", "text": event["text"]}))
-                if not spoken_prefix:
-                    candidate = buffered.strip()
-                    if candidate and (candidate.endswith((".", "!", "?")) or len(candidate) >= 48):
-                        spoken_prefix = buffered
-                        enqueue_speech(session, candidate)
+                # Progressive chunking: first chunk triggers early (sentence end or 32 chars),
+                # later chunks use longer thresholds to reduce TTS call overhead.
+                unsent = buffered[len(spoken_so_far):]
+                candidate = unsent.strip()
+                min_chars = 28 if chunk_index == 0 else 60
+                if candidate and (candidate.endswith((".", "!", "?", ";", ":")) or len(candidate) >= min_chars):
+                    enqueue_speech(session, candidate)
+                    spoken_so_far = buffered
+                    chunk_index += 1
             elif event_type == "assistant_text_final":
                 saw_final = True
                 await session.emit(
@@ -399,10 +465,8 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                     {"turn_handle": turn_handle, "final_chars": len(event["text"])},
                 )
                 await session.websocket.send_str(json.dumps({"type": "assistant_text_final", "text": event["text"]}))
-                remaining = event["text"]
-                if spoken_prefix and event["text"].startswith(spoken_prefix):
-                    remaining = event["text"][len(spoken_prefix):]
-                enqueue_speech(session, remaining.strip())
+                remaining = event["text"][len(spoken_so_far):].strip()
+                enqueue_speech(session, remaining)
             elif event_type == "cancel_acknowledged":
                 await session.emit("turn_cancel_acknowledged", "adapter", {"turn_handle": turn_handle})
                 await session.websocket.send_str(json.dumps({"type": "cancel_status", "result": {"status": "acknowledged"}}))
@@ -425,10 +489,8 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                 {"turn_handle": turn_handle, "final_chars": len(buffered), "completed_via": "buffer_flush"},
             )
             await session.websocket.send_str(json.dumps({"type": "assistant_text_final", "text": buffered}))
-            remaining = buffered
-            if spoken_prefix and buffered.startswith(spoken_prefix):
-                remaining = buffered[len(spoken_prefix):]
-            enqueue_speech(session, remaining.strip())
+            remaining = buffered[len(spoken_so_far):].strip()
+            enqueue_speech(session, remaining)
     finally:
         clear_turn_state(session)
 
