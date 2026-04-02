@@ -2,10 +2,12 @@ import asyncio
 import os
 import sys
 import struct
+import time
 from collections.abc import AsyncIterator
 
 
 STREAM_CHUNK_BYTES = 2560  # 1280 samples = 80ms at 16kHz, ~58ms at 22050Hz
+SILENCE_TIMEOUT_S = 0.3  # how long to wait for more output before assuming synthesis is done
 
 
 def _default_model_path() -> str | None:
@@ -37,6 +39,9 @@ class PiperTTS:
         self.config_path = config_path or _default_config_path(self.voice_path)
         self.sample_rate = sample_rate
         self.command = [sys.executable, "-m", "piper"]
+        self._proc: asyncio.subprocess.Process | None = None
+        self._lock = asyncio.Lock()
+        self._warm = False
 
     @property
     def available(self) -> bool:
@@ -53,45 +58,88 @@ class PiperTTS:
             cmd.extend(["--config", self.config_path])
         return cmd
 
-    async def synthesize_stream(self, text: str) -> AsyncIterator[list[int]]:
-        """Yield sample chunks as Piper writes them to stdout, overlapping synthesis with playback."""
-        if not self.available:
-            raise RuntimeError("piper is not available")
+    async def _ensure_process(self) -> asyncio.subprocess.Process:
+        """Start or reuse the persistent Piper subprocess."""
+        if self._proc is not None and self._proc.returncode is None:
+            return self._proc
 
-        proc = await asyncio.create_subprocess_exec(
+        self._proc = await asyncio.create_subprocess_exec(
             *self._build_cmd(),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+        self._warm = False
+        return self._proc
 
-        proc.stdin.write(text.encode("utf-8"))
-        proc.stdin.close()
-
-        residual = b""
-        try:
+    async def warm_up(self) -> None:
+        """Pre-load the model by running a dummy synthesis. Call once at startup."""
+        if not self.available or self._warm:
+            return
+        async with self._lock:
+            proc = await self._ensure_process()
+            proc.stdin.write(b"warmup\n")
+            await proc.stdin.drain()
+            # drain output
             while True:
-                chunk = await proc.stdout.read(STREAM_CHUNK_BYTES)
-                if not chunk:
+                try:
+                    chunk = await asyncio.wait_for(proc.stdout.read(4096), timeout=5.0)
+                    if not chunk:
+                        break
+                except asyncio.TimeoutError:
                     break
-                raw = residual + chunk
-                # align to 2-byte sample boundary
-                usable = (len(raw) // 2) * 2
-                if usable > 0:
-                    yield _bytes_to_samples(raw[:usable])
-                residual = raw[usable:]
+            self._warm = True
+
+    async def synthesize_stream(self, text: str) -> AsyncIterator[list[int]]:
+        """Yield sample chunks from the persistent Piper process as they arrive."""
+        if not self.available:
+            raise RuntimeError("piper is not available")
+
+        async with self._lock:
+            proc = await self._ensure_process()
+            clean = text.replace("\n", " ").strip()
+            if not clean:
+                return
+
+            proc.stdin.write((clean + "\n").encode("utf-8"))
+            await proc.stdin.drain()
+
+            residual = b""
+            timeout = 5.0 if not self._warm else SILENCE_TIMEOUT_S
+            while True:
+                try:
+                    chunk = await asyncio.wait_for(proc.stdout.read(STREAM_CHUNK_BYTES), timeout=timeout)
+                    if not chunk:
+                        # process died
+                        self._proc = None
+                        break
+                    # after first bytes arrive, use shorter timeout
+                    timeout = SILENCE_TIMEOUT_S
+                    self._warm = True
+                    raw = residual + chunk
+                    usable = (len(raw) // 2) * 2
+                    if usable > 0:
+                        yield _bytes_to_samples(raw[:usable])
+                    residual = raw[usable:]
+                except asyncio.TimeoutError:
+                    break
 
             if len(residual) >= 2:
                 yield _bytes_to_samples(residual)
-        finally:
-            try:
-                await proc.wait()
-            except Exception:
-                pass
 
     async def synthesize(self, text: str) -> list[int]:
-        """Full-buffer synthesis (legacy path, kept for compatibility)."""
+        """Full-buffer synthesis (legacy path)."""
         all_samples: list[int] = []
         async for chunk in self.synthesize_stream(text):
             all_samples.extend(chunk)
         return all_samples
+
+    async def shutdown(self) -> None:
+        """Terminate the persistent process."""
+        if self._proc is not None and self._proc.returncode is None:
+            self._proc.stdin.close()
+            try:
+                await asyncio.wait_for(self._proc.wait(), timeout=2.0)
+            except asyncio.TimeoutError:
+                self._proc.kill()
+            self._proc = None

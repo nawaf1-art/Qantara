@@ -66,9 +66,15 @@ Goals:
 
 Implemented on this branch:
 
-- streaming Piper TTS: audio frames sent to browser as Piper writes to stdout, not after full synthesis
+- persistent Piper subprocess: model loads once at startup, subsequent calls skip startup + model loading
+- streaming TTS reads: audio frames sent to browser as Piper writes to stdout
 - progressive text chunking: first chunk triggers at 28 chars or sentence end, later chunks at 60 chars
-- expected first-chunk latency improvement from ~1.5s to the time Piper emits its first stdout bytes
+
+Measured results:
+
+- first-chunk latency dropped from ~1500ms to ~50-190ms (persistent subprocess)
+- estimated end-to-end time-to-first-audio: ~337ms vs ~1700ms baseline
+- warm-up cost: ~6.4s once at gateway startup
 
 Exit target:
 

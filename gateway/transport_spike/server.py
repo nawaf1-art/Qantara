@@ -686,8 +686,21 @@ async def spike_handler(request: web.Request) -> web.StreamResponse:
     raise web.HTTPFound("/spike/index.html")
 
 
+async def on_startup(app: web.Application) -> None:
+    if PIPER.available:
+        print("warming up piper persistent process...", flush=True)
+        await PIPER.warm_up()
+        print("piper warm-up complete", flush=True)
+
+
+async def on_shutdown(app: web.Application) -> None:
+    await PIPER.shutdown()
+
+
 def create_app() -> web.Application:
     app = web.Application()
+    app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
     app.router.add_get("/", index_handler)
     app.router.add_get("/ws", websocket_handler)
     app.router.add_get("/spike", spike_handler)

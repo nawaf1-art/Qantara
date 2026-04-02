@@ -207,8 +207,8 @@ The highest-value next steps are:
 2. ~~Tune VAD threshold and endpoint timing from actual results.~~ Done on `explore/hands-free-speed`.
 3. Replace the fake backend with the first real session-oriented backend target when it is chosen.
 4. Keep backend playback-stop telemetry distinct from user-perceived audible stop timing.
-5. Validate streaming TTS latency improvement with real runs and record numbers.
-6. Evaluate whether Piper streaming latency is good enough or if an alternative TTS engine is needed.
+5. ~~Validate streaming TTS latency improvement with real runs and record numbers.~~ Done: persistent subprocess drops first-chunk from ~1500ms to ~50-190ms.
+6. ~~Evaluate whether Piper streaming latency is good enough or if an alternative TTS engine is needed.~~ At ~50-190ms first-chunk, Piper is fast enough. No alternative needed.
 
 ## Repository Interpretation
 
