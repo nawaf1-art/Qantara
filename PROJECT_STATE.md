@@ -182,7 +182,7 @@ QANTARA_SPIKE_HOST=0.0.0.0 QANTARA_SPIKE_PORT=8899 ./.venv/bin/python gateway/tr
 The main unresolved technical risks are:
 
 - VAD threshold quality and false positives
-- first-audio latency for Piper under repeated runs, currently around `1.7s`
+- first-audio latency for Piper under repeated runs, currently around `1.5s` for the first spoken chunk after early chunking
 - the absence of a real backend target beyond the fake validation backend
 
 ## Definition Of A Good M0 State
@@ -200,7 +200,7 @@ Qantara reaches a good M0 state when:
 
 The highest-value next steps are:
 
-1. Reduce Piper first-audio latency from the current ~`1.7s` baseline if possible.
+1. Reduce Piper first-audio latency from the current ~`1.5s` first-chunk baseline if possible.
 2. Tune VAD threshold and transport framing from actual results.
 3. Replace the fake backend with the first real session-oriented backend target when it is chosen.
 4. Keep backend playback-stop telemetry distinct from user-perceived audible stop timing.

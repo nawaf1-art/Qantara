@@ -54,6 +54,8 @@ class Session:
         self.last_tts_started_ms: float | None = None
         self.current_turn_handle: str | None = None
         self.current_turn_task: asyncio.Task | None = None
+        self.speech_task: asyncio.Task | None = None
+        self.speech_generation = 0
 
     async def emit(self, event_name: str, source: str, payload: dict) -> None:
         record = {
@@ -151,8 +153,11 @@ async def send_pcm_samples(
     kind: str,
     tts_started_ms: float | None = None,
     synthesis_ms: float | None = None,
+    expected_generation: int | None = None,
 ) -> None:
-    generation = session.playback_generation
+    generation = session.playback_generation if expected_generation is None else expected_generation
+    if generation != session.playback_generation:
+        return
     await session.emit("playback_started", "playback", {"kind": kind, "sample_rate": sample_rate})
 
     sent_any = False
@@ -210,7 +215,9 @@ async def send_pcm_samples(
         await session.emit("playback_stopped", "playback", {"reason": reason})
 
 
-async def speak_text(session: Session, text: str) -> None:
+async def speak_text(session: Session, text: str, expected_generation: int | None = None) -> None:
+    if expected_generation is not None and expected_generation != session.playback_generation:
+        return
     engine = "piper" if PIPER.available else "synthetic"
     session.last_tts_started_ms = time.monotonic() * 1000
     await session.emit("tts_chunk_ready", "playback", {"char_count": len(text), "engine": engine})
@@ -242,6 +249,7 @@ async def speak_text(session: Session, text: str) -> None:
                 "piper_tts",
                 tts_started_ms=session.last_tts_started_ms,
                 synthesis_ms=synthesis_ms,
+                expected_generation=expected_generation,
             )
             return
         except Exception as exc:
@@ -262,6 +270,35 @@ async def speak_text(session: Session, text: str) -> None:
             )
 
     await send_tone(session)
+
+
+async def _run_speech_segment(
+    previous_task: asyncio.Task | None,
+    session: Session,
+    text: str,
+    expected_generation: int,
+) -> None:
+    if previous_task is not None:
+        try:
+            await previous_task
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            return
+
+    if expected_generation != session.speech_generation:
+        return
+
+    await speak_text(session, text, expected_generation=expected_generation)
+
+
+def enqueue_speech(session: Session, text: str) -> None:
+    if not text.strip():
+        return
+
+    previous_task = session.speech_task
+    generation = session.speech_generation
+    session.speech_task = asyncio.create_task(_run_speech_segment(previous_task, session, text, generation))
 
 
 async def ensure_adapter_session(session: Session) -> None:
@@ -324,6 +361,7 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
     await ensure_adapter_session(session)
 
     session.turn_id = str(uuid.uuid4())
+    session.speech_generation = session.playback_generation
     await session.emit("turn_submit_started", "adapter", {"turn_id": session.turn_id, "transcript": transcript})
     turn_handle = await ADAPTER.submit_user_turn(
         session.runtime_session_handle,
@@ -334,6 +372,7 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
     await session.emit("turn_submit_accepted", "adapter", {"turn_id": session.turn_id, "turn_handle": turn_handle})
 
     buffered = ""
+    spoken_prefix = ""
     saw_final = False
     try:
         await session.emit("assistant_output_started", "adapter", {"turn_handle": turn_handle})
@@ -347,6 +386,11 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                     {"turn_handle": turn_handle, "delta_chars": len(event["text"]), "buffered_chars": len(buffered)},
                 )
                 await session.websocket.send_str(json.dumps({"type": "assistant_text_delta", "text": event["text"]}))
+                if not spoken_prefix:
+                    candidate = buffered.strip()
+                    if candidate and (candidate.endswith((".", "!", "?")) or len(candidate) >= 48):
+                        spoken_prefix = buffered
+                        enqueue_speech(session, candidate)
             elif event_type == "assistant_text_final":
                 saw_final = True
                 await session.emit(
@@ -355,7 +399,10 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                     {"turn_handle": turn_handle, "final_chars": len(event["text"])},
                 )
                 await session.websocket.send_str(json.dumps({"type": "assistant_text_final", "text": event["text"]}))
-                await speak_text(session, event["text"])
+                remaining = event["text"]
+                if spoken_prefix and event["text"].startswith(spoken_prefix):
+                    remaining = event["text"][len(spoken_prefix):]
+                enqueue_speech(session, remaining.strip())
             elif event_type == "cancel_acknowledged":
                 await session.emit("turn_cancel_acknowledged", "adapter", {"turn_handle": turn_handle})
                 await session.websocket.send_str(json.dumps({"type": "cancel_status", "result": {"status": "acknowledged"}}))
@@ -378,7 +425,10 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                 {"turn_handle": turn_handle, "final_chars": len(buffered), "completed_via": "buffer_flush"},
             )
             await session.websocket.send_str(json.dumps({"type": "assistant_text_final", "text": buffered}))
-            await speak_text(session, buffered)
+            remaining = buffered
+            if spoken_prefix and buffered.startswith(spoken_prefix):
+                remaining = buffered[len(spoken_prefix):]
+            enqueue_speech(session, remaining.strip())
     finally:
         clear_turn_state(session)
 
@@ -439,6 +489,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                 await session.emit("assistant_output_completed", "gateway", {"kind": "synthetic_tone"})
             elif message_type == "clear_playback":
                 session.playback_generation += 1
+                session.speech_generation += 1
                 await session.emit("playback_queue_cleared", "browser", {})
                 await cancel_active_turn(session, "playback_cleared")
                 await ws.send_str(

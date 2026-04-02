@@ -77,7 +77,7 @@ This is a real validation slice, not just design documentation. The current M0 s
 
 Current measured baseline:
 
-- Piper first-audio is roughly `1.7s`
+- Piper first spoken chunk is now roughly `1.5s` after early chunking
 - local browser playback clear is effectively immediate
 - backend playback-stop telemetry is still separate from user-perceived audible stop timing
 - end-to-end cancel is validated through the HTTP adapter and local fake backend
