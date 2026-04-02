@@ -23,6 +23,7 @@ The project has moved beyond planning-only status. It now includes:
 - a validated first TTS candidate path through Piper
 - a validated session-oriented adapter path through a local fake backend
 - a validated auto-submit endpointing path
+- a concrete handoff document for replacing the fake backend with a real backend target
 
 ## What Is Decided
 

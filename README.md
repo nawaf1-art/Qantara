@@ -56,6 +56,7 @@ Qantara should behave as a voice channel adapter around a downstream conversatio
 - [`DECISIONS.md`](/home/nawaf/Projects/Qantara/DECISIONS.md): architectural decisions and deferred choices
 - [`BACKEND_ADAPTER_TARGETS.md`](/home/nawaf/Projects/Qantara/BACKEND_ADAPTER_TARGETS.md): candidate backend shapes and the recommended first adapter target
 - [`SESSION_GATEWAY_CONTRACT.md`](/home/nawaf/Projects/Qantara/SESSION_GATEWAY_CONTRACT.md): first concrete session-oriented backend contract shape
+- [`REAL_BACKEND_INTEGRATION.md`](/home/nawaf/Projects/Qantara/REAL_BACKEND_INTEGRATION.md): handoff path from the fake backend to the first real backend target
 - [`MILESTONES.md`](/home/nawaf/Projects/Qantara/MILESTONES.md): delivery checklist and exit criteria tracking
 - [`PROJECT_STATE.md`](/home/nawaf/Projects/Qantara/PROJECT_STATE.md): current checkpoint, implemented scope, and next steps
 - [`ROADMAP.md`](/home/nawaf/Projects/Qantara/ROADMAP.md): versioned milestone path from the current alpha checkpoint
@@ -98,6 +99,10 @@ Current adapter selection:
 Local validation backend:
 
 - [gateway/fake_session_backend/server.py](/home/nawaf/Projects/Qantara/gateway/fake_session_backend/server.py)
+
+Real backend handoff path:
+
+- [REAL_BACKEND_INTEGRATION.md](/home/nawaf/Projects/Qantara/REAL_BACKEND_INTEGRATION.md)
 
 ## Quick Start
 
