@@ -602,6 +602,14 @@
               clearRequestedAt = null;
               setClearPending(false);
               log(`playback stopped (${payload.reason})${clearStopMs == null ? "" : ` ${clearStopMs} ms`}`);
+            } else if (payload.type === "cancel_status") {
+              log(`cancel status: ${JSON.stringify(payload.result)}`);
+            } else if (payload.type === "turn_rejected") {
+              log(`turn rejected: ${payload.reason}`);
+              setMockTurnPending(false);
+            } else if (payload.type === "turn_failed") {
+              log(`turn failed: ${payload.message}`);
+              setMockTurnPending(false);
             } else {
               log(`control ${event.data}`);
             }

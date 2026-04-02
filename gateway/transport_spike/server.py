@@ -52,6 +52,8 @@ class Session:
         self.recent_pcm: list[int] = []
         self.recent_pcm_limit = TARGET_SAMPLE_RATE * 6
         self.last_tts_started_ms: float | None = None
+        self.current_turn_handle: str | None = None
+        self.current_turn_task: asyncio.Task | None = None
 
     async def emit(self, event_name: str, source: str, payload: dict) -> None:
         record = {
@@ -279,6 +281,45 @@ async def ensure_adapter_session(session: Session) -> None:
         )
 
 
+def clear_turn_state(session: Session) -> None:
+    session.current_turn_handle = None
+    session.current_turn_task = None
+
+
+async def cancel_active_turn(session: Session, reason: str) -> None:
+    if (
+        session.runtime_session_handle is None
+        or session.current_turn_handle is None
+        or session.current_turn_task is None
+        or session.current_turn_task.done()
+    ):
+        return
+
+    await session.emit(
+        "turn_cancel_requested",
+        "adapter",
+        {"turn_handle": session.current_turn_handle, "reason": reason},
+    )
+    try:
+        result = await ADAPTER.cancel_turn(
+            session.runtime_session_handle,
+            session.current_turn_handle,
+            {"reason": reason},
+        )
+        await session.emit(
+            "turn_cancel_acknowledged",
+            "adapter",
+            {"turn_handle": session.current_turn_handle, "result": result},
+        )
+        await session.websocket.send_str(json.dumps({"type": "cancel_status", "result": result}))
+    except Exception as exc:
+        await session.emit(
+            "recoverable_error",
+            "adapter",
+            {"component": "cancel", "message": str(exc), "turn_handle": session.current_turn_handle},
+        )
+
+
 async def stream_assistant_turn(session: Session, transcript: str) -> None:
     await ensure_adapter_session(session)
 
@@ -289,38 +330,70 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
         transcript,
         {"source": "transport_spike"},
     )
+    session.current_turn_handle = turn_handle
     await session.emit("turn_submit_accepted", "adapter", {"turn_id": session.turn_id, "turn_handle": turn_handle})
 
     buffered = ""
     saw_final = False
-    await session.emit("assistant_output_started", "adapter", {"turn_handle": turn_handle})
-    async for event in ADAPTER.stream_assistant_output(session.runtime_session_handle, turn_handle):
-        if event["type"] == "assistant_text_delta":
-            buffered += event["text"]
-            await session.emit(
-                "assistant_output_delta",
-                "adapter",
-                {"turn_handle": turn_handle, "delta_chars": len(event["text"]), "buffered_chars": len(buffered)},
-            )
-            await session.websocket.send_str(json.dumps({"type": "assistant_text_delta", "text": event["text"]}))
-        elif event["type"] == "assistant_text_final":
-            saw_final = True
+    try:
+        await session.emit("assistant_output_started", "adapter", {"turn_handle": turn_handle})
+        async for event in ADAPTER.stream_assistant_output(session.runtime_session_handle, turn_handle):
+            event_type = event["type"]
+            if event_type == "assistant_text_delta":
+                buffered += event["text"]
+                await session.emit(
+                    "assistant_output_delta",
+                    "adapter",
+                    {"turn_handle": turn_handle, "delta_chars": len(event["text"]), "buffered_chars": len(buffered)},
+                )
+                await session.websocket.send_str(json.dumps({"type": "assistant_text_delta", "text": event["text"]}))
+            elif event_type == "assistant_text_final":
+                saw_final = True
+                await session.emit(
+                    "assistant_output_completed",
+                    "adapter",
+                    {"turn_handle": turn_handle, "final_chars": len(event["text"])},
+                )
+                await session.websocket.send_str(json.dumps({"type": "assistant_text_final", "text": event["text"]}))
+                await speak_text(session, event["text"])
+            elif event_type == "cancel_acknowledged":
+                await session.emit("turn_cancel_acknowledged", "adapter", {"turn_handle": turn_handle})
+                await session.websocket.send_str(json.dumps({"type": "cancel_status", "result": {"status": "acknowledged"}}))
+                return
+            elif event_type == "turn_failed":
+                await session.emit(
+                    "recoverable_error",
+                    "adapter",
+                    {"component": "turn", "turn_handle": turn_handle, "message": event.get("message", "turn failed")},
+                )
+                await session.websocket.send_str(json.dumps({"type": "turn_failed", "message": event.get("message", "turn failed")}))
+                return
+            elif event_type == "turn_completed":
+                await session.emit("assistant_output_completed", "adapter", {"turn_handle": turn_handle, "completed_via": "turn_completed"})
+
+        if not saw_final and buffered:
             await session.emit(
                 "assistant_output_completed",
                 "adapter",
-                {"turn_handle": turn_handle, "final_chars": len(event["text"])},
+                {"turn_handle": turn_handle, "final_chars": len(buffered), "completed_via": "buffer_flush"},
             )
-            await session.websocket.send_str(json.dumps({"type": "assistant_text_final", "text": event["text"]}))
-            await speak_text(session, event["text"])
+            await session.websocket.send_str(json.dumps({"type": "assistant_text_final", "text": buffered}))
+            await speak_text(session, buffered)
+    finally:
+        clear_turn_state(session)
 
-    if not saw_final and buffered:
+
+async def start_assistant_turn(session: Session, transcript: str) -> None:
+    if session.current_turn_task is not None and not session.current_turn_task.done():
         await session.emit(
-            "assistant_output_completed",
-            "adapter",
-            {"turn_handle": turn_handle, "final_chars": len(buffered), "completed_via": "buffer_flush"},
+            "recoverable_error",
+            "gateway",
+            {"component": "control", "message": "turn already active"},
         )
-        await session.websocket.send_str(json.dumps({"type": "assistant_text_final", "text": buffered}))
-        await speak_text(session, buffered)
+        await session.websocket.send_str(json.dumps({"type": "turn_rejected", "reason": "turn already active"}))
+        return
+
+    session.current_turn_task = asyncio.create_task(stream_assistant_turn(session, transcript))
 
 
 async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
@@ -367,6 +440,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
             elif message_type == "clear_playback":
                 session.playback_generation += 1
                 await session.emit("playback_queue_cleared", "browser", {})
+                await cancel_active_turn(session, "playback_cleared")
                 await ws.send_str(
                     json.dumps(
                         {
@@ -380,7 +454,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                 if not transcript:
                     await session.emit("recoverable_error", "gateway", {"component": "control", "message": "empty mock turn"})
                 else:
-                    await stream_assistant_turn(session, transcript)
+                    await start_assistant_turn(session, transcript)
             elif message_type == "transcribe_recent_audio":
                 await session.emit(
                     "transcription_requested",
@@ -464,6 +538,9 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
             await session.emit("terminal_error", "gateway", {"message": str(ws.exception())})
 
     finally:
+        await cancel_active_turn(session, "socket_disconnected")
+        if session.current_turn_task is not None and not session.current_turn_task.done():
+            session.current_turn_task.cancel()
         await session.emit("socket_disconnected", "gateway", {})
         await session.emit("session_closed", "gateway", {})
 
