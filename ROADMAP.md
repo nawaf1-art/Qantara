@@ -1,6 +1,6 @@
 # Roadmap
 
-Current version: `0.1.0-alpha.1`
+Current version: `0.1.0-alpha.2`
 
 ## Current Position
 
@@ -13,10 +13,11 @@ Qantara has completed its first meaningful alpha checkpoint:
 - session-oriented backend adapter path is working end to end
 - endpoint-ready auto-submit flow is validated with the local fake backend
 - end-to-end cancel is validated
+- real model-backed conversation is validated through the Ollama session backend
 
 This is the first versioned milestone because the project has moved beyond research and isolated transport checks into a real, validated gateway path.
 
-## R0: Alpha Checkpoint `0.1.0-alpha.1`
+## R0: Alpha Checkpoint `0.1.0-alpha.2`
 
 Status: complete
 
@@ -27,6 +28,7 @@ Outcome:
 - assistant output streams through a real adapter path
 - local playback can be cleared immediately
 - fake backend proves the first concrete backend contract
+- Ollama session backend proves the first real backend target
 
 ## R1: Hands-Free M1 Baseline
 
@@ -61,12 +63,12 @@ Exit target:
 
 ## R3: Real Backend Integration
 
-Status: planned
+Status: in_progress
 
 Goals:
 
-- choose the first real session-oriented backend target
-- implement the real adapter against that backend
+- stabilize the first real session-oriented backend target
+- refine prompt, persona, and response style for the real backend
 - keep environment-specific values out of the core design
 - validate session bootstrap, turn stream, and cancel against that backend
 

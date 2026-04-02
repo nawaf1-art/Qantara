@@ -1,6 +1,6 @@
 # Handoff
 
-Current version: `0.1.0-alpha.1`
+Current version: `0.1.0-alpha.2`
 
 ## Objective
 
@@ -17,6 +17,7 @@ Qantara is a LAN-first voice gateway for OpenClaw-compatible agent runtimes. It 
 - local playback clear is effectively immediate
 - session-oriented HTTP adapter path is working
 - local fake backend is working
+- real Ollama session backend is working
 - end-to-end cancel is working
 - endpoint-ready auto-submit flow is working
 - speaking works end to end, but hands-free auto-submit remains too eager during assistant playback
@@ -29,6 +30,7 @@ Current runtime chain:
 - Qantara gateway spike
 - `session_gateway_http` adapter
 - local fake backend
+- local Ollama session backend
 
 This intentionally avoids binding to the user's local OpenClaw agents for now.
 
@@ -83,18 +85,20 @@ https://<lan-ip>:9443/spike
 - later TTS chunk: about `1.65s` to `1.67s`
 - local clear acknowledgement: near-immediate
 - local stop after clear: tens of milliseconds
+- real backend first chunks are commonly around `1.4s` to `1.5s`, with later chunks often higher
 
 ## Known Weaknesses
 
 - `Piper` is still slow enough to be noticeable
 - VAD is improved but not yet fully tuned
 - auto-submit currently over-segments speech during assistant playback
+- real backend prompt and identity are not stable enough yet
 - socket disconnect behavior still needs characterization
-- real backend integration is still deferred
+- real backend integration is no longer deferred; it is active but still early
 
 ## Recommended Next Steps
 
-1. Replace the fake backend with the first real backend target when that choice is made.
+1. Tighten the real backend system prompt and response style.
 2. Improve reconnect behavior after disconnects.
 3. Revisit hands-free turn policy after real backend speaking is validated.
 4. Decide whether to keep optimizing `Piper` or evaluate a faster TTS path.

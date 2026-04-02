@@ -15,6 +15,7 @@
 - disconnect behavior: connection established successfully after HTTPS, WSS, and port fixes
 - endpointing behavior: browser-side endpoint-ready fired successfully after `700 ms` silence and now supports auto-submit of recent speech
 - current limitation: auto-submit still over-segments speech when the user keeps talking during assistant playback
+- real backend path: validated against an Ollama-backed session backend using the same HTTP contract
 
 ### Egress
 
@@ -50,9 +51,11 @@
 - first-audio feel through browser playback: acceptable as an M0 baseline, but still too slow for the eventual target UX
 - fallback tone used: yes, during the earlier pre-Piper runs
 - current result: first validated TTS candidate
+- real backend speaking result: working; multi-turn voice interaction now works through the Ollama-backed backend
 
 ### Follow-Ups
 
 - do not block real backend work on the current auto-submit behavior; treat it as a known interaction-quality limitation for now
+- tighten the real backend prompt and persona policy so identity and response style are consistent
 - keep backend playback-stop telemetry separate from user-perceived audible stop timing
 - move beyond the fake backend once a real session-oriented backend target is chosen

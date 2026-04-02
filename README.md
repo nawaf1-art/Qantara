@@ -1,6 +1,6 @@
 # Qantara
 
-Version: `0.1.0-alpha.1`
+Version: `0.1.0-alpha.2`
 
 Qantara is a LAN-first, real-time voice interface for OpenClaw-compatible agent runtimes.
 
@@ -78,6 +78,7 @@ The repository now includes a runnable browser-to-gateway transport spike with:
 - auto-submit on endpoint-ready for recent speech submission
 - configurable adapter selection with `mock` and `runtime_skeleton` modes
 - validated `session_gateway_http` adapter path through a local fake backend
+- validated `session_gateway_http` adapter path through a real Ollama-backed backend
 - locally validated Piper runtime path with synthetic fallback still available
 
 This is a real validation slice, not just design documentation. The current M0 spike has now validated the first STT candidate path through faster-whisper and the first TTS candidate path through Piper. Later runtime binding and interruption hardening still remain open.
@@ -89,6 +90,7 @@ Current measured baseline:
 - backend playback-stop telemetry is still separate from user-perceived audible stop timing
 - end-to-end cancel is validated through the HTTP adapter and local fake backend
 - endpoint-ready plus submit-recent-speech flow is validated through the HTTP adapter and local fake backend
+- real multi-turn conversation through an Ollama-backed backend is now validated
 
 Current adapter selection:
 

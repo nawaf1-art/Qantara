@@ -1,6 +1,6 @@
 # Project State
 
-Version: `0.1.0-alpha.1`
+Version: `0.1.0-alpha.2`
 
 ## Checkpoint
 
@@ -25,6 +25,7 @@ The project has moved beyond planning-only status. It now includes:
 - a validated auto-submit endpointing path
 - a concrete handoff document for replacing the fake backend with a real backend target
 - a first real local backend target built around Ollama and the same session contract
+- a validated real model-backed conversation path through the Ollama session backend
 
 ## What Is Decided
 
@@ -71,6 +72,7 @@ Source:
 - session-oriented HTTP adapter: [`adapters/session_gateway_http.py`](/home/nawaf/Projects/Qantara/adapters/session_gateway_http.py)
 - session gateway contract: [`SESSION_GATEWAY_CONTRACT.md`](/home/nawaf/Projects/Qantara/SESSION_GATEWAY_CONTRACT.md)
 - local fake session backend: [`gateway/fake_session_backend/server.py`](/home/nawaf/Projects/Qantara/gateway/fake_session_backend/server.py)
+- real Ollama session backend: [`gateway/ollama_session_backend/server.py`](/home/nawaf/Projects/Qantara/gateway/ollama_session_backend/server.py)
 - optional Piper path: [`gateway/transport_spike/tts_piper.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/tts_piper.py)
 - validated first STT path: [`gateway/transport_spike/stt_faster_whisper.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/stt_faster_whisper.py)
 - run notes template: [`experiments/notes/transport-spike.md`](/home/nawaf/Projects/Qantara/experiments/notes/transport-spike.md)
@@ -94,6 +96,7 @@ The current runnable spike can:
 - stream assistant text back to the browser through the configured adapter
 - optionally synthesize assistant text through Piper when configured
 - fall back to a synthetic tone path when Piper is unavailable
+- route text turns through either the fake backend or the real Ollama-backed backend using the same adapter contract
 
 ## What The Current Spike Does Not Do Yet
 
@@ -123,6 +126,7 @@ Validated by actual testing:
 - Piper playback through the browser spike is working on the current secure LAN path
 - end-to-end cancellation is working across browser, gateway, HTTP adapter, and fake backend
 - endpoint-ready auto-submit is working across browser, gateway, STT, HTTP adapter, and fake backend
+- real model-backed assistant conversation is working across browser, gateway, HTTP adapter, Ollama session backend, and remote Ollama runtime
 - speaking works end to end, but hands-free auto-submit is still too eager during assistant playback and remains a known M0 limitation
 
 Not yet validated by actual experiment results:
@@ -189,7 +193,7 @@ The main unresolved technical risks are:
 - VAD threshold quality and false positives
 - auto-submit currently over-segments speech during assistant playback and should not be treated as production-ready turn policy yet
 - first-audio latency for Piper under repeated runs, currently around `1.5s` for the first spoken chunk after early chunking
-- the absence of a real backend target beyond the fake validation backend
+- response style and identity are not yet stable across prompts in the real backend path
 - occasional socket disconnects that still need characterization
 
 ## Definition Of A Good M0 State
@@ -207,7 +211,7 @@ Qantara reaches a good M0 state when:
 
 The highest-value next steps are:
 
-1. Replace the fake backend with the first real session-oriented backend target when it is chosen.
+1. Tighten real-backend system prompt and response style so identity and tone are consistent.
 2. Improve reconnect behavior after disconnects.
 3. Revisit hands-free turn policy after real backend speaking is validated.
 4. Keep backend playback-stop telemetry distinct from user-perceived audible stop timing.
