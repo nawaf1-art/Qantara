@@ -80,6 +80,7 @@ Current measured baseline:
 - Piper first-audio is roughly `1.7s`
 - local browser playback clear is effectively immediate
 - backend playback-stop telemetry is still separate from user-perceived audible stop timing
+- end-to-end cancel is validated through the HTTP adapter and local fake backend
 
 Current adapter selection:
 

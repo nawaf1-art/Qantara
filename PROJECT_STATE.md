@@ -118,6 +118,7 @@ Validated by actual testing:
 - faster-whisper is functioning as the first real STT candidate in this environment
 - the Piper runtime and first local voice model now synthesize successfully on this machine
 - Piper playback through the browser spike is working on the current secure LAN path
+- end-to-end cancellation is working across browser, gateway, HTTP adapter, and fake backend
 
 Not yet validated by actual experiment results:
 
@@ -182,7 +183,7 @@ The main unresolved technical risks are:
 
 - VAD threshold quality and false positives
 - first-audio latency for Piper under repeated runs, currently around `1.7s`
-- missing real interruption and cancellation behavior
+- the absence of a real backend target beyond the fake validation backend
 
 ## Definition Of A Good M0 State
 
@@ -201,7 +202,7 @@ The highest-value next steps are:
 
 1. Reduce Piper first-audio latency from the current ~`1.7s` baseline if possible.
 2. Tune VAD threshold and transport framing from actual results.
-3. Replace the runtime skeleton adapter with the first concrete backend adapter when the target runtime contract is chosen.
+3. Replace the fake backend with the first real session-oriented backend target when it is chosen.
 4. Keep backend playback-stop telemetry distinct from user-perceived audible stop timing.
 
 ## Repository Interpretation
