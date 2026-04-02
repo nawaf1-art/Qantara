@@ -433,7 +433,22 @@
         endpointTimerId = null;
         setEndpointState("ready");
         log(`endpoint ready after ${ENDPOINT_SILENCE_MS} ms silence`);
+        requestRecentSpeechSubmit("auto");
       }, ENDPOINT_SILENCE_MS);
+    }
+
+    function requestRecentSpeechSubmit(mode) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      if (!micActive || transcribePending || mockTurnPending) {
+        return;
+      }
+      setTranscriptText("");
+      setTranscribePending(true);
+      setEndpointState("submitting");
+      sendJson({ type: "transcribe_recent_audio", submit_turn: true });
+      log(mode === "auto" ? "auto-submit recent speech requested" : "submit recent speech requested");
     }
 
     function sendJson(message) {
@@ -609,6 +624,9 @@
             } else if (payload.type === "transcript_result") {
               setTranscriptText(payload.text || "");
               setTranscribePending(false);
+              if (micActive) {
+                setEndpointState("idle");
+              }
               log(`transcript (${payload.engine}): ${payload.text || "<empty>"}`);
             } else if (payload.type === "tts_status") {
               const statusText = payload.reason ? `${payload.engine} (${payload.reason})` : payload.engine;
@@ -708,11 +726,7 @@
       sendJson({ type: "transcribe_recent_audio" });
     });
     submitSpeechBtn.addEventListener("click", () => {
-      if (transcribePending || mockTurnPending) return;
-      setTranscriptText("");
-      setTranscribePending(true);
-      sendJson({ type: "transcribe_recent_audio", submit_turn: true });
-      log("submit recent speech requested");
+      requestRecentSpeechSubmit("manual");
     });
     clearBtn.addEventListener("click", () => {
       if (clearPending) return;

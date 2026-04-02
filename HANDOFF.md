@@ -18,7 +18,7 @@ Qantara is a LAN-first voice gateway for OpenClaw-compatible agent runtimes. It 
 - session-oriented HTTP adapter path is working
 - local fake backend is working
 - end-to-end cancel is working
-- endpoint-ready plus submit-recent-speech flow is working
+- endpoint-ready auto-submit flow is working
 
 ## Runtime Shape
 
@@ -92,9 +92,9 @@ https://<lan-ip>:9443/spike
 
 ## Recommended Next Steps
 
-1. Auto-submit speech on endpoint-ready.
-2. Tighten VAD thresholds and endpoint timing from repeated runs.
-3. Decide whether to keep optimizing `Piper` or evaluate a faster TTS path.
+1. Tighten VAD thresholds and endpoint timing from repeated runs.
+2. Decide whether to keep optimizing `Piper` or evaluate a faster TTS path.
+3. Improve reconnect behavior after disconnects.
 4. Replace the fake backend with the first real backend target when that choice is made.
 
 ## Notes For Another Coding Agent

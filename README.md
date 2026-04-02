@@ -74,7 +74,7 @@ The repository now includes a runnable browser-to-gateway transport spike with:
 - gateway-side transport event logging
 - browser playback of gateway PCM audio
 - validated faster-whisper transcription of recent captured audio
-- endpoint-ready flow for recent speech submission
+- auto-submit on endpoint-ready for recent speech submission
 - configurable adapter selection with `mock` and `runtime_skeleton` modes
 - validated `session_gateway_http` adapter path through a local fake backend
 - locally validated Piper runtime path with synthetic fallback still available

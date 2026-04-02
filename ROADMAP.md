@@ -11,7 +11,7 @@ Qantara has completed its first meaningful alpha checkpoint:
 - `Piper` is validated as the first TTS candidate
 - first-chunk TTS playback is improved to about `1.50s`
 - session-oriented backend adapter path is working end to end
-- endpoint-ready to submit flow is validated with the local fake backend
+- endpoint-ready auto-submit flow is validated with the local fake backend
 - end-to-end cancel is validated
 
 This is the first versioned milestone because the project has moved beyond research and isolated transport checks into a real, validated gateway path.
@@ -34,7 +34,6 @@ Status: next
 
 Goals:
 
-- auto-submit recent speech on endpoint-ready instead of requiring a button
 - tighten VAD thresholds and silence timing from observed runs
 - reduce duplicate or noisy endpoint transitions
 - improve reconnect behavior after disconnects

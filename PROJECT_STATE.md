@@ -22,7 +22,7 @@ The project has moved beyond planning-only status. It now includes:
 - a validated first STT candidate path through faster-whisper
 - a validated first TTS candidate path through Piper
 - a validated session-oriented adapter path through a local fake backend
-- a validated endpoint-ready speech submission path
+- a validated auto-submit endpointing path
 
 ## What Is Decided
 
@@ -86,7 +86,7 @@ The current runnable spike can:
 - emit basic browser-side VAD state changes using an RMS threshold
 - request transcription of the recent audio buffer through a working faster-whisper path
 - mark endpoint-ready after stable silence in the browser
-- submit recent speech through the endpoint-ready flow
+- auto-submit recent speech through the endpoint-ready flow
 - select a downstream adapter by configuration
 - submit text turns through the selected adapter
 - stream assistant text back to the browser through the configured adapter
@@ -120,7 +120,7 @@ Validated by actual testing:
 - the Piper runtime and first local voice model now synthesize successfully on this machine
 - Piper playback through the browser spike is working on the current secure LAN path
 - end-to-end cancellation is working across browser, gateway, HTTP adapter, and fake backend
-- endpoint-ready plus submit-recent-speech is working across browser, gateway, STT, HTTP adapter, and fake backend
+- endpoint-ready auto-submit is working across browser, gateway, STT, HTTP adapter, and fake backend
 
 Not yet validated by actual experiment results:
 
@@ -203,9 +203,9 @@ Qantara reaches a good M0 state when:
 
 The highest-value next steps are:
 
-1. Auto-submit endpoint-ready speech instead of requiring the submit button.
-2. Tune VAD threshold and endpoint timing from actual results.
-3. Replace the fake backend with the first real session-oriented backend target when it is chosen.
+1. Tune VAD threshold and endpoint timing from actual results.
+2. Replace the fake backend with the first real session-oriented backend target when it is chosen.
+3. Improve reconnect behavior after disconnects.
 4. Keep backend playback-stop telemetry distinct from user-perceived audible stop timing.
 
 ## Repository Interpretation

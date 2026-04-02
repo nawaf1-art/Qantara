@@ -13,7 +13,7 @@
 - frame cadence: mic capture ran successfully and recent-audio buffer reached roughly 96000 samples during testing
 - resampling issues: none explicitly observed from the browser logs yet
 - disconnect behavior: connection established successfully after HTTPS, WSS, and port fixes
-- endpointing behavior: browser-side endpoint-ready fired successfully after `700 ms` silence and supported recent-speech submission
+- endpointing behavior: browser-side endpoint-ready fired successfully after `700 ms` silence and now supports auto-submit of recent speech
 
 ### Egress
 
@@ -52,7 +52,6 @@
 
 ### Follow-Ups
 
-- auto-submit endpoint-ready speech instead of requiring a button
 - continue tightening browser VAD and endpoint behavior from real observations
 - keep backend playback-stop telemetry separate from user-perceived audible stop timing
 - move beyond the fake backend once a real session-oriented backend target is chosen
