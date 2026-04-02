@@ -99,7 +99,7 @@ https://<lan-ip>:9443/spike
 
 Latest tuning change:
 
-- browser-side VAD thresholds and endpoint silence timing were tightened after the first auto-submit milestone and still need validation in repeated runs
+- browser-side VAD thresholds were tightened, endpoint silence was increased, and auto-submit cooldown was added after the first auto-submit milestone; this still needs validation in repeated runs
 
 ## Notes For Another Coding Agent
 

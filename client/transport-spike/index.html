@@ -191,7 +191,8 @@
     const VAD_STOP_RMS = 0.012;
     const VAD_START_FRAMES = 4;
     const VAD_STOP_FRAMES = 7;
-    const ENDPOINT_SILENCE_MS = 850;
+    const ENDPOINT_SILENCE_MS = 1200;
+    const AUTO_SUBMIT_COOLDOWN_MS = 1400;
 
     const connectBtn = document.getElementById("connectBtn");
     const disconnectBtn = document.getElementById("disconnectBtn");
@@ -222,6 +223,7 @@
     let silenceCandidateFrames = 0;
     const activePlaybackSources = new Set();
     let endpointTimerId = null;
+    let lastAutoSubmitAt = 0;
 
     function $(id) {
       return document.getElementById(id);
@@ -444,6 +446,14 @@
       }
       if (!micActive || transcribePending || mockTurnPending) {
         return;
+      }
+      if (mode === "auto") {
+        const now = performance.now();
+        if (now - lastAutoSubmitAt < AUTO_SUBMIT_COOLDOWN_MS) {
+          log(`auto-submit skipped during cooldown (${Math.round(now - lastAutoSubmitAt)} ms)`);
+          return;
+        }
+        lastAutoSubmitAt = now;
       }
       setTranscriptText("");
       setTranscribePending(true);

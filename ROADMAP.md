@@ -34,7 +34,7 @@ Status: next
 
 Goals:
 
-- validate and refine the latest VAD threshold and silence timing pass
+- validate and refine the latest VAD threshold, silence timing, and auto-submit cooldown pass
 - reduce duplicate or noisy endpoint transitions
 - improve reconnect behavior after disconnects
 - persist session-level event logs for comparison across runs

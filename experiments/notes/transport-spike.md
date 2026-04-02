@@ -52,6 +52,6 @@
 
 ### Follow-Ups
 
-- validate the latest tighter browser VAD and endpoint settings from real observations
+- validate the latest tighter browser VAD, longer endpoint silence, and auto-submit cooldown settings from real observations
 - keep backend playback-stop telemetry separate from user-perceived audible stop timing
 - move beyond the fake backend once a real session-oriented backend target is chosen
