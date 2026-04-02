@@ -186,11 +186,12 @@
     const FRAMES_PER_PACKET = 640;
     const PCM_KIND = 0x01;
     const JSON_KIND = 0x7b; // "{"
-    const VAD_START_RMS = 0.03;
-    const VAD_STOP_RMS = 0.015;
-    const VAD_START_FRAMES = 3;
-    const VAD_STOP_FRAMES = 5;
-    const ENDPOINT_SILENCE_MS = 700;
+    // Tuned from observed headset runs to reduce chatty transitions.
+    const VAD_START_RMS = 0.045;
+    const VAD_STOP_RMS = 0.012;
+    const VAD_START_FRAMES = 4;
+    const VAD_STOP_FRAMES = 7;
+    const ENDPOINT_SILENCE_MS = 850;
 
     const connectBtn = document.getElementById("connectBtn");
     const disconnectBtn = document.getElementById("disconnectBtn");

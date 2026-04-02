@@ -97,6 +97,10 @@ https://<lan-ip>:9443/spike
 3. Improve reconnect behavior after disconnects.
 4. Replace the fake backend with the first real backend target when that choice is made.
 
+Latest tuning change:
+
+- browser-side VAD thresholds and endpoint silence timing were tightened after the first auto-submit milestone and still need validation in repeated runs
+
 ## Notes For Another Coding Agent
 
 - Keep the project runtime-agnostic.

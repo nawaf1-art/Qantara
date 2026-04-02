@@ -203,7 +203,7 @@ Qantara reaches a good M0 state when:
 
 The highest-value next steps are:
 
-1. Tune VAD threshold and endpoint timing from actual results.
+1. Validate the latest VAD threshold and endpoint timing pass from actual results.
 2. Replace the fake backend with the first real session-oriented backend target when it is chosen.
 3. Improve reconnect behavior after disconnects.
 4. Keep backend playback-stop telemetry distinct from user-perceived audible stop timing.
