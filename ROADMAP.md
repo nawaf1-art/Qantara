@@ -43,10 +43,13 @@ Goals:
 Implemented on this branch:
 
 - auto-submit toggle on endpoint-ready (browser-side, opt-in)
+- auto-start via `?auto=1` URL parameter (connect + mic + auto-submit)
 - EMA-smoothed RMS for VAD with tuned thresholds (start: 0.035, stop: 0.012)
 - increased VAD stop frames from 5 to 7 to reduce premature endpoint cuts
 - reduced endpoint silence from 700ms to 600ms for faster turn submission
 - WebSocket auto-reconnect with exponential backoff on unexpected disconnect
+- server-side barge-in: cancel active turn on speech detection
+- AudioWorklet mic capture with ScriptProcessor fallback
 
 Exit target:
 
@@ -66,15 +69,20 @@ Goals:
 
 Implemented on this branch:
 
-- persistent Piper subprocess: model loads once at startup, subsequent calls skip startup + model loading
-- streaming TTS reads: audio frames sent to browser as Piper writes to stdout
-- progressive text chunking: first chunk triggers at 28 chars or sentence end, later chunks at 60 chars
+- in-process Piper ONNX via piper-onnx: model loads once (~1.2s), no subprocess
+- persistent subprocess fallback when piper-onnx is not installed
+- streaming TTS reads: audio frames sent to browser as chunks arrive
+- progressive text chunking: first chunk at 28 chars or sentence end, later at 60 chars
+- struct.pack/unpack for PCM encoding/decoding (replaces per-sample loops)
+- safe websocket send helpers (catch ConnectionResetError)
 
 Measured results:
 
-- first-chunk latency dropped from ~1500ms to ~50-190ms (persistent subprocess)
+- first-chunk latency dropped from ~1500ms to ~66-153ms (piper-onnx in-process)
 - estimated end-to-end time-to-first-audio: ~337ms vs ~1700ms baseline
-- warm-up cost: ~6.4s once at gateway startup
+- model load cost: ~1.2s once at gateway startup
+
+Decision: Piper remains the default TTS. At ~66-153ms first-chunk, no alternative needed.
 
 Exit target:
 

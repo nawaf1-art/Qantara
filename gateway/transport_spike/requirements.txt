@@ -1,1 +1,5 @@
 aiohttp>=3.9,<4
+faster-whisper>=1.0
+piper-tts>=1.4
+piper-onnx>=1.0
+pathvalidate

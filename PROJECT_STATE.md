@@ -98,10 +98,10 @@ The current runnable spike can:
 The current spike does not yet provide:
 
 - real downstream runtime integration
-- robust barge-in semantics across active generation
+- ~~robust barge-in semantics across active generation~~ Done on `explore/hands-free-speed`
 - production-ready playback buffering
 - speaker-mode echo mitigation
-- persisted metrics or experiment notes from actual test runs
+- ~~persisted metrics or experiment notes from actual test runs~~ Done on `explore/hands-free-speed`
 
 ## What Has Been Validated
 
@@ -122,11 +122,15 @@ Validated by actual testing:
 - end-to-end cancellation is working across browser, gateway, HTTP adapter, and fake backend
 - endpoint-ready plus submit-recent-speech is working across browser, gateway, STT, HTTP adapter, and fake backend
 
-Not yet validated by actual experiment results:
+Validated on `explore/hands-free-speed` branch:
 
-- whether the browser VAD threshold is tuned well enough for ongoing use
-
-That distinction matters. The repo contains a runnable validation slice, but M0 is not complete until those runs are executed and recorded.
+- piper-onnx in-process ONNX inference: 66-153ms first-chunk (vs 1500ms baseline)
+- barge-in: cancel active turn on speech detection during playback
+- auto-submit: endpoint-ready triggers automatic speech submission
+- VAD EMA smoothing: no false positives in simulation tests
+- AudioWorklet mic capture with ScriptProcessor fallback
+- 38 automated tests (33 unit + 5 integration) all passing
+- end-to-end WebSocket turn submission through gateway to fake backend
 
 ## How To Run The Current Spike
 
