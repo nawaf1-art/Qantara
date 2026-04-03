@@ -3,6 +3,7 @@ import json
 import math
 import os
 import ssl
+import struct
 import sys
 import time
 import uuid
@@ -57,6 +58,20 @@ class Session:
         self.speech_task: asyncio.Task | None = None
         self.speech_generation = 0
 
+    async def send_str(self, data: str) -> None:
+        if not self.websocket.closed:
+            try:
+                await self.websocket.send_str(data)
+            except (ConnectionResetError, ConnectionError):
+                pass
+
+    async def send_bytes(self, data: bytes) -> None:
+        if not self.websocket.closed:
+            try:
+                await self.websocket.send_bytes(data)
+            except (ConnectionResetError, ConnectionError):
+                pass
+
     async def emit(self, event_name: str, source: str, payload: dict) -> None:
         record = {
             "event_name": event_name,
@@ -82,13 +97,7 @@ STT = FasterWhisperSTT(
 
 
 def encode_pcm_frame(samples: list[int]) -> bytes:
-    payload = bytearray(1 + len(samples) * 2)
-    payload[0] = PCM_KIND
-    offset = 1
-    for sample in samples:
-        payload[offset:offset + 2] = int(sample).to_bytes(2, "little", signed=True)
-        offset += 2
-    return bytes(payload)
+    return struct.pack(f"<B{len(samples)}h", PCM_KIND, *samples)
 
 
 async def send_tone(session: Session) -> None:
@@ -102,19 +111,19 @@ async def send_tone(session: Session) -> None:
     first_frame_sent = False
     for offset in range(0, total_samples, FRAME_SAMPLES):
         if generation != session.playback_generation:
-            await session.websocket.send_str(json.dumps({"type": "playback_stopped", "reason": "cleared", "kind": "synthetic_tone"}))
+            await session.send_str(json.dumps({"type": "playback_stopped", "reason": "cleared", "kind": "synthetic_tone"}))
             await session.emit("playback_stopped", "playback", {"reason": "cleared"})
             return
         frame = []
         for i in range(offset, min(offset + FRAME_SAMPLES, total_samples)):
             value = math.sin(2 * math.pi * TONE_HZ * (i / TARGET_SAMPLE_RATE))
             frame.append(int(amplitude * value))
-        await session.websocket.send_bytes(encode_pcm_frame(frame))
+        await session.send_bytes(encode_pcm_frame(frame))
         session.frames_out += 1
         sent_any = True
         if not first_frame_sent:
             first_frame_sent = True
-            await session.websocket.send_str(
+            await session.send_str(
                 json.dumps(
                     {
                         "type": "playback_metrics",
@@ -142,7 +151,7 @@ async def send_tone(session: Session) -> None:
         await asyncio.sleep(len(frame) / TARGET_SAMPLE_RATE)
 
     if sent_any:
-        await session.websocket.send_str(json.dumps({"type": "playback_stopped", "reason": "tone_complete", "kind": "synthetic_tone"}))
+        await session.send_str(json.dumps({"type": "playback_stopped", "reason": "tone_complete", "kind": "synthetic_tone"}))
         await session.emit("playback_stopped", "playback", {"reason": "tone_complete"})
 
 
@@ -164,12 +173,12 @@ async def send_pcm_samples(
     first_frame_sent = False
     for offset in range(0, len(samples), FRAME_SAMPLES):
         if generation != session.playback_generation:
-            await session.websocket.send_str(json.dumps({"type": "playback_stopped", "reason": "cleared", "kind": kind}))
+            await session.send_str(json.dumps({"type": "playback_stopped", "reason": "cleared", "kind": kind}))
             await session.emit("playback_stopped", "playback", {"reason": "cleared"})
             return
 
         frame = samples[offset:offset + FRAME_SAMPLES]
-        await session.websocket.send_bytes(encode_pcm_frame(frame))
+        await session.send_bytes(encode_pcm_frame(frame))
         session.frames_out += 1
         sent_any = True
         if not first_frame_sent:
@@ -177,7 +186,7 @@ async def send_pcm_samples(
             first_audio_ms = None
             if tts_started_ms is not None:
                 first_audio_ms = round((time.monotonic() * 1000) - tts_started_ms, 3)
-            await session.websocket.send_str(
+            await session.send_str(
                 json.dumps(
                     {
                         "type": "playback_metrics",
@@ -211,7 +220,7 @@ async def send_pcm_samples(
 
     if sent_any:
         reason = f"{kind}_complete"
-        await session.websocket.send_str(json.dumps({"type": "playback_stopped", "reason": reason, "kind": kind}))
+        await session.send_str(json.dumps({"type": "playback_stopped", "reason": reason, "kind": kind}))
         await session.emit("playback_stopped", "playback", {"reason": reason})
 
 
@@ -234,18 +243,18 @@ async def send_pcm_stream(
     total_samples = 0
     async for samples in sample_stream:
         if generation != session.playback_generation:
-            await session.websocket.send_str(json.dumps({"type": "playback_stopped", "reason": "cleared", "kind": kind}))
+            await session.send_str(json.dumps({"type": "playback_stopped", "reason": "cleared", "kind": kind}))
             await session.emit("playback_stopped", "playback", {"reason": "cleared"})
             return
 
         total_samples += len(samples)
         for offset in range(0, len(samples), FRAME_SAMPLES):
             if generation != session.playback_generation:
-                await session.websocket.send_str(json.dumps({"type": "playback_stopped", "reason": "cleared", "kind": kind}))
+                await session.send_str(json.dumps({"type": "playback_stopped", "reason": "cleared", "kind": kind}))
                 await session.emit("playback_stopped", "playback", {"reason": "cleared"})
                 return
             frame = samples[offset:offset + FRAME_SAMPLES]
-            await session.websocket.send_bytes(encode_pcm_frame(frame))
+            await session.send_bytes(encode_pcm_frame(frame))
             session.frames_out += 1
             sent_any = True
             if not first_frame_sent:
@@ -253,7 +262,7 @@ async def send_pcm_stream(
                 first_audio_ms = None
                 if tts_started_ms is not None:
                     first_audio_ms = round((time.monotonic() * 1000) - tts_started_ms, 3)
-                await session.websocket.send_str(
+                await session.send_str(
                     json.dumps(
                         {
                             "type": "playback_metrics",
@@ -281,7 +290,7 @@ async def send_pcm_stream(
             {"kind": kind, "total_samples": total_samples, "synthesis_ms": synthesis_ms},
         )
         reason = f"{kind}_complete"
-        await session.websocket.send_str(json.dumps({"type": "playback_stopped", "reason": reason, "kind": kind}))
+        await session.send_str(json.dumps({"type": "playback_stopped", "reason": reason, "kind": kind}))
         await session.emit("playback_stopped", "playback", {"reason": reason})
 
 
@@ -291,7 +300,7 @@ async def speak_text(session: Session, text: str, expected_generation: int | Non
     engine = "piper" if PIPER.available else "synthetic"
     session.last_tts_started_ms = time.monotonic() * 1000
     await session.emit("tts_chunk_ready", "playback", {"char_count": len(text), "engine": engine})
-    await session.websocket.send_str(
+    await session.send_str(
         json.dumps(
             {
                 "type": "tts_status",
@@ -319,7 +328,7 @@ async def speak_text(session: Session, text: str, expected_generation: int | Non
                 "playback",
                 {"component": "tts", "message": str(exc), "engine": "piper"},
             )
-            await session.websocket.send_str(
+            await session.send_str(
                 json.dumps(
                     {
                         "type": "tts_status",
@@ -409,7 +418,7 @@ async def cancel_active_turn(session: Session, reason: str) -> None:
             "adapter",
             {"turn_handle": session.current_turn_handle, "result": result},
         )
-        await session.websocket.send_str(json.dumps({"type": "cancel_status", "result": result}))
+        await session.send_str(json.dumps({"type": "cancel_status", "result": result}))
     except Exception as exc:
         await session.emit(
             "recoverable_error",
@@ -447,7 +456,7 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                     "adapter",
                     {"turn_handle": turn_handle, "delta_chars": len(event["text"]), "buffered_chars": len(buffered)},
                 )
-                await session.websocket.send_str(json.dumps({"type": "assistant_text_delta", "text": event["text"]}))
+                await session.send_str(json.dumps({"type": "assistant_text_delta", "text": event["text"]}))
                 # Progressive chunking: first chunk triggers early (sentence end or 32 chars),
                 # later chunks use longer thresholds to reduce TTS call overhead.
                 unsent = buffered[len(spoken_so_far):]
@@ -464,12 +473,12 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                     "adapter",
                     {"turn_handle": turn_handle, "final_chars": len(event["text"])},
                 )
-                await session.websocket.send_str(json.dumps({"type": "assistant_text_final", "text": event["text"]}))
+                await session.send_str(json.dumps({"type": "assistant_text_final", "text": event["text"]}))
                 remaining = event["text"][len(spoken_so_far):].strip()
                 enqueue_speech(session, remaining)
             elif event_type == "cancel_acknowledged":
                 await session.emit("turn_cancel_acknowledged", "adapter", {"turn_handle": turn_handle})
-                await session.websocket.send_str(json.dumps({"type": "cancel_status", "result": {"status": "acknowledged"}}))
+                await session.send_str(json.dumps({"type": "cancel_status", "result": {"status": "acknowledged"}}))
                 return
             elif event_type == "turn_failed":
                 await session.emit(
@@ -477,7 +486,7 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                     "adapter",
                     {"component": "turn", "turn_handle": turn_handle, "message": event.get("message", "turn failed")},
                 )
-                await session.websocket.send_str(json.dumps({"type": "turn_failed", "message": event.get("message", "turn failed")}))
+                await session.send_str(json.dumps({"type": "turn_failed", "message": event.get("message", "turn failed")}))
                 return
             elif event_type == "turn_completed":
                 await session.emit("assistant_output_completed", "adapter", {"turn_handle": turn_handle, "completed_via": "turn_completed"})
@@ -488,7 +497,7 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                 "adapter",
                 {"turn_handle": turn_handle, "final_chars": len(buffered), "completed_via": "buffer_flush"},
             )
-            await session.websocket.send_str(json.dumps({"type": "assistant_text_final", "text": buffered}))
+            await session.send_str(json.dumps({"type": "assistant_text_final", "text": buffered}))
             remaining = buffered[len(spoken_so_far):].strip()
             enqueue_speech(session, remaining)
     finally:
@@ -502,7 +511,7 @@ async def start_assistant_turn(session: Session, transcript: str) -> None:
             "gateway",
             {"component": "control", "message": "turn already active"},
         )
-        await session.websocket.send_str(json.dumps({"type": "turn_rejected", "reason": "turn already active"}))
+        await session.send_str(json.dumps({"type": "turn_rejected", "reason": "turn already active"}))
         return
 
     session.current_turn_task = asyncio.create_task(stream_assistant_turn(session, transcript))
@@ -526,7 +535,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
             if message_type == "session_init":
                 await session.emit("session_ready", "gateway", {"client_name": payload.get("client_name")})
                 health = await ADAPTER.check_health()
-                await ws.send_str(
+                await session.send_str(
                     json.dumps(
                         {
                             "type": "session_ready",
@@ -554,7 +563,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                 session.speech_generation += 1
                 await session.emit("playback_queue_cleared", "browser", {})
                 await cancel_active_turn(session, "playback_cleared")
-                await ws.send_str(
+                await session.send_str(
                     json.dumps(
                         {
                             "type": "playback_cleared",
@@ -579,7 +588,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                     },
                 )
                 if not session.recent_pcm:
-                    await session.websocket.send_str(json.dumps({"type": "transcript_result", "text": "", "engine": "none"}))
+                    await session.send_str(json.dumps({"type": "transcript_result", "text": "", "engine": "none"}))
                 elif STT.available:
                     try:
                         text = await STT.transcribe(session.recent_pcm, TARGET_SAMPLE_RATE)
@@ -588,7 +597,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                             "speech",
                             {"char_count": len(text), "engine": "faster-whisper"},
                         )
-                        await session.websocket.send_str(
+                        await session.send_str(
                             json.dumps({"type": "transcript_result", "text": text, "engine": "faster-whisper"})
                         )
                         if payload.get("submit_turn") and text.strip():
@@ -600,7 +609,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                             "speech",
                             {"component": "stt", "message": str(exc), "engine": "faster-whisper"},
                         )
-                        await session.websocket.send_str(
+                        await session.send_str(
                             json.dumps({"type": "transcript_result", "text": "", "engine": "faster-whisper", "error": str(exc)})
                         )
                 else:
@@ -610,7 +619,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                         "speech",
                         {"char_count": len(fallback), "engine": "fallback"},
                     )
-                    await session.websocket.send_str(
+                    await session.send_str(
                         json.dumps({"type": "transcript_result", "text": fallback, "engine": "fallback"})
                     )
                     session.recent_pcm.clear()
@@ -628,6 +637,12 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                     "browser",
                     {"state": session.last_vad_state, "rms": payload.get("rms")},
                 )
+                if session.last_vad_state == "speech" and session.current_turn_task is not None and not session.current_turn_task.done():
+                    session.playback_generation += 1
+                    session.speech_generation += 1
+                    await session.emit("barge_in", "gateway", {"reason": "speech_during_playback"})
+                    await cancel_active_turn(session, "user_barge_in")
+                    await session.send_str(json.dumps({"type": "playback_cleared", "generation": session.playback_generation, "reason": "barge_in"}))
             else:
                 await session.emit("recoverable_error", "gateway", {"component": "control", "message": f"unknown control {message_type}"})
 
@@ -640,9 +655,9 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                 continue
 
             session.frames_in += 1
-            samples = (len(msg.data) - 1) // 2
-            for i in range(1, len(msg.data), 2):
-                session.recent_pcm.append(int.from_bytes(msg.data[i:i + 2], "little", signed=True))
+            count = (len(msg.data) - 1) // 2
+            new_samples = list(struct.unpack(f"<{count}h", msg.data[1:1 + count * 2]))
+            session.recent_pcm.extend(new_samples)
             if len(session.recent_pcm) > session.recent_pcm_limit:
                 session.recent_pcm = session.recent_pcm[-session.recent_pcm_limit:]
             await session.emit(

@@ -166,6 +166,7 @@
         <div class="stat"><span class="stat-label">Sample Rate</span><span id="sampleRate">16000</span></div>
         <div class="stat"><span class="stat-label">First Audio</span><span id="firstAudioMs">-</span></div>
         <div class="stat"><span class="stat-label">Clear Ack</span><span id="clearAckMs">-</span></div>
+        <div class="stat"><span class="stat-label">Turn</span><span id="turnState">idle</span></div>
       </div>
 
       <div class="panel" style="margin-top: 0; padding: 14px;">
@@ -285,6 +286,10 @@
 
     function setEndpointState(value) {
       updateText("endpointState", value);
+    }
+
+    function setTurnState(value) {
+      updateText("turnState", value);
     }
 
     function setFirstAudioMs(value) {
@@ -446,6 +451,7 @@
         if (autoSubmitEnabled && !transcribePending && !mockTurnPending) {
           setTranscriptText("");
           setTranscribePending(true);
+          setTurnState("submitting");
           replaceAssistantText("");
           sendJson({ type: "transcribe_recent_audio", submit_turn: true });
           log("auto-submit: transcribing and submitting recent speech");
@@ -625,11 +631,13 @@
           try {
             const payload = JSON.parse(event.data);
             if (payload.type === "assistant_text_delta") {
+              setTurnState("streaming");
               appendAssistantDelta(payload.text);
               log(`assistant delta: ${payload.text}`);
             } else if (payload.type === "assistant_text_final") {
               replaceAssistantText(payload.text);
               setMockTurnPending(false);
+              setTurnState("idle");
               log(`assistant final: ${payload.text}`);
             } else if (payload.type === "transcript_result") {
               setTranscriptText(payload.text || "");
@@ -653,9 +661,15 @@
                 `playback metrics: engine=${payload.engine} tts_to_first_audio_ms=${payload.tts_to_first_audio_ms ?? "-"} synthesis_ms=${payload.synthesis_ms ?? "-"}`
               );
             } else if (payload.type === "playback_cleared") {
-              const clearAckMs = clearRequestedAt == null ? null : Math.round(performance.now() - clearRequestedAt);
-              setClearAckMs(clearAckMs);
-              log(`playback cleared ack${clearAckMs == null ? "" : ` ${clearAckMs} ms`}`);
+              if (payload.reason === "barge_in") {
+                clearPlaybackQueue();
+                setTurnState("idle");
+                log("barge-in: playback cleared by server");
+              } else {
+                const clearAckMs = clearRequestedAt == null ? null : Math.round(performance.now() - clearRequestedAt);
+                setClearAckMs(clearAckMs);
+                log(`playback cleared ack${clearAckMs == null ? "" : ` ${clearAckMs} ms`}`);
+              }
             } else if (payload.type === "playback_stopped") {
               const clearStopMs = clearRequestedAt == null ? null : Math.round(performance.now() - clearRequestedAt);
               if (clearStopMs != null) {
@@ -665,13 +679,16 @@
               setClearPending(false);
               log(`playback stopped (${payload.reason})${clearStopMs == null ? "" : ` ${clearStopMs} ms`}`);
             } else if (payload.type === "cancel_status") {
+              setTurnState("idle");
               log(`cancel status: ${JSON.stringify(payload.result)}`);
             } else if (payload.type === "turn_rejected") {
               log(`turn rejected: ${payload.reason}`);
               setMockTurnPending(false);
+              setTurnState("idle");
             } else if (payload.type === "turn_failed") {
               log(`turn failed: ${payload.message}`);
               setMockTurnPending(false);
+              setTurnState("idle");
             } else {
               log(`control ${event.data}`);
             }
@@ -750,6 +767,7 @@
       if (mockTurnPending) return;
       replaceAssistantText("");
       setMockTurnPending(true);
+      setTurnState("submitting");
       sendJson({ type: "submit_mock_turn", text: $("mockInput").value });
     });
     transcribeBtn.addEventListener("click", () => {
@@ -762,6 +780,7 @@
       if (transcribePending || mockTurnPending) return;
       setTranscriptText("");
       setTranscribePending(true);
+      setTurnState("submitting");
       sendJson({ type: "transcribe_recent_audio", submit_turn: true });
       log("submit recent speech requested");
     });
@@ -780,6 +799,27 @@
       btn.classList.toggle("primary", autoSubmitEnabled);
       log(`auto-submit ${autoSubmitEnabled ? "enabled" : "disabled"}`);
     });
+
+    // Auto-start from URL parameter: ?auto=1
+    (function() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("auto") === "1") {
+        connectBtn.click();
+        const waitForConnect = setInterval(() => {
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            clearInterval(waitForConnect);
+            if (!autoSubmitEnabled) {
+              document.getElementById("autoSubmitBtn").click();
+            }
+            setTimeout(() => {
+              if (!micActive) {
+                micBtn.click();
+              }
+            }, 300);
+          }
+        }, 100);
+      }
+    })();
   </script>
 </body>
 </html>
