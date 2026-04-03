@@ -466,92 +466,127 @@
       socket.send(JSON.stringify(message));
     }
 
+    let workletNode = null;
+    let useWorklet = true; // prefer AudioWorklet, fall back to ScriptProcessor
+
+    function handleAudioChunk(pcm16, rms) {
+      // VAD logic (shared by both worklet and ScriptProcessor paths)
+      smoothedRms = RMS_EMA_ALPHA * rms + (1 - RMS_EMA_ALPHA) * smoothedRms;
+      const smoothed = smoothedRms;
+      setVadRms(smoothed);
+      if (vadSpeech) {
+        if (smoothed > VAD_STOP_RMS) {
+          silenceCandidateFrames = 0;
+        } else {
+          silenceCandidateFrames += 1;
+        }
+        if (silenceCandidateFrames >= VAD_STOP_FRAMES) {
+          vadSpeech = false;
+          silenceCandidateFrames = 0;
+          speechCandidateFrames = 0;
+          const state = "silence";
+          setVadState(state);
+          scheduleEndpointTimer();
+          sendJson({ type: "vad_state", state, rms: Number(smoothed.toFixed(4)) });
+          log(`vad ${state} rms=${smoothed.toFixed(4)}`);
+        }
+      } else {
+        if (smoothed > VAD_START_RMS) {
+          speechCandidateFrames += 1;
+        } else {
+          speechCandidateFrames = 0;
+        }
+        if (speechCandidateFrames >= VAD_START_FRAMES) {
+          vadSpeech = true;
+          speechCandidateFrames = 0;
+          silenceCandidateFrames = 0;
+          clearEndpointTimer();
+          const state = "speech";
+          setVadState(state);
+          sendJson({ type: "vad_state", state, rms: Number(smoothed.toFixed(4)) });
+          log(`vad ${state} rms=${smoothed.toFixed(4)}`);
+        }
+      }
+
+      // Send PCM frames over WebSocket
+      let offset = 0;
+      while (pcm16.length - offset >= FRAMES_PER_PACKET) {
+        const packet = pcm16.slice(offset, offset + FRAMES_PER_PACKET);
+        socket.send(encodePcmFrame(packet));
+        framesSent += 1;
+        updateText("framesSent", framesSent);
+        offset += FRAMES_PER_PACKET;
+      }
+      // discard remainder (worklet sends aligned chunks)
+    }
+
+    async function startMicWorklet() {
+      micContext = new AudioContext({ sampleRate: 48000 });
+      try {
+        await micContext.audioWorklet.addModule("pcm-processor.js");
+      } catch (err) {
+        log(`audioworklet failed to load: ${err.message}, falling back to ScriptProcessor`);
+        micContext.close();
+        micContext = null;
+        useWorklet = false;
+        return startMicScriptProcessor();
+      }
+
+      captureStream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      sourceNode = micContext.createMediaStreamSource(captureStream);
+      workletNode = new AudioWorkletNode(micContext, "pcm-processor", {
+        processorOptions: { targetRate: TARGET_SAMPLE_RATE, chunkSize: 2048 },
+      });
+      workletNode.port.onmessage = (event) => {
+        const { pcm, rms } = event.data;
+        handleAudioChunk(new Int16Array(pcm instanceof ArrayBuffer ? pcm : pcm.buffer), rms);
+      };
+      sourceNode.connect(workletNode);
+      workletNode.connect(micContext.destination);
+      micActive = true;
+      log("microphone started (AudioWorklet)");
+    }
+
+    async function startMicScriptProcessor() {
+      if (!micContext) {
+        micContext = new AudioContext();
+      }
+      captureStream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      sourceNode = micContext.createMediaStreamSource(captureStream);
+      processorNode = micContext.createScriptProcessor(2048, 1, 1);
+
+      processorNode.onaudioprocess = (event) => {
+        const input = event.inputBuffer.getChannelData(0);
+        let sumSq = 0;
+        for (let i = 0; i < input.length; i++) { sumSq += input[i] * input[i]; }
+        const rms = Math.sqrt(sumSq / input.length);
+        const downsampled = downsample(input, micContext.sampleRate, TARGET_SAMPLE_RATE);
+        const pcm = floatToInt16(downsampled);
+        handleAudioChunk(pcm, rms);
+      };
+
+      sourceNode.connect(processorNode);
+      processorNode.connect(micContext.destination);
+      micActive = true;
+      log("microphone started (ScriptProcessor fallback)");
+    }
+
     async function startMic() {
       if (micActive) {
         stopMic();
         return;
       }
 
-      captureStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-
-      micContext = new AudioContext();
-      sourceNode = micContext.createMediaStreamSource(captureStream);
-      processorNode = micContext.createScriptProcessor(2048, 1, 1);
-
-      let pending = new Int16Array(0);
-
-      processorNode.onaudioprocess = (event) => {
-        const input = event.inputBuffer.getChannelData(0);
-        let rawRms = 0;
-        for (let i = 0; i < input.length; i += 1) {
-          rawRms += input[i] * input[i];
-        }
-        rawRms = Math.sqrt(rawRms / input.length);
-        smoothedRms = RMS_EMA_ALPHA * rawRms + (1 - RMS_EMA_ALPHA) * smoothedRms;
-        const rms = smoothedRms;
-        setVadRms(rms);
-        if (vadSpeech) {
-          if (rms > VAD_STOP_RMS) {
-            silenceCandidateFrames = 0;
-          } else {
-            silenceCandidateFrames += 1;
-          }
-          if (silenceCandidateFrames >= VAD_STOP_FRAMES) {
-            vadSpeech = false;
-            silenceCandidateFrames = 0;
-            speechCandidateFrames = 0;
-            const state = "silence";
-            setVadState(state);
-            scheduleEndpointTimer();
-            sendJson({ type: "vad_state", state, rms: Number(rms.toFixed(4)) });
-            log(`vad ${state} rms=${rms.toFixed(4)}`);
-          }
-        } else {
-          if (rms > VAD_START_RMS) {
-            speechCandidateFrames += 1;
-          } else {
-            speechCandidateFrames = 0;
-          }
-          if (speechCandidateFrames >= VAD_START_FRAMES) {
-            vadSpeech = true;
-            speechCandidateFrames = 0;
-            silenceCandidateFrames = 0;
-            clearEndpointTimer();
-            const state = "speech";
-            setVadState(state);
-            sendJson({ type: "vad_state", state, rms: Number(rms.toFixed(4)) });
-            log(`vad ${state} rms=${rms.toFixed(4)}`);
-          }
-        }
-
-        const downsampled = downsample(input, micContext.sampleRate, TARGET_SAMPLE_RATE);
-        const pcm = floatToInt16(downsampled);
-        const merged = new Int16Array(pending.length + pcm.length);
-        merged.set(pending);
-        merged.set(pcm, pending.length);
-
-        let offset = 0;
-        while (merged.length - offset >= FRAMES_PER_PACKET) {
-          const packet = merged.slice(offset, offset + FRAMES_PER_PACKET);
-          socket.send(encodePcmFrame(packet));
-          framesSent += 1;
-          updateText("framesSent", framesSent);
-          offset += FRAMES_PER_PACKET;
-        }
-
-        pending = merged.slice(offset);
-      };
-
-      sourceNode.connect(processorNode);
-      processorNode.connect(micContext.destination);
-      micActive = true;
+      if (useWorklet) {
+        await startMicWorklet();
+      } else {
+        await startMicScriptProcessor();
+      }
+      if (!micActive) return;  // failed
       setMicState("running");
       setVadState("silence");
       setEndpointState("idle");
@@ -566,6 +601,7 @@
         return;
       }
 
+      workletNode?.disconnect();
       processorNode?.disconnect();
       sourceNode?.disconnect();
       captureStream?.getTracks().forEach((track) => track.stop());
@@ -574,6 +610,7 @@
       captureStream = null;
       sourceNode = null;
       processorNode = null;
+      workletNode = null;
       micActive = false;
       vadSpeech = false;
       speechCandidateFrames = 0;
