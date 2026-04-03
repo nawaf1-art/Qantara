@@ -1,13 +1,13 @@
 import asyncio
 import os
-import sys
 import struct
+import sys
 import time
 from collections.abc import AsyncIterator
 
 
 STREAM_CHUNK_BYTES = 2560  # 1280 samples = 80ms at 16kHz, ~58ms at 22050Hz
-SILENCE_TIMEOUT_S = 0.3  # how long to wait for more output before assuming synthesis is done
+SILENCE_TIMEOUT_S = 0.3
 
 
 def _default_model_path() -> str | None:
@@ -28,6 +28,18 @@ def _bytes_to_samples(raw: bytes) -> list[int]:
     return list(struct.unpack(f"<{count}h", raw[: count * 2]))
 
 
+def _try_load_piper_onnx():
+    """Try to import piper_onnx for in-process ONNX inference."""
+    try:
+        from piper_onnx import Piper
+        return Piper
+    except ImportError:
+        return None
+
+
+_PiperOnnx = _try_load_piper_onnx()
+
+
 class PiperTTS:
     def __init__(
         self,
@@ -39,6 +51,12 @@ class PiperTTS:
         self.config_path = config_path or _default_config_path(self.voice_path)
         self.sample_rate = sample_rate
         self.command = [sys.executable, "-m", "piper"]
+
+        # In-process ONNX inference (preferred)
+        self._onnx_model = None
+        self._onnx_available = _PiperOnnx is not None
+
+        # Subprocess fallback
         self._proc: asyncio.subprocess.Process | None = None
         self._lock = asyncio.Lock()
         self._warm = False
@@ -46,6 +64,15 @@ class PiperTTS:
     @property
     def available(self) -> bool:
         return self.voice_path is not None and os.path.exists(self.voice_path)
+
+    @property
+    def engine(self) -> str:
+        """Return which TTS engine is active."""
+        if self._onnx_model is not None:
+            return "piper_onnx"
+        if self._warm:
+            return "piper_subprocess"
+        return "piper"
 
     def _build_cmd(self) -> list[str]:
         cmd = [
@@ -58,11 +85,24 @@ class PiperTTS:
             cmd.extend(["--config", self.config_path])
         return cmd
 
+    def _ensure_onnx_model(self) -> bool:
+        """Load the ONNX model in-process if piper-onnx is available."""
+        if self._onnx_model is not None:
+            return True
+        if not self._onnx_available or not self.available or not self.config_path:
+            return False
+        try:
+            self._onnx_model = _PiperOnnx(self.voice_path, self.config_path)
+            self.sample_rate = self._onnx_model.sample_rate
+            return True
+        except Exception:
+            self._onnx_available = False
+            return False
+
     async def _ensure_process(self) -> asyncio.subprocess.Process:
-        """Start or reuse the persistent Piper subprocess."""
+        """Start or reuse the persistent Piper subprocess (fallback path)."""
         if self._proc is not None and self._proc.returncode is None:
             return self._proc
-
         self._proc = await asyncio.create_subprocess_exec(
             *self._build_cmd(),
             stdin=asyncio.subprocess.PIPE,
@@ -73,14 +113,20 @@ class PiperTTS:
         return self._proc
 
     async def warm_up(self) -> None:
-        """Pre-load the model by running a dummy synthesis. Call once at startup."""
-        if not self.available or self._warm:
+        """Pre-load the model. Uses in-process ONNX if available, subprocess otherwise."""
+        if not self.available:
             return
+
+        if self._ensure_onnx_model():
+            # In-process ONNX: model is already loaded, do a dummy synthesis to warm caches
+            await asyncio.to_thread(self._onnx_model.create, "warmup")
+            return
+
+        # Subprocess fallback
         async with self._lock:
             proc = await self._ensure_process()
             proc.stdin.write(b"warmup\n")
             await proc.stdin.drain()
-            # drain output
             while True:
                 try:
                     chunk = await asyncio.wait_for(proc.stdout.read(4096), timeout=5.0)
@@ -91,16 +137,30 @@ class PiperTTS:
             self._warm = True
 
     async def synthesize_stream(self, text: str) -> AsyncIterator[list[int]]:
-        """Yield sample chunks from the persistent Piper process as they arrive."""
+        """Yield sample chunks. Uses in-process ONNX if available, persistent subprocess otherwise."""
         if not self.available:
             raise RuntimeError("piper is not available")
 
+        clean = text.replace("\n", " ").strip()
+        if not clean:
+            return
+
+        # Preferred: in-process ONNX inference
+        if self._ensure_onnx_model():
+            audio, sr = await asyncio.to_thread(self._onnx_model.create, clean)
+            samples = audio.flatten()
+            # Convert float32 [-1,1] -> int16
+            int16 = (samples * 32767).clip(-32768, 32767).astype("int16")
+            sample_list = int16.tolist()
+            # Yield in chunks for consistent frame sizing
+            chunk_size = 1280
+            for offset in range(0, len(sample_list), chunk_size):
+                yield sample_list[offset:offset + chunk_size]
+            return
+
+        # Fallback: persistent subprocess
         async with self._lock:
             proc = await self._ensure_process()
-            clean = text.replace("\n", " ").strip()
-            if not clean:
-                return
-
             proc.stdin.write((clean + "\n").encode("utf-8"))
             await proc.stdin.drain()
 
@@ -110,10 +170,8 @@ class PiperTTS:
                 try:
                     chunk = await asyncio.wait_for(proc.stdout.read(STREAM_CHUNK_BYTES), timeout=timeout)
                     if not chunk:
-                        # process died
                         self._proc = None
                         break
-                    # after first bytes arrive, use shorter timeout
                     timeout = SILENCE_TIMEOUT_S
                     self._warm = True
                     raw = residual + chunk
@@ -135,7 +193,7 @@ class PiperTTS:
         return all_samples
 
     async def shutdown(self) -> None:
-        """Terminate the persistent process."""
+        """Terminate the persistent subprocess if running."""
         if self._proc is not None and self._proc.returncode is None:
             self._proc.stdin.close()
             try:

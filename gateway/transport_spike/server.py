@@ -297,7 +297,7 @@ async def send_pcm_stream(
 async def speak_text(session: Session, text: str, expected_generation: int | None = None) -> None:
     if expected_generation is not None and expected_generation != session.playback_generation:
         return
-    engine = "piper" if PIPER.available else "synthetic"
+    engine = PIPER.engine if PIPER.available else "synthetic"
     session.last_tts_started_ms = time.monotonic() * 1000
     await session.emit("tts_chunk_ready", "playback", {"char_count": len(text), "engine": engine})
     await session.send_str(
