@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from typing import Any, AsyncIterator
@@ -36,29 +37,58 @@ class SessionGatewayHTTPAdapter(RuntimeAdapter):
     def _url(self, path: str) -> str:
         return f"{self.base_url}{path}"
 
+    def _classify_error(self, status: int) -> str:
+        if status in (502, 503, 504):
+            return "retryable"
+        if status in (401, 403):
+            return "non_retryable"
+        if status == 404:
+            return "non_retryable"
+        if status == 501:
+            return "degraded_but_usable"
+        if status == 429:
+            return "retryable"
+        return "non_retryable"
+
     async def _request_json(
         self,
         method: str,
         path: str,
         payload: dict[str, Any] | None = None,
+        retries: int = 1,
     ) -> dict[str, Any]:
         if not self.available:
             raise RuntimeError("session gateway backend base URL is not configured")
 
         timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.request(
-                method,
-                self._url(path),
-                json=payload,
-                headers=self._headers(),
-            ) as response:
-                body = await response.text()
-                if response.status >= 400:
-                    raise RuntimeError(f"backend request failed: {response.status} {body}".strip())
-                if not body:
-                    return {}
-                return json.loads(body)
+        last_exc = None
+        for attempt in range(1 + retries):
+            try:
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.request(
+                        method,
+                        self._url(path),
+                        json=payload,
+                        headers=self._headers(),
+                    ) as response:
+                        body = await response.text()
+                        if response.status >= 400:
+                            classification = self._classify_error(response.status)
+                            if classification == "retryable" and attempt < retries:
+                                last_exc = RuntimeError(f"backend {response.status}: {body}".strip())
+                                await asyncio.sleep(0.5 * (attempt + 1))
+                                continue
+                            raise RuntimeError(f"backend request failed ({classification}): {response.status} {body}".strip())
+                        if not body:
+                            return {}
+                        return json.loads(body)
+            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                if attempt < retries:
+                    last_exc = exc
+                    await asyncio.sleep(0.5 * (attempt + 1))
+                    continue
+                raise RuntimeError(f"backend connection failed: {exc}") from exc
+        raise last_exc or RuntimeError("backend request failed after retries")
 
     async def start_or_resume_session(self, client_context: dict | None = None) -> str:
         data = await self._request_json("POST", "/sessions", {"client_context": client_context or {}})

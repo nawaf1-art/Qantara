@@ -22,6 +22,7 @@ from gateway.transport_spike.tts_piper import PiperTTS
 
 PCM_KIND = 0x01
 TARGET_SAMPLE_RATE = 16000
+SESSION_LOG_DIR = os.environ.get("QANTARA_SESSION_LOG_DIR", "")
 TONE_HZ = 440.0
 TONE_SECONDS = 1.25
 FRAME_SAMPLES = 640
@@ -57,6 +58,11 @@ class Session:
         self.current_turn_task: asyncio.Task | None = None
         self.speech_task: asyncio.Task | None = None
         self.speech_generation = 0
+        self._log_file = None
+        if SESSION_LOG_DIR:
+            os.makedirs(SESSION_LOG_DIR, exist_ok=True)
+            log_path = os.path.join(SESSION_LOG_DIR, f"{self.session_id}.ndjson")
+            self._log_file = open(log_path, "a")
 
     async def send_str(self, data: str) -> None:
         if not self.websocket.closed:
@@ -72,6 +78,11 @@ class Session:
             except (ConnectionResetError, ConnectionError):
                 pass
 
+    def close_log(self) -> None:
+        if self._log_file is not None:
+            self._log_file.close()
+            self._log_file = None
+
     async def emit(self, event_name: str, source: str, payload: dict) -> None:
         record = {
             "event_name": event_name,
@@ -83,7 +94,11 @@ class Session:
             "source": source,
             "payload": payload,
         }
-        print(json.dumps(record), flush=True)
+        line = json.dumps(record)
+        print(line, flush=True)
+        if self._log_file is not None:
+            self._log_file.write(line + "\n")
+            self._log_file.flush()
 
 
 ADAPTER_CONFIG = load_adapter_config()
@@ -666,7 +681,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                 {
                     "frame_index": session.frames_in,
                     "frame_bytes": len(msg.data),
-                    "frame_samples": samples,
+                    "frame_samples": count,
                     "sample_rate": TARGET_SAMPLE_RATE,
                 },
             )
@@ -678,8 +693,14 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
         await cancel_active_turn(session, "socket_disconnected")
         if session.current_turn_task is not None and not session.current_turn_task.done():
             session.current_turn_task.cancel()
+        if session.speech_task is not None and not session.speech_task.done():
+            session.speech_task.cancel()
         await session.emit("socket_disconnected", "gateway", {})
-        await session.emit("session_closed", "gateway", {})
+        await session.emit("session_closed", "gateway", {
+            "frames_in": session.frames_in,
+            "frames_out": session.frames_out,
+        })
+        session.close_log()
 
     return ws
 
@@ -701,6 +722,19 @@ async def spike_handler(request: web.Request) -> web.StreamResponse:
     raise web.HTTPFound("/spike/index.html")
 
 
+async def health_handler(request: web.Request) -> web.Response:
+    adapter_health = await ADAPTER.check_health()
+    return web.json_response({
+        "status": "ok" if not adapter_health.degraded else "degraded",
+        "tts_engine": PIPER.engine if PIPER.available else "unavailable",
+        "tts_available": PIPER.available,
+        "stt_available": STT.available,
+        "adapter_kind": ADAPTER.adapter_kind,
+        "adapter_health": adapter_health.status,
+        "adapter_detail": adapter_health.detail,
+    })
+
+
 async def on_startup(app: web.Application) -> None:
     if PIPER.available:
         print("warming up piper persistent process...", flush=True)
@@ -717,6 +751,7 @@ def create_app() -> web.Application:
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
     app.router.add_get("/", index_handler)
+    app.router.add_get("/health", health_handler)
     app.router.add_get("/ws", websocket_handler)
     app.router.add_get("/spike", spike_handler)
     app.router.add_static("/spike", CLIENT_SPIKE_DIR, show_index=True)

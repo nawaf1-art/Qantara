@@ -174,6 +174,19 @@ async def test_websocket_submit_turn(gateway_server):
 
 
 @pytest.mark.asyncio
+async def test_gateway_health(gateway_server):
+    """Verify the gateway health endpoint returns status info."""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{gateway_server}/health") as resp:
+            assert resp.status == 200
+            data = await resp.json()
+            assert "status" in data
+            assert "tts_available" in data
+            assert "stt_available" in data
+            assert "adapter_kind" in data
+
+
+@pytest.mark.asyncio
 async def test_websocket_clear_playback(gateway_server):
     """Verify clear_playback message is acknowledged."""
     async with aiohttp.ClientSession() as session:
