@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "voices": [
+    {
+      "voice_id": "lessac",
+      "label": "Lessac",
+      "engine": "piper",
+      "locale": "en-US",
+      "model_path": "models/piper/en_US-lessac-medium.onnx",
+      "config_path": "models/piper/en_US-lessac-medium.onnx.json",
+      "preview_text": "Hello, I am Qantara.",
+      "base_sample_rate": 22050,
+      "defaults": {
+        "rate": 1.0,
+        "pitch": 0,
+        "tone": "neutral"
+      },
+      "allowed_transforms": ["rate", "pitch", "tone"],
+      "license": "See Piper model license details for this voice.",
+      "commercial_notes": "Validate the exact packaged voice license before commercial distribution."
+    },
+    {
+      "voice_id": "amy",
+      "label": "Amy",
+      "engine": "piper",
+      "locale": "en-US",
+      "model_path": "models/piper/en_US-amy-medium.onnx",
+      "config_path": "models/piper/en_US-amy-medium.onnx.json",
+      "preview_text": "Hello, I am Qantara.",
+      "base_sample_rate": 22050,
+      "defaults": {
+        "rate": 1.0,
+        "pitch": 0,
+        "tone": "bright"
+      },
+      "allowed_transforms": ["rate", "pitch", "tone"],
+      "license": "See Piper model license details for this voice.",
+      "commercial_notes": "Validate the exact packaged voice license before commercial distribution."
+    }
+  ]
+}

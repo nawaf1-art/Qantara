@@ -2,9 +2,11 @@ import asyncio
 import json
 import math
 import os
+import re
 import ssl
 import sys
 import time
+import unicodedata
 import uuid
 from aiohttp import WSMsgType, web
 
@@ -58,6 +60,9 @@ class Session:
         self.speech_task: asyncio.Task | None = None
         self.speech_generation = 0
         self.turns_completed = 0
+        self.client_name = "browser-transport-spike"
+        self.requested_voice_id: str | None = None
+        self.voice_id: str | None = PIPER.default_voice_id
 
     async def emit(self, event_name: str, source: str, payload: dict) -> None:
         record = {
@@ -91,6 +96,50 @@ def encode_pcm_frame(samples: list[int]) -> bytes:
         payload[offset:offset + 2] = int(sample).to_bytes(2, "little", signed=True)
         offset += 2
     return bytes(payload)
+
+
+def normalize_tts_text(text: str) -> str:
+    normalized = text.strip()
+    if not normalized:
+        return normalized
+
+    normalized = normalized.replace("\r", "\n")
+    normalized = re.sub(r"`([^`]*)`", r"\1", normalized)
+    normalized = normalized.replace("**", "")
+    normalized = normalized.replace("__", "")
+    normalized = normalized.replace("*", "")
+
+    normalized = re.sub(r"(?m)^\s*[-•]\s+", "", normalized)
+    normalized = normalized.replace(" - ", ". ")
+    normalized = normalized.replace("\n- ", ". ")
+    normalized = normalized.replace("\n", ". ")
+
+    normalized = re.sub(r"([A-Za-z0-9])\s*/\s*([A-Za-z0-9])", r"\1 or \2", normalized)
+    normalized = re.sub(
+        r"([+-])\s*(\d+)\s*°\s*C",
+        lambda m: f"{'minus' if m.group(1) == '-' else 'plus'} {m.group(2)} degrees Celsius",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(r"(\d+)\s*°\s*C", r"\1 degrees Celsius", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"(\d+)\s*km/h", r"\1 kilometers per hour", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"(\d+(?:\.\d+)?)\s*mm", r"\1 millimeters", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"(\d+(?:\.\d+)?)\s*%", r"\1 percent", normalized)
+
+    cleaned_chars: list[str] = []
+    for char in normalized:
+        category = unicodedata.category(char)
+        if category == "So":
+            continue
+        cleaned_chars.append(char)
+    normalized = "".join(cleaned_chars)
+
+    normalized = normalized.replace("↘", " ")
+    normalized = re.sub(r"[|]+", ". ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized)
+    normalized = re.sub(r"([!?.,]){2,}", r"\1", normalized)
+    normalized = re.sub(r"\s+([!?.,])", r"\1", normalized)
+    return normalized.strip()
 
 
 async def send_tone(session: Session) -> None:
@@ -220,16 +269,33 @@ async def send_pcm_samples(
 async def speak_text(session: Session, text: str, expected_generation: int | None = None) -> None:
     if expected_generation is not None and expected_generation != session.playback_generation:
         return
+    spoken_text = normalize_tts_text(text)
+    if not spoken_text:
+        return
     engine = "piper" if PIPER.available else "synthetic"
+    resolved_voice = None
+    fallback_reason = None
+    if PIPER.available:
+        try:
+            resolved_voice, fallback_reason = PIPER.resolve_voice(session.voice_id)
+        except Exception:
+            resolved_voice = None
     session.last_tts_started_ms = time.monotonic() * 1000
-    await session.emit("tts_chunk_ready", "playback", {"char_count": len(text), "engine": engine})
+    await session.emit(
+        "tts_chunk_ready",
+        "playback",
+        {"char_count": len(spoken_text), "engine": engine, "source_char_count": len(text)},
+    )
     await session.websocket.send_str(
         json.dumps(
             {
                 "type": "tts_status",
                 "engine": engine,
                 "available": PIPER.available,
-                "reason": None if PIPER.available else "piper unavailable or no model configured",
+                "voice_id": resolved_voice.voice_id if resolved_voice is not None else session.voice_id,
+                "requested_voice_id": session.requested_voice_id or session.voice_id,
+                "sample_rate": resolved_voice.sample_rate if resolved_voice is not None else TARGET_SAMPLE_RATE,
+                "reason": fallback_reason if resolved_voice is not None else (None if PIPER.available else "piper unavailable or no model configured"),
             }
         )
     )
@@ -237,17 +303,40 @@ async def speak_text(session: Session, text: str, expected_generation: int | Non
     if PIPER.available:
         try:
             synthesis_started_ms = time.monotonic() * 1000
-            samples = await PIPER.synthesize(text)
+            samples, resolved_voice, fallback_reason = await PIPER.synthesize(spoken_text, voice_id=session.voice_id)
             synthesis_ms = round((time.monotonic() * 1000) - synthesis_started_ms, 3)
+            session.voice_id = resolved_voice.voice_id
             await session.emit(
                 "tts_chunk_ready",
                 "playback",
-                {"char_count": len(text), "engine": "piper", "sample_count": len(samples), "synthesis_ms": synthesis_ms},
+                {
+                    "char_count": len(spoken_text),
+                    "engine": "piper",
+                    "sample_count": len(samples),
+                    "synthesis_ms": synthesis_ms,
+                    "voice_id": resolved_voice.voice_id,
+                    "requested_voice_id": session.requested_voice_id or resolved_voice.voice_id,
+                    "fallback_reason": fallback_reason,
+                    "source_char_count": len(text),
+                },
             )
+            if fallback_reason is not None:
+                await session.websocket.send_str(
+                    json.dumps(
+                        {
+                            "type": "tts_status",
+                            "engine": "piper",
+                            "available": True,
+                            "voice_id": resolved_voice.voice_id,
+                            "requested_voice_id": session.requested_voice_id,
+                            "reason": fallback_reason,
+                        }
+                    )
+                )
             await send_pcm_samples(
                 session,
                 samples,
-                PIPER.sample_rate,
+                resolved_voice.sample_rate,
                 "piper_tts",
                 tts_started_ms=session.last_tts_started_ms,
                 synthesis_ms=synthesis_ms,
@@ -306,7 +395,11 @@ def enqueue_speech(session: Session, text: str) -> None:
 async def ensure_adapter_session(session: Session) -> None:
     if session.runtime_session_handle is None:
         session.runtime_session_handle = await ADAPTER.start_or_resume_session(
-            {"client_name": "browser-transport-spike", "session_id": session.session_id}
+            {
+                "client_name": session.client_name,
+                "session_id": session.session_id,
+                "voice_id": session.voice_id,
+            }
         )
         health = await ADAPTER.check_health()
         await session.emit(
@@ -330,6 +423,25 @@ async def emit_turn_state(session: Session, state: str, reason: str | None = Non
     if reason:
         payload["reason"] = reason
     await session.websocket.send_str(json.dumps(payload))
+
+
+def apply_voice_selection(session: Session, requested_voice_id: str | None) -> dict:
+    session.requested_voice_id = requested_voice_id or PIPER.default_voice_id
+    fallback_reason = None
+    sample_rate = None
+    try:
+        resolved_voice, fallback_reason = PIPER.resolve_voice(session.requested_voice_id)
+        session.voice_id = resolved_voice.voice_id
+        sample_rate = resolved_voice.sample_rate
+    except Exception:
+        session.voice_id = None
+    return {
+        "requested_voice_id": session.requested_voice_id,
+        "voice_id": session.voice_id,
+        "sample_rate": sample_rate,
+        "available_voices": PIPER.list_available_voices(),
+        "fallback_reason": fallback_reason,
+    }
 
 
 async def cancel_active_turn(session: Session, reason: str) -> None:
@@ -474,7 +586,16 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
             message_type = payload.get("type")
 
             if message_type == "session_init":
-                await session.emit("session_ready", "gateway", {"client_name": payload.get("client_name")})
+                session.client_name = payload.get("client_name") or session.client_name
+                voice_details = apply_voice_selection(session, payload.get("voice_id"))
+                await session.emit(
+                    "session_ready",
+                    "gateway",
+                    {
+                        "client_name": session.client_name,
+                        **voice_details,
+                    },
+                )
                 health = await ADAPTER.check_health()
                 await ws.send_str(
                     json.dumps(
@@ -484,9 +605,14 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                             "adapter_kind": ADAPTER.adapter_kind,
                             "adapter_health": health.status,
                             "adapter_detail": health.detail,
+                            **voice_details,
                         }
                     )
                 )
+            elif message_type == "session_update":
+                voice_details = apply_voice_selection(session, payload.get("voice_id"))
+                await session.emit("session_updated", "gateway", voice_details)
+                await ws.send_str(json.dumps({"type": "session_updated", **voice_details}))
             elif message_type == "mic_stream_started":
                 await session.emit(
                     "mic_stream_started",

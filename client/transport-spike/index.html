@@ -384,6 +384,15 @@
 
       <div class="selectors">
         <div class="selector-card">
+          <label for="ttsVoice">
+            <span>TTS Voice</span>
+            <select id="ttsVoice">
+              <option value="lessac">Lessac</option>
+              <option value="amy">Amy</option>
+            </select>
+          </label>
+        </div>
+        <div class="selector-card">
           <label for="avatarPreset">
             <span>Avatar</span>
             <select id="avatarPreset">
@@ -396,7 +405,7 @@
         </div>
         <div class="selector-card">
           <label for="voicePreset">
-            <span>Voice</span>
+            <span>Playback Style</span>
             <select id="voicePreset">
               <option value="steady">Steady</option>
               <option value="warm">Warm</option>
@@ -500,6 +509,7 @@
     const submitSpeechBtn = document.getElementById("submitSpeechBtn");
     const clearBtn = document.getElementById("clearBtn");
     const audioModeSelect = document.getElementById("audioMode");
+    const ttsVoiceSelect = document.getElementById("ttsVoice");
     const avatarPresetSelect = document.getElementById("avatarPreset");
     const voicePresetSelect = document.getElementById("voicePreset");
     const speechSpeedInput = document.getElementById("speechSpeed");
@@ -582,6 +592,7 @@
     let playbackAnalyserData = null;
     let avatarAnimationFrame = null;
     let nextPlaybackAt = 0;
+    let currentPlaybackSampleRate = TARGET_SAMPLE_RATE;
     let framesSent = 0;
     let framesReceived = 0;
     let micActive = false;
@@ -607,11 +618,15 @@
     let weakSpeechSkipCount = 0;
     let bargeInPending = false;
     let audioMode = localStorage.getItem("qantara_audio_mode") || audioModeSelect?.value || "speakers";
+    let ttsVoiceId = localStorage.getItem("qantara_tts_voice") || ttsVoiceSelect?.value || "lessac";
     let avatarPreset = localStorage.getItem("qantara_avatar_preset") || avatarPresetSelect?.value || "qantara";
     let voicePreset = localStorage.getItem("qantara_voice_preset") || voicePresetSelect?.value || "steady";
     let speechSpeed = Number(localStorage.getItem("qantara_speech_speed") || speechSpeedInput?.value || "1.15");
     if (audioModeSelect) {
       audioModeSelect.value = audioMode;
+    }
+    if (ttsVoiceSelect) {
+      ttsVoiceSelect.value = ttsVoiceId;
     }
     if (avatarPresetSelect) {
       avatarPresetSelect.value = avatarPreset;
@@ -732,6 +747,25 @@
 
     function getVoiceProfile() {
       return VOICE_PRESETS[voicePreset] || VOICE_PRESETS.steady;
+    }
+
+    function syncTtsVoiceOptions(voices, selectedVoiceId) {
+      if (!ttsVoiceSelect || !Array.isArray(voices) || voices.length === 0) {
+        return;
+      }
+      const nextSelectedVoiceId = voices.some((voice) => voice.voice_id === selectedVoiceId)
+        ? selectedVoiceId
+        : voices[0].voice_id;
+      ttsVoiceSelect.innerHTML = "";
+      for (const voice of voices) {
+        const option = document.createElement("option");
+        option.value = voice.voice_id;
+        option.textContent = voice.label || voice.voice_id;
+        ttsVoiceSelect.appendChild(option);
+      }
+      ttsVoiceSelect.value = nextSelectedVoiceId;
+      ttsVoiceId = nextSelectedVoiceId;
+      localStorage.setItem("qantara_tts_voice", ttsVoiceId);
     }
 
     function getSpeechSpeed() {
@@ -886,7 +920,7 @@
 
     async function ensurePlaybackContext() {
       if (!playbackContext) {
-        playbackContext = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
+        playbackContext = new AudioContext();
         playbackAnalyser = playbackContext.createAnalyser();
         playbackAnalyser.fftSize = 256;
         playbackAnalyser.smoothingTimeConstant = 0.72;
@@ -907,7 +941,7 @@
         float32[i] = int16Payload[i] / 32768;
       }
 
-      const buffer = playbackContext.createBuffer(1, float32.length, TARGET_SAMPLE_RATE);
+      const buffer = playbackContext.createBuffer(1, float32.length, currentPlaybackSampleRate || TARGET_SAMPLE_RATE);
       buffer.copyToChannel(float32, 0);
 
       const source = playbackContext.createBufferSource();
@@ -1211,7 +1245,13 @@
         backendTurnActive = false;
         playbackCooldownUntil = 0;
         updateAvatarState();
-        sendJson({ type: "session_init", client_name: "browser-transport-spike" });
+        sendJson({
+          type: "session_init",
+          client_name: "browser-transport-spike",
+          protocol_version: 1,
+          sample_rate: TARGET_SAMPLE_RATE,
+          voice_id: ttsVoiceId,
+        });
         log("socket connected");
       };
 
@@ -1260,6 +1300,10 @@
             } else if (payload.type === "tts_status") {
               const statusText = payload.reason ? `${payload.engine} (${payload.reason})` : payload.engine;
               setTtsState(statusText);
+              if (payload.sample_rate) {
+                currentPlaybackSampleRate = payload.sample_rate;
+                updateText("sampleRate", currentPlaybackSampleRate);
+              }
               log(`tts status: ${statusText}`);
             } else if (payload.type === "session_ready") {
               if (payload.adapter_kind) {
@@ -1267,6 +1311,24 @@
                   ? `${payload.adapter_kind} (${payload.adapter_health}: ${payload.adapter_detail})`
                   : `${payload.adapter_kind} (${payload.adapter_health})`;
                 setAdapterState(adapterText);
+              }
+              if (payload.sample_rate) {
+                currentPlaybackSampleRate = payload.sample_rate;
+                updateText("sampleRate", currentPlaybackSampleRate);
+              }
+              syncTtsVoiceOptions(payload.available_voices, payload.voice_id || ttsVoiceId);
+              if (payload.voice_id) {
+                log(`tts voice ready: ${payload.voice_id}${payload.fallback_reason ? ` (${payload.fallback_reason})` : ""}`);
+              }
+              log(`control ${event.data}`);
+            } else if (payload.type === "session_updated") {
+              if (payload.sample_rate) {
+                currentPlaybackSampleRate = payload.sample_rate;
+                updateText("sampleRate", currentPlaybackSampleRate);
+              }
+              syncTtsVoiceOptions(payload.available_voices, payload.voice_id || ttsVoiceId);
+              if (payload.voice_id) {
+                log(`tts voice updated: ${payload.voice_id}${payload.fallback_reason ? ` (${payload.fallback_reason})` : ""}`);
               }
               log(`control ${event.data}`);
             } else if (payload.type === "turn_state") {
@@ -1384,6 +1446,15 @@
       log(`audio mode set to ${audioMode}`);
     });
 
+    ttsVoiceSelect?.addEventListener("change", () => {
+      ttsVoiceId = ttsVoiceSelect.value;
+      localStorage.setItem("qantara_tts_voice", ttsVoiceId);
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        sendJson({ type: "session_update", voice_id: ttsVoiceId, protocol_version: 1 });
+      }
+      log(`tts voice set to ${ttsVoiceId}`);
+    });
+
     avatarPresetSelect?.addEventListener("change", () => {
       avatarPreset = avatarPresetSelect.value;
       localStorage.setItem("qantara_avatar_preset", avatarPreset);
@@ -1394,7 +1465,7 @@
     voicePresetSelect?.addEventListener("change", () => {
       voicePreset = voicePresetSelect.value;
       localStorage.setItem("qantara_voice_preset", voicePreset);
-      log(`voice preset set to ${voicePreset} (playback profile)`);
+      log(`playback style set to ${voicePreset}`);
     });
 
     speechSpeedInput?.addEventListener("input", () => {
