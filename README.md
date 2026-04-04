@@ -1,209 +1,184 @@
 # Qantara
 
-Version: `0.1.0-alpha.2`
+**Local-first, real-time voice gateway for AI agents.**
 
-Qantara is a local-first, real-time voice gateway for AI agents across OpenClaw, Ollama, and custom backends.
+Qantara lets you talk to AI agents by voice through your browser. It handles microphone capture, speech recognition, turn-taking, interruption, text-to-speech, and the live connection to the agent backend — all running on your local network with no cloud dependency for speech processing.
 
-In simple terms: Qantara lets you talk to an AI agent by voice through your browser. It handles the microphone, speech recognition, turn-taking, interruption, text-to-speech, and the live connection to the agent backend.
+> Version `0.1.0-alpha.2` — Early alpha. Core transport and speech pipeline validated. Active development.
 
-The primary user experience is not push-to-talk. Qantara is designed for full-duplex conversation:
+## Why Qantara
 
-- continuous listening while the assistant is speaking
-- barge-in interruption at any time
-- local-first speech processing with no required external network path
+Most voice interfaces are push-to-talk wrappers. Qantara is built for **full-duplex conversation**:
 
-## Start Here
+- **Always listening** — continuous microphone input, even while the assistant is speaking
+- **Barge-in** — interrupt the assistant mid-sentence, naturally
+- **Local-first** — STT and TTS run on your machine, not in the cloud
+- **Backend-agnostic** — works with OpenClaw, Ollama, or any session-compatible backend
 
-If this is your first time running a project like this, use this section first.
+Qantara is a voice *channel*, not a replacement for the AI runtime behind it.
 
-What you need:
+## What It Does Today
 
-- a Linux machine on your local network
-- Python and `make`
-- a modern browser such as Chrome
-- one supported backend:
-  - OpenClaw
-  - Ollama
-  - or a compatible custom session backend
-
-Fastest way to try the current spike:
-
-```bash
-make spike-install
-make spike-run
+```
+Browser (mic + speaker)
+    │
+    ├── WebSocket (PCM audio) ──▶  Qantara Gateway
+    │                                  ├── Voice Activity Detection
+    │                                  ├── STT (faster-whisper)
+    │                                  ├── Session Management
+    │                                  ├── TTS (Piper)
+    │                                  └── Adapter Layer
+    │                                          │
+    │                              ┌────────────┼────────────┐
+    │                              ▼            ▼            ▼
+    │                           Ollama      OpenClaw      Custom
+    │                                                    Backend
+    │
+    └── Playback + Captions + Avatar ◀── streaming response
 ```
 
-Then open:
+### Validated Features
 
-```text
-http://127.0.0.1:8765/spike
-```
-
-If you want microphone access from another device on your LAN, use HTTPS instead of plain HTTP. See [`ops/README.md`](/home/nawaf/Projects/Qantara/ops/README.md).
-
-If you are not sure what “backend” means here:
-
-- Qantara is the voice layer
-- OpenClaw or Ollama is the agent/runtime Qantara talks to
-- Qantara does not replace the model runtime; it connects voice to it
-
-## What Qantara Does
-
-- listens through your browser microphone
-- detects when you finished speaking
-- turns your speech into text
-- sends that text to an AI agent backend
-- speaks the response back to you
-- lets you interrupt the assistant while it is still talking
-
-## Goals
-
-- Provide a low-latency voice channel around an OpenClaw-compatible agent and session model
-- Preserve the downstream agent runtime as the source of truth for tools and conversation state
-- Run safely on a private LAN with strong permission boundaries for voice-triggered actions
-
-## Initial Product Direction
-
-Qantara should start as an external LAN voice gateway beside the downstream agent runtime, not as a tightly coupled in-process plugin.
-
-This keeps the first version easier to iterate on while the protocol, cancellation rules, and interruption handling are still being proven. A native OpenClaw plugin remains a later optimization if runtime hooks prove sufficient and the external protocol stabilizes.
-
-The repository intentionally does not assume any specific local OpenClaw agent, model, gateway host, or deployment topology yet. Those integration details are deferred until a later validation phase.
-
-The initial client target should be browser-first. A browser client keeps installation friction low on a private LAN, makes internal testing easier, and is sufficient to prove the audio transport, session model, and interruption behavior before investing in a dedicated desktop shell.
-
-## V1 Scope
-
-- Single user, single active session
-- Browser-first LAN client using WebAudio and WebSocket
-- Always-on microphone streaming
-- Voice activity detection and endpointing
-- Local streaming STT with partial and final transcripts
-- Downstream runtime turn submission through a narrow integration boundary
-- Text-first or near-streaming response playback path
-- Local TTS with immediate playback cancel on user interruption
-- Event timeline and latency instrumentation from day one
-
-## Non-Goals For V1
-
-- Telephony-first workflows
-- Multi-user conferencing
-- General internet-facing deployment
-- Complex speaker-mode echo cancellation beyond a constrained headset-first setup
-
-## Core Design Principle
-
-Qantara should behave as a voice channel adapter around a downstream conversation API, not as a replacement for the runtime model behind it.
-
-## Documents
-
-- [`PLAN.md`](/home/nawaf/Projects/Qantara/PLAN.md): implementation phases, milestones, and key decisions
-- [`ARCHITECTURE.md`](/home/nawaf/Projects/Qantara/ARCHITECTURE.md): runtime model, state machine, transport, and risk areas
-- [`DECISIONS.md`](/home/nawaf/Projects/Qantara/DECISIONS.md): architectural decisions and deferred choices
-- [`BACKEND_ADAPTER_TARGETS.md`](/home/nawaf/Projects/Qantara/BACKEND_ADAPTER_TARGETS.md): candidate backend shapes and the recommended first adapter target
-- [`SESSION_GATEWAY_CONTRACT.md`](/home/nawaf/Projects/Qantara/SESSION_GATEWAY_CONTRACT.md): first concrete session-oriented backend contract shape
-- [`REAL_BACKEND_INTEGRATION.md`](/home/nawaf/Projects/Qantara/REAL_BACKEND_INTEGRATION.md): handoff path from the fake backend to the first real backend target
-- [`MILESTONES.md`](/home/nawaf/Projects/Qantara/MILESTONES.md): delivery checklist and exit criteria tracking
-- [`PROJECT_STATE.md`](/home/nawaf/Projects/Qantara/PROJECT_STATE.md): current checkpoint, implemented scope, and next steps
-- [`ROADMAP.md`](/home/nawaf/Projects/Qantara/ROADMAP.md): versioned milestone path from the current alpha checkpoint
-- [`HANDOFF.md`](/home/nawaf/Projects/Qantara/HANDOFF.md): concise handoff for another coding agent or fork
-- [`M0_EXPERIMENTS.md`](/home/nawaf/Projects/Qantara/M0_EXPERIMENTS.md): explicit M0 validation program
-- [`experiments/RUN_TRANSPORT_SPIKE.md`](/home/nawaf/Projects/Qantara/experiments/RUN_TRANSPORT_SPIKE.md): how to run the current spike and record results
-- [`ops/README.md`](/home/nawaf/Projects/Qantara/ops/README.md): LAN HTTPS serving guidance for browser microphone access
-- [`identity/README.md`](/home/nawaf/Projects/Qantara/identity/README.md): owned avatar and voice layer foundation
-- [`identity/AVATAR_SYSTEM.md`](/home/nawaf/Projects/Qantara/identity/AVATAR_SYSTEM.md): Phase 1 avatar architecture
-- [`identity/VOICE_SYSTEM.md`](/home/nawaf/Projects/Qantara/identity/VOICE_SYSTEM.md): Phase 1 voice architecture
-- [`identity/LIPSYNC_CONTRACT.md`](/home/nawaf/Projects/Qantara/identity/LIPSYNC_CONTRACT.md): stable lipsync contract between TTS and renderer
-
-## Current Status
-
-Qantara is currently in `M0: Technical Validation`.
-
-The repository now includes a runnable browser-to-gateway transport spike with:
-
-- browser microphone capture and PCM streaming over WebSocket
-- gateway-side transport event logging
-- browser playback of gateway PCM audio
-- validated faster-whisper transcription of recent captured audio
-- auto-submit on endpoint-ready for recent speech submission
-- configurable adapter selection with `mock` and `runtime_skeleton` modes
-- validated `session_gateway_http` adapter path through a local fake backend
-- validated `session_gateway_http` adapter path through a real Ollama-backed backend
-- locally validated Piper runtime path with synthetic fallback still available
-
-This is a real validation slice, not just design documentation. The current M0 spike has now validated the first STT candidate path through faster-whisper and the first TTS candidate path through Piper. Later runtime binding and interruption hardening still remain open.
-
-Current measured baseline:
-
-- Piper first spoken chunk is now roughly `1.5s` after early chunking
-- local browser playback clear is effectively immediate
-- backend playback-stop telemetry is still separate from user-perceived audible stop timing
-- end-to-end cancel is validated through the HTTP adapter and local fake backend
-- endpoint-ready plus submit-recent-speech flow is validated through the HTTP adapter and local fake backend
-- real multi-turn conversation through an Ollama-backed backend is now validated
-
-Current adapter selection:
-
-- `QANTARA_ADAPTER=mock`
-- `QANTARA_ADAPTER=runtime_skeleton`
-- `QANTARA_ADAPTER=session_gateway_http`
-
-Local validation backend:
-
-- [gateway/fake_session_backend/server.py](/home/nawaf/Projects/Qantara/gateway/fake_session_backend/server.py)
-
-Real backend handoff path:
-
-- [REAL_BACKEND_INTEGRATION.md](/home/nawaf/Projects/Qantara/REAL_BACKEND_INTEGRATION.md)
+- **Speech pipeline** — faster-whisper STT + Piper TTS, ~1.5s to first spoken response
+- **Hands-free operation** — VAD-based endpointing, auto-submit when you stop speaking
+- **Interruption** — immediate playback cancel on barge-in
+- **Session management** — create, resume, and cancel turns through a clean adapter contract
+- **Multiple backends** — tested with Ollama (local models) and OpenClaw agents
+- **Browser UI** — real-time captions, session state indicators, audio mode selector
+- **Identity layer** — avatar system with lipsync contract, voice registry, preset selectors
+- **LAN-ready** — HTTPS/WSS support for secure access from any device on your network
+- **Observability** — event timeline with timestamps across every boundary
 
 ## Quick Start
 
-Install the current spike dependency:
+**Requirements:** Linux, Python 3, `make`, a modern browser (Chrome recommended)
 
 ```bash
+# Install dependencies
 make spike-install
-```
 
-Run the current gateway-hosted spike:
-
-```bash
+# Run the gateway
 make spike-run
 ```
 
-Then open:
+Open **http://127.0.0.1:8765/spike** in your browser.
 
-```text
-http://127.0.0.1:8765/spike
+### With a Real Backend
+
+**Ollama:**
+```bash
+# Terminal 1 — backend
+make real-backend-run-venv
+
+# Terminal 2 — gateway
+QANTARA_ADAPTER=session_gateway_http \
+QANTARA_BACKEND_BASE_URL=http://127.0.0.1:19120 \
+make spike-run-venv
 ```
 
-If `8765` is already in use, choose another port:
+**OpenClaw:**
+```bash
+# Terminal 1 — bridge
+QANTARA_REAL_BACKEND_PORT=19120 \
+QANTARA_OPENCLAW_AGENT_ID=spectra \
+./.venv/bin/python gateway/openclaw_session_backend/server.py
+
+# Terminal 2 — gateway
+QANTARA_ADAPTER=session_gateway_http \
+QANTARA_BACKEND_BASE_URL=http://127.0.0.1:19120 \
+make spike-run-venv
+```
+
+### LAN Access (HTTPS)
+
+For microphone access from other devices on your network:
 
 ```bash
-QANTARA_SPIKE_PORT=8899 make spike-run-venv
+QANTARA_SPIKE_HOST=0.0.0.0 \
+QANTARA_SPIKE_PORT=9443 \
+QANTARA_TLS_CERT=ops/certs/qantara-cert.pem \
+QANTARA_TLS_KEY=ops/certs/qantara-key.pem \
+make spike-run-venv
 ```
 
-Then open:
+See [ops/README.md](ops/README.md) for TLS setup details.
 
-```text
-http://127.0.0.1:8899/spike
+## Architecture
+
+Qantara is designed as an **external voice gateway** that sits beside your AI runtime, not inside it.
+
+| Component | Role |
+|-----------|------|
+| **Browser Client** | Mic capture, playback, captions, avatar rendering |
+| **Gateway** | Async Python server — VAD, STT, TTS, session state machine, adapter routing |
+| **Adapters** | Pluggable backend interface — mock, Ollama, OpenClaw, or custom HTTP |
+| **Identity** | Avatar descriptors, voice registry, lipsync contract |
+
+The adapter contract is intentionally narrow: `start_session`, `submit_turn`, `stream_output`, `cancel_turn`. Any backend that implements this contract works with Qantara.
+
+## Roadmap
+
+| Version | Milestone | Status |
+|---------|-----------|--------|
+| `0.1.0-alpha.2` | **R0: Alpha Checkpoint** — transport validated, STT/TTS working, adapter pipeline proven | Done |
+| | **R1: Hands-Free Baseline** — stable VAD, natural turn-taking without manual submit | Next |
+| | **R2: Lower-Latency Response** — sub-1.5s first spoken chunk, TTS evaluation | Planned |
+| | **R3: Real Backend Integration** — production-stable OpenClaw/Ollama path | In Progress |
+| | **R4: Hard Barge-In** — backend cancel, interruption-aware history, overlapping turn handling | Planned |
+| | **R5: Security & Ops** — auth tokens, audit logs, safe deployment defaults, confirmation gates | Planned |
+
+## Project Structure
+
+```
+qantara/
+├── client/transport-spike/    # Browser client (vanilla JS, no build step)
+├── gateway/
+│   ├── transport_spike/       # Gateway server, STT, TTS
+│   ├── fake_session_backend/  # Test backend
+│   ├── ollama_session_backend/# Ollama integration
+│   └── openclaw_session_backend/ # OpenClaw bridge
+├── adapters/                  # Backend adapter framework
+├── identity/                  # Avatar, voice, and lipsync systems
+├── schemas/                   # Event timeline and data formats
+├── ops/                       # LAN deployment (TLS, Caddy)
+└── experiments/               # Validation notes and spike runners
 ```
 
-To expose the spike on your LAN from this machine:
+## Tech Stack
 
-```bash
-make spike-run-lan-venv
-```
+| Layer | Technology |
+|-------|-----------|
+| Gateway | Python 3, aiohttp (async) |
+| STT | faster-whisper (ONNX) |
+| TTS | Piper (ONNX) |
+| Transport | WebSocket, PCM16 mono 16kHz |
+| Browser | Vanilla JS, WebAudio API |
+| TLS | Caddy or self-signed certs |
 
-Then open from another device on the same network:
+## Contributing
 
-```text
-http://<your-lan-ip>:8899/spike
-```
+Qantara is in early alpha. Contributions, feedback, and testing are welcome.
 
-Important:
+If you're interested in:
+- **Testing** — try the spike on your hardware, report what works and what doesn't
+- **Backend adapters** — add support for your preferred AI runtime
+- **Voice/TTS** — experiment with alternative TTS engines or voice models
+- **Frontend** — improve the browser client, avatar rendering, or UX
 
-- plain `http://<your-lan-ip>` is enough for transport testing
-- it is usually not enough for microphone access from another device
-- for LAN mic access, serve the spike over `HTTPS` and let the client use `WSS`
-- see [`ops/README.md`](/home/nawaf/Projects/Qantara/ops/README.md)
-- if Caddy is not installed, the repo also documents a direct self-signed TLS fallback
+Open an issue to discuss before starting large changes.
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Runtime model, state machine, transport design |
+| [PLAN.md](PLAN.md) | Implementation phases and milestones |
+| [ROADMAP.md](ROADMAP.md) | Versioned milestone targets |
+| [DECISIONS.md](DECISIONS.md) | Locked architectural decisions |
+| [SESSION_GATEWAY_CONTRACT.md](SESSION_GATEWAY_CONTRACT.md) | Backend adapter HTTP contract |
+| [HANDOFF.md](HANDOFF.md) | Quick-start guide for new contributors |
+| [identity/](identity/) | Avatar system, voice registry, lipsync contract |
+
+## License
+
+Apache 2.0 — see [LICENSE](LICENSE) for details.
