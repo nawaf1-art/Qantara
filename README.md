@@ -103,6 +103,28 @@ make spike-run-venv
 
 See [ops/README.md](ops/README.md) for TLS setup details.
 
+### Optional: Kokoro TTS
+
+Kokoro is now available as an optional local TTS provider.
+
+```bash
+./.venv/bin/pip install "kokoro>=0.9.4" soundfile
+QANTARA_TTS_PROVIDER=kokoro make spike-run-venv
+```
+
+For best English fallback pronunciation, install `espeak-ng` on the host.
+
+Observed local timings on this development machine:
+
+- Piper synthesize time for a short sentence: about `1.52s`
+- Kokoro first synthesize time after assets are cached: about `3.32s`
+- Kokoro warm synthesize time in the same process: about `0.63s`
+
+Important:
+
+- the very first Kokoro run downloads model and language assets locally, so cold-start can be much slower
+- Kokoro outputs `24 kHz` audio, which Qantara now respects through the provider path
+
 ## Architecture
 
 Qantara is designed as an **external voice gateway** that sits beside your AI runtime, not inside it.
@@ -137,6 +159,7 @@ qantara/
 │   ├── fake_session_backend/  # Test backend
 │   ├── ollama_session_backend/# Ollama integration
 │   └── openclaw_session_backend/ # OpenClaw bridge
+├── providers/                 # STT/TTS provider plugin system
 ├── adapters/                  # Backend adapter framework
 ├── docs/internal/             # Internal checkpoints, experiments, handoff notes
 ├── identity/                  # Avatar, voice, and lipsync systems
@@ -151,7 +174,7 @@ qantara/
 |-------|-----------|
 | Gateway | Python 3, aiohttp (async) |
 | STT | faster-whisper (ONNX) |
-| TTS | Piper (ONNX) |
+| TTS | Piper (ONNX), Kokoro (optional) |
 | Transport | WebSocket, PCM16 mono 16kHz |
 | Browser | Vanilla JS, WebAudio API |
 | TLS | Caddy or self-signed certs |
