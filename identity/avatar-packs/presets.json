@@ -1,0 +1,137 @@
+{
+  "schema_version": "1.0",
+  "presets": [
+    {
+      "avatar_id": "qantara",
+      "display_name": "Qantara",
+      "title": "Qantara Presence Layer",
+      "renderer_kind": "svg_parts_2d",
+      "style_family": "anime_soft",
+      "base_pack_id": "phase1-demo",
+      "parts": {
+        "face_base": "oval_soft",
+        "hair_front": "none",
+        "hair_back": "none",
+        "brows": "gentle_arc",
+        "eyes": "round_focus",
+        "nose": "minimal",
+        "mouth_set": "soft_speech"
+      },
+      "palette": {
+        "skin": "#f9edd9",
+        "hair_primary": "#705c48",
+        "hair_secondary": "#8f7a62",
+        "accent_primary": "#0f766e",
+        "accent_secondary": "#7a3b3b"
+      },
+      "visual": {
+        "face_stroke": "#8f7a62",
+        "halo_fill": "rgba(15, 118, 110, 0.12)",
+        "eye_fill": "#1f2328",
+        "brow_stroke": "#705c48",
+        "mouth_fill": "#7a3b3b",
+        "shell_glow": "rgba(15, 118, 110, 0.16)",
+        "shell_bg": "radial-gradient(circle at top, rgba(15, 118, 110, 0.18), transparent 45%), linear-gradient(160deg, #fffdf8 0%, #f4ece0 100%)"
+      }
+    },
+    {
+      "avatar_id": "spectra",
+      "display_name": "Spectra",
+      "title": "Spectra Visual Profile",
+      "renderer_kind": "svg_parts_2d",
+      "style_family": "anime_sharp",
+      "base_pack_id": "phase1-demo",
+      "parts": {
+        "face_base": "oval_sharp",
+        "hair_front": "none",
+        "hair_back": "none",
+        "brows": "technical_arc",
+        "eyes": "round_focus",
+        "nose": "minimal",
+        "mouth_set": "precise_speech"
+      },
+      "palette": {
+        "skin": "#e8eef5",
+        "hair_primary": "#334155",
+        "hair_secondary": "#53667b",
+        "accent_primary": "#2563eb",
+        "accent_secondary": "#1d4ed8"
+      },
+      "visual": {
+        "face_stroke": "#53667b",
+        "halo_fill": "rgba(26, 86, 219, 0.14)",
+        "eye_fill": "#0f172a",
+        "brow_stroke": "#334155",
+        "mouth_fill": "#1d4ed8",
+        "shell_glow": "rgba(37, 99, 235, 0.18)",
+        "shell_bg": "radial-gradient(circle at top, rgba(37, 99, 235, 0.16), transparent 45%), linear-gradient(160deg, #f7fbff 0%, #dde7f3 100%)"
+      }
+    },
+    {
+      "avatar_id": "atlas",
+      "display_name": "Atlas",
+      "title": "Atlas Heavy Console",
+      "renderer_kind": "svg_parts_2d",
+      "style_family": "action_figure",
+      "base_pack_id": "phase1-demo",
+      "parts": {
+        "face_base": "oval_heavy",
+        "hair_front": "none",
+        "hair_back": "none",
+        "brows": "heavy_arc",
+        "eyes": "round_focus",
+        "nose": "minimal",
+        "mouth_set": "firm_speech"
+      },
+      "palette": {
+        "skin": "#eee3d0",
+        "hair_primary": "#6f4a1d",
+        "hair_secondary": "#75644f",
+        "accent_primary": "#b45309",
+        "accent_secondary": "#9a3412"
+      },
+      "visual": {
+        "face_stroke": "#75644f",
+        "halo_fill": "rgba(180, 83, 9, 0.14)",
+        "eye_fill": "#20130b",
+        "brow_stroke": "#6f4a1d",
+        "mouth_fill": "#9a3412",
+        "shell_glow": "rgba(180, 83, 9, 0.16)",
+        "shell_bg": "radial-gradient(circle at top, rgba(180, 83, 9, 0.16), transparent 45%), linear-gradient(160deg, #fff7ed 0%, #ead7c0 100%)"
+      }
+    },
+    {
+      "avatar_id": "nouf",
+      "display_name": "Nouf",
+      "title": "Nouf Studio Portrait",
+      "renderer_kind": "svg_parts_2d",
+      "style_family": "cartoon_playful",
+      "base_pack_id": "phase1-demo",
+      "parts": {
+        "face_base": "oval_soft",
+        "hair_front": "none",
+        "hair_back": "none",
+        "brows": "gentle_arc",
+        "eyes": "round_focus",
+        "nose": "minimal",
+        "mouth_set": "soft_speech"
+      },
+      "palette": {
+        "skin": "#f6e7df",
+        "hair_primary": "#7a3c59",
+        "hair_secondary": "#8f6b70",
+        "accent_primary": "#be185d",
+        "accent_secondary": "#be185d"
+      },
+      "visual": {
+        "face_stroke": "#8f6b70",
+        "halo_fill": "rgba(190, 24, 93, 0.12)",
+        "eye_fill": "#3f1d2e",
+        "brow_stroke": "#7a3c59",
+        "mouth_fill": "#be185d",
+        "shell_glow": "rgba(190, 24, 93, 0.16)",
+        "shell_bg": "radial-gradient(circle at top, rgba(190, 24, 93, 0.16), transparent 45%), linear-gradient(160deg, #fff8fb 0%, #f0dfe7 100%)"
+      }
+    }
+  ]
+}

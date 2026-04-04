@@ -13,6 +13,7 @@ from aiohttp import WSMsgType, web
 CURRENT_DIR = os.path.dirname(__file__)
 REPO_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
 CLIENT_SPIKE_DIR = os.path.join(REPO_ROOT, "client", "transport-spike")
+IDENTITY_DIR = os.path.join(REPO_ROOT, "identity")
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
@@ -783,6 +784,7 @@ def create_app() -> web.Application:
     app.router.add_get("/ws", websocket_handler)
     app.router.add_get("/spike", spike_handler)
     app.router.add_static("/spike", CLIENT_SPIKE_DIR, show_index=True)
+    app.router.add_static("/identity", IDENTITY_DIR, show_index=False)
     return app
 
 

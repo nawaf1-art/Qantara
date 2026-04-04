@@ -2,13 +2,59 @@
 
 Version: `0.1.0-alpha.2`
 
-Qantara is a LAN-first, real-time voice interface for OpenClaw-compatible agent runtimes.
+Qantara is a local-first, real-time voice gateway for AI agents across OpenClaw, Ollama, and custom backends.
+
+In simple terms: Qantara lets you talk to an AI agent by voice through your browser. It handles the microphone, speech recognition, turn-taking, interruption, text-to-speech, and the live connection to the agent backend.
 
 The primary user experience is not push-to-talk. Qantara is designed for full-duplex conversation:
 
 - continuous listening while the assistant is speaking
 - barge-in interruption at any time
 - local-first speech processing with no required external network path
+
+## Start Here
+
+If this is your first time running a project like this, use this section first.
+
+What you need:
+
+- a Linux machine on your local network
+- Python and `make`
+- a modern browser such as Chrome
+- one supported backend:
+  - OpenClaw
+  - Ollama
+  - or a compatible custom session backend
+
+Fastest way to try the current spike:
+
+```bash
+make spike-install
+make spike-run
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8765/spike
+```
+
+If you want microphone access from another device on your LAN, use HTTPS instead of plain HTTP. See [`ops/README.md`](/home/nawaf/Projects/Qantara/ops/README.md).
+
+If you are not sure what “backend” means here:
+
+- Qantara is the voice layer
+- OpenClaw or Ollama is the agent/runtime Qantara talks to
+- Qantara does not replace the model runtime; it connects voice to it
+
+## What Qantara Does
+
+- listens through your browser microphone
+- detects when you finished speaking
+- turns your speech into text
+- sends that text to an AI agent backend
+- speaks the response back to you
+- lets you interrupt the assistant while it is still talking
 
 ## Goals
 
