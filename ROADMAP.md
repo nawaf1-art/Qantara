@@ -6,6 +6,8 @@ This roadmap is the single source of truth for what to build and in what order. 
 
 Each task has a clear scope, acceptance criteria, and the files involved. Tasks within a phase can be worked on in parallel unless marked as dependent.
 
+Each phase includes **early releases** — small, shippable wins that go out as GitHub releases before the full phase is complete. This keeps the project visibly alive and gives users something new every 1-2 weeks.
+
 ---
 
 ## Phase 0: Alpha Checkpoint — COMPLETE
@@ -35,7 +37,72 @@ Everything below is done:
 
 **Goal:** Anyone can go from zero to a working local voice agent in under 60 seconds.
 
-**Version target:** `0.2.0`
+**Full version target:** `0.2.0`
+
+### Early Releases
+
+#### `0.1.1` — Cleanup and contributor onboarding
+
+The quickest release. No new features — just make the repo ready for others.
+
+- [ ] Add GitHub topics: `voice-ai`, `voice-agent`, `local-first`, `tts`, `stt`, `ollama`, `speech-to-speech`, `real-time`, `open-source`
+- [ ] Add `CONTRIBUTING.md` referencing AGENTS.md with the provider contribution pattern
+- [ ] Add issue templates: bug report, feature request, new provider (`.github/ISSUE_TEMPLATE/`)
+- [ ] Create 10 "good first issue" tickets with specific file references
+- [ ] Clean up any remaining TODO comments in source files
+- [ ] Add a `make test` target (even if it just runs a smoke test)
+
+**Files:** `.github/ISSUE_TEMPLATE/`, `CONTRIBUTING.md`, `Makefile`
+**Effort:** 1-2 hours
+**Ship when:** All items checked
+
+#### `0.1.2` — Provider plugin system
+
+Refactor STT and TTS so adding a new one is a single-file contribution. This unblocks all future provider work.
+
+- [ ] Abstract base class for STT providers (`providers/stt/base.py`)
+- [ ] Abstract base class for TTS providers (`providers/tts/base.py`)
+- [ ] Move faster-whisper into `providers/stt/faster_whisper.py`
+- [ ] Move Piper into `providers/tts/piper.py`
+- [ ] Factory selects provider by `QANTARA_STT_PROVIDER` / `QANTARA_TTS_PROVIDER`
+- [ ] `providers/README.md` — "How to add a provider" guide
+- [ ] Update AGENTS.md with new provider patterns
+
+**Files:** `providers/` (new), `gateway/transport_spike/server.py`
+**Effort:** 1-2 days
+**Ship when:** Existing STT/TTS works unchanged through new plugin system
+
+#### `0.1.3` — Kokoro TTS
+
+Add the community's favorite local TTS. Immediate quality upgrade.
+
+- [ ] Kokoro provider implementing TTS base class (`providers/tts/kokoro.py`)
+- [ ] `QANTARA_TTS_PROVIDER=kokoro` selects it
+- [ ] Auto-download or clear model setup instructions
+- [ ] First-audio latency measured and added to README
+- [ ] Piper remains the default fallback
+
+**Files:** `providers/tts/kokoro.py` (new)
+**Depends on:** `0.1.2` (plugin system)
+**Effort:** 1 day
+**Ship when:** Kokoro produces voice output through the full pipeline
+
+#### `0.1.4` — Docker one-command setup
+
+The big one for Phase 1. This is what we launch with.
+
+- [ ] `Dockerfile` for Qantara gateway + STT + TTS
+- [ ] `docker-compose.yml` including Ollama with a default model
+- [ ] `docker compose up` → browser → speak → voice response
+- [ ] No env vars required for default setup
+- [ ] README updated with Docker as the primary quickstart
+
+**Files:** `Dockerfile`, `docker-compose.yml` (new), `README.md`
+**Depends on:** `0.1.3` (Kokoro as default TTS in Docker image)
+**Effort:** 2-3 days
+**Ship when:** Fresh machine with Docker can run one command and have a voice agent
+
+### Full Phase 1 Tasks
 
 ### P1.1 — Docker packaging
 
@@ -56,8 +123,8 @@ Acceptance criteria:
 ### P1.2 — Kokoro TTS integration
 
 **Priority:** High
-**Files:** `gateway/transport_spike/tts_kokoro.py` (new), `gateway/transport_spike/server.py`
-**Depends on:** Nothing
+**Files:** `providers/tts/kokoro.py` (new), `gateway/transport_spike/server.py`
+**Depends on:** P1.3
 
 Add Kokoro (82M param, Apache 2.0) as a TTS provider alongside Piper.
 
@@ -104,7 +171,7 @@ Acceptance criteria:
 **Priority:** Medium
 **Files:** GitHub repo settings, `.github/ISSUE_TEMPLATE/` (new)
 
-- Add repo topics: `voice-ai`, `voice-agent`, `local-first`, `tts`, `stt`, `ollama`, `speech-to-speech`, `real-time`, `open-source`
+- Add repo topics
 - Create issue templates: bug report, feature request, new provider
 - Create 10 "good first issue" tickets with specific file references and context
 - Add `CONTRIBUTING.md` with the provider contribution pattern
@@ -120,7 +187,55 @@ Acceptance criteria:
 
 **Goal:** Qantara becomes the standard voice layer for AI agents. Any backend, any STT, any TTS.
 
-**Version target:** `0.3.0`
+**Full version target:** `0.3.0`
+
+### Early Releases
+
+#### `0.2.1` — Vosk STT (fully offline lightweight option)
+
+- [ ] Vosk provider implementing STT base class (`providers/stt/vosk.py`)
+- [ ] `QANTARA_STT_PROVIDER=vosk` selects it
+- [ ] Works fully offline with no API key
+- [ ] Documented model download and setup
+
+**Files:** `providers/stt/vosk.py` (new)
+**Effort:** 1 day
+**Ship when:** Vosk transcribes speech through the full pipeline
+
+#### `0.2.2` — Chatterbox TTS (high-quality open-source voice)
+
+- [ ] Chatterbox provider implementing TTS base class (`providers/tts/chatterbox.py`)
+- [ ] `QANTARA_TTS_PROVIDER=chatterbox` selects it
+- [ ] Works fully offline
+- [ ] Voice quality comparison noted in docs
+
+**Files:** `providers/tts/chatterbox.py` (new)
+**Effort:** 1 day
+**Ship when:** Chatterbox produces voice output through the full pipeline
+
+#### `0.2.3` — Agent protocol v1 and tool-call support
+
+- [ ] Protocol spec document (`protocols/agent.md`)
+- [ ] Adapter base class extended with tool-call events
+- [ ] Ollama adapter implements tool-call pass-through
+- [ ] Browser shows "Agent is doing X..." during tool execution
+
+**Files:** `protocols/agent.md` (new), `adapters/base.py`, `client/transport-spike/index.html`
+**Effort:** 3-4 days
+**Ship when:** A voice conversation can trigger a tool call and the user hears the result
+
+#### `0.2.4` — Python SDK (`pip install qantara`)
+
+- [ ] Package structure with `pyproject.toml`
+- [ ] `from qantara import VoiceGateway` works
+- [ ] 5-line example in README
+- [ ] Published to PyPI (or TestPyPI first)
+
+**Files:** `pyproject.toml`, `src/qantara/` (new)
+**Effort:** 2-3 days
+**Ship when:** `pip install qantara` and the 5-line example runs
+
+### Full Phase 2 Tasks
 
 ### P2.1 — Agent protocol specification
 
@@ -223,7 +338,55 @@ Acceptance criteria:
 
 **Goal:** Ecosystem, community, and reach.
 
-**Version target:** `0.4.0`
+**Full version target:** `0.4.0`
+
+### Early Releases
+
+#### `0.3.1` — Home Assistant add-on
+
+- [ ] HA add-on config and Dockerfile (`integrations/homeassistant/`)
+- [ ] Wyoming protocol bridge for voice commands
+- [ ] Install instructions for HA users
+- [ ] Tested with HA conversation agent
+
+**Files:** `integrations/homeassistant/` (new)
+**Effort:** 3-4 days
+**Ship when:** HA users can install the add-on and talk to their home
+
+#### `0.3.2` — Speech-native model passthrough
+
+- [ ] Base class for speech-native providers (`providers/speech_native/base.py`)
+- [ ] OpenAI Realtime API provider (`providers/speech_native/openai_realtime.py`)
+- [ ] `QANTARA_MODE=pipeline` (default) vs `QANTARA_MODE=speech_native`
+- [ ] Barge-in works in both modes
+
+**Files:** `providers/speech_native/` (new)
+**Effort:** 3-4 days
+**Ship when:** A conversation runs through OpenAI Realtime with Qantara managing the session
+
+#### `0.3.3` — Arabic voice support
+
+- [ ] Arabic STT validation with faster-whisper (MSA + Gulf dialect accuracy report)
+- [ ] Arabic TTS provider evaluation (best available open-source)
+- [ ] Auto language detection in the gateway
+- [ ] Arabic + English code-switching in same session
+
+**Files:** Provider configs, `gateway/transport_spike/language_detect.py` (new)
+**Effort:** 1-2 weeks
+**Ship when:** A user can speak Arabic and get an Arabic voice response
+
+#### `0.3.4` — Community plugin registry
+
+- [ ] Registry JSON schema and initial file (`registry/providers.json`)
+- [ ] GitHub Action to validate submitted providers
+- [ ] README section showing available community providers
+- [ ] Submission guide for contributors
+
+**Files:** `registry/` (new), `.github/workflows/`
+**Effort:** 2 days
+**Ship when:** A community member can submit a provider via PR and it appears in the registry
+
+### Full Phase 3 Tasks
 
 ### P3.1 — Home Assistant integration
 
@@ -289,25 +452,50 @@ Acceptance criteria:
 
 ---
 
+## Release Cadence
+
+```
+0.1.0-alpha.2  ← you are here
+0.1.1          ← contributor onboarding (days away)
+0.1.2          ← provider plugin system
+0.1.3          ← Kokoro TTS
+0.1.4          ← Docker one-command setup
+0.2.0          ← Phase 1 complete, public launch
+0.2.1          ← Vosk STT
+0.2.2          ← Chatterbox TTS
+0.2.3          ← Agent protocol + tool calls
+0.2.4          ← pip install qantara
+0.3.0          ← Phase 2 complete
+0.3.1          ← Home Assistant
+0.3.2          ← Speech-native models
+0.3.3          ← Arabic voice
+0.3.4          ← Plugin registry
+0.4.0          ← Phase 3 complete
+```
+
+Target: one early release every 1-2 weeks. Each release is a tagged GitHub release with changelog.
+
+---
+
 ## Working With This Roadmap
 
 ### For Claude Code
 
-Read `AGENTS.md` first. Pick a task from the current phase. Check that no one else is working on it (look at open PRs and branches). Create a branch named `phase-N/task-name` (e.g., `phase-1/kokoro-tts`). Follow the patterns in AGENTS.md. Open a PR when done.
+Read `AGENTS.md` first. Pick a task from the current phase — either an early release item or a full task. Check that no one else is working on it (look at open PRs and branches). Create a branch named `release/0.1.x-description` for early releases or `phase-N/task-name` for full tasks. Follow the patterns in AGENTS.md. Open a PR when done.
 
 ### For Codex
 
-Same as above. Each task is scoped to specific files and has clear acceptance criteria. You can work on any task in the current phase that doesn't have an open PR. Follow the patterns in AGENTS.md. Prefer small, focused PRs over large changes.
+Same as above. Each task is scoped to specific files and has clear acceptance criteria. Early release items are designed to be completable in a single Codex session. Follow the patterns in AGENTS.md. Prefer small, focused PRs over large changes.
 
 ### For Human Contributors
 
-Start with issues labeled "good first issue." Read AGENTS.md and CONTRIBUTING.md. The provider plugin system (Phase 1.3) is designed so that adding a new STT or TTS provider is a single-file contribution.
+Start with issues labeled "good first issue." Read AGENTS.md and CONTRIBUTING.md. The provider plugin system (release `0.1.2`) is designed so that adding a new STT or TTS provider is a single-file contribution — the easiest way to get your name in the project.
 
 ### Task Status Tracking
 
 - **Not started** — No branch or PR exists
 - **In progress** — Branch exists, PR may be draft
 - **In review** — PR is open and ready for review
-- **Done** — PR is merged
+- **Done** — PR is merged, release tagged
 
 Check open PRs and branches before starting work to avoid conflicts.
