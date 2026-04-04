@@ -170,6 +170,7 @@ class PiperTTSProvider(TTSProvider):
             model_path=fallback_voice_path,
             config_path=config_path or _default_config_path(fallback_voice_path),
             sample_rate=self.sample_rate,
+            locale="en-US",
         )
         return voices
 

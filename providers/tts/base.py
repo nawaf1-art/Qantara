@@ -9,7 +9,7 @@ class VoiceSpec:
     voice_id: str
     label: str
     sample_rate: int
-    locale: str = "en-US"
+    locale: str
 
 
 class TTSProvider(ABC):
