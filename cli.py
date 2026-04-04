@@ -20,6 +20,8 @@ import sys
 import time
 from typing import Any
 
+from config import load_config
+
 # ---------------------------------------------------------------------------
 # Resolve repo root so imports work when invoked as `python cli.py`
 # ---------------------------------------------------------------------------
@@ -48,34 +50,132 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--backend",
-        default=os.environ.get("QANTARA_BACKEND", ""),
+        default=None,
         help=(
             "Backend to use: mock, ollama, openclaw, or an HTTP URL. "
-            "Falls back to QANTARA_BACKEND env var."
+            "Falls back to QANTARA_BACKEND env var, then config file."
         ),
     )
     parser.add_argument(
         "--model",
-        default=os.environ.get("QANTARA_OLLAMA_MODEL", ""),
+        default=None,
         help="Model name for Ollama backend (e.g. qwen2.5:7b).",
     )
     parser.add_argument(
         "--agent",
-        default=os.environ.get("QANTARA_OPENCLAW_AGENT_ID", ""),
+        default=None,
         help="Agent ID for OpenClaw backend (e.g. spectra).",
     )
     parser.add_argument(
         "--host",
-        default=os.environ.get("QANTARA_SPIKE_HOST", "127.0.0.1"),
+        default=None,
         help="Host for the gateway server.",
     )
     parser.add_argument(
         "--port",
         type=int,
-        default=int(os.environ.get("QANTARA_SPIKE_PORT", "8765")),
+        default=None,
         help="Port for the gateway server.",
     )
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Path to qantara.yml config file.",
+    )
     return parser
+
+
+def _apply_config_defaults(args: argparse.Namespace) -> None:
+    """Fill in missing args from env vars, then config file, then defaults.
+
+    Precedence (highest wins): env vars > CLI flags > config file > defaults.
+    CLI flags are already in args (None if not provided).
+    """
+    # Load config file (uses QANTARA_CONFIG env var or repo-root qantara.yml)
+    config_path = args.config or None
+    cfg = load_config(config_path)
+
+    # For each arg: env var wins, then CLI flag, then config file, then default.
+    # args.<field> is None when the user didn't pass the flag.
+
+    if args.backend is None:
+        env_val = os.environ.get("QANTARA_BACKEND", "")
+        if env_val:
+            args.backend = env_val
+        elif cfg["backend"]["type"]:
+            args.backend = cfg["backend"]["type"]
+        else:
+            args.backend = ""
+    else:
+        # CLI flag was given — but env var still wins
+        env_val = os.environ.get("QANTARA_BACKEND", "")
+        if env_val:
+            args.backend = env_val
+
+    if args.model is None:
+        env_val = os.environ.get("QANTARA_OLLAMA_MODEL", "")
+        if env_val:
+            args.model = env_val
+        elif cfg["backend"]["model"]:
+            args.model = cfg["backend"]["model"]
+        else:
+            args.model = ""
+    else:
+        env_val = os.environ.get("QANTARA_OLLAMA_MODEL", "")
+        if env_val:
+            args.model = env_val
+
+    if args.agent is None:
+        env_val = os.environ.get("QANTARA_OPENCLAW_AGENT_ID", "")
+        if env_val:
+            args.agent = env_val
+        elif cfg["backend"]["agent"]:
+            args.agent = cfg["backend"]["agent"]
+        else:
+            args.agent = ""
+    else:
+        env_val = os.environ.get("QANTARA_OPENCLAW_AGENT_ID", "")
+        if env_val:
+            args.agent = env_val
+
+    if args.host is None:
+        env_val = os.environ.get("QANTARA_SPIKE_HOST", "")
+        if env_val:
+            args.host = env_val
+        elif cfg["server"]["host"]:
+            args.host = cfg["server"]["host"]
+        else:
+            args.host = "127.0.0.1"
+    else:
+        env_val = os.environ.get("QANTARA_SPIKE_HOST", "")
+        if env_val:
+            args.host = env_val
+
+    if args.port is None:
+        env_val = os.environ.get("QANTARA_SPIKE_PORT", "")
+        if env_val:
+            args.port = int(env_val)
+        elif cfg["server"]["port"]:
+            args.port = int(cfg["server"]["port"])
+        else:
+            args.port = 8765
+    else:
+        env_val = os.environ.get("QANTARA_SPIKE_PORT", "")
+        if env_val:
+            args.port = int(env_val)
+
+    # Propagate STT/TTS config values into env vars if not already set
+    if cfg["voice"]["stt"] and not os.environ.get("QANTARA_STT_PROVIDER"):
+        os.environ["QANTARA_STT_PROVIDER"] = cfg["voice"]["stt"]
+    if cfg["voice"]["tts"] and not os.environ.get("QANTARA_TTS_PROVIDER"):
+        os.environ["QANTARA_TTS_PROVIDER"] = cfg["voice"]["tts"]
+
+    # Propagate backend URL from config if not set via env or CLI
+    if cfg["backend"]["url"] and not os.environ.get("QANTARA_BACKEND_BASE_URL"):
+        # Store for later use by _apply_env — only used when backend type matches
+        args._config_backend_url = cfg["backend"]["url"]
+    else:
+        args._config_backend_url = ""
 
 
 # ---------------------------------------------------------------------------
@@ -115,19 +215,29 @@ def _apply_env(backend_type: str, url: str, args: argparse.Namespace) -> None:
 
     elif backend_type == "ollama":
         os.environ["QANTARA_ADAPTER"] = "session_gateway_http"
-        os.environ["QANTARA_BACKEND_BASE_URL"] = f"http://127.0.0.1:{MANAGED_BRIDGE_PORT}"
+        if not os.environ.get("QANTARA_BACKEND_BASE_URL"):
+            os.environ["QANTARA_BACKEND_BASE_URL"] = f"http://127.0.0.1:{MANAGED_BRIDGE_PORT}"
         if args.model:
-            os.environ["QANTARA_OLLAMA_MODEL"] = args.model
+            os.environ.setdefault("QANTARA_OLLAMA_MODEL", args.model)
+        # Propagate config backend.url as the Ollama upstream URL for the bridge.
+        # Env var QANTARA_OLLAMA_BASE_URL still wins if already set.
+        if not os.environ.get("QANTARA_OLLAMA_BASE_URL"):
+            config_url = getattr(args, "_config_backend_url", "")
+            if config_url:
+                os.environ["QANTARA_OLLAMA_BASE_URL"] = config_url
 
     elif backend_type == "openclaw":
         os.environ["QANTARA_ADAPTER"] = "session_gateway_http"
-        os.environ["QANTARA_BACKEND_BASE_URL"] = f"http://127.0.0.1:{MANAGED_BRIDGE_PORT}"
+        if not os.environ.get("QANTARA_BACKEND_BASE_URL"):
+            os.environ["QANTARA_BACKEND_BASE_URL"] = f"http://127.0.0.1:{MANAGED_BRIDGE_PORT}"
         if args.agent:
-            os.environ["QANTARA_OPENCLAW_AGENT_ID"] = args.agent
+            os.environ.setdefault("QANTARA_OPENCLAW_AGENT_ID", args.agent)
 
     elif backend_type == "custom":
         os.environ["QANTARA_ADAPTER"] = "session_gateway_http"
-        os.environ["QANTARA_BACKEND_BASE_URL"] = url
+        if not os.environ.get("QANTARA_BACKEND_BASE_URL"):
+            config_url = getattr(args, "_config_backend_url", "")
+            os.environ["QANTARA_BACKEND_BASE_URL"] = url or config_url
 
     # Gateway host/port
     os.environ["QANTARA_SPIKE_HOST"] = args.host
@@ -260,8 +370,10 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
+    # Merge: env vars > CLI flags > config file > defaults
+    _apply_config_defaults(args)
+
     if not args.backend:
-        # No --backend flag and no QANTARA_BACKEND env var — default to mock
         args.backend = "mock"
 
     try:
