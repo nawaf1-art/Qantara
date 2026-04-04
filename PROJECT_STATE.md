@@ -30,6 +30,10 @@ The project has moved beyond planning-only status. It now includes:
 - deterministic local reply handling for repeated short voice cases
 - browser-side turn gating and weak-speech filtering for hands-free runs
 - browser-side barge-in handling with `Headset` and `Speakers` audio modes
+- a validated real OpenClaw-backed session backend bridge targeting `spectra`
+- a minimal browser-side avatar layer with playback-driven lipsync
+- browser-side avatar and voice preset selectors plus speech-speed control
+- Phase 1 identity architecture and schemas for owned avatar and voice systems
 
 ## What Is Decided
 
@@ -77,9 +81,14 @@ Source:
 - session gateway contract: [`SESSION_GATEWAY_CONTRACT.md`](/home/nawaf/Projects/Qantara/SESSION_GATEWAY_CONTRACT.md)
 - local fake session backend: [`gateway/fake_session_backend/server.py`](/home/nawaf/Projects/Qantara/gateway/fake_session_backend/server.py)
 - real Ollama session backend: [`gateway/ollama_session_backend/server.py`](/home/nawaf/Projects/Qantara/gateway/ollama_session_backend/server.py)
+- OpenClaw session backend bridge: [`gateway/openclaw_session_backend/server.py`](/home/nawaf/Projects/Qantara/gateway/openclaw_session_backend/server.py)
 - optional Piper path: [`gateway/transport_spike/tts_piper.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/tts_piper.py)
 - validated first STT path: [`gateway/transport_spike/stt_faster_whisper.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/stt_faster_whisper.py)
 - run notes template: [`experiments/notes/transport-spike.md`](/home/nawaf/Projects/Qantara/experiments/notes/transport-spike.md)
+- identity layer foundation: [`identity/README.md`](/home/nawaf/Projects/Qantara/identity/README.md)
+- avatar architecture: [`identity/AVATAR_SYSTEM.md`](/home/nawaf/Projects/Qantara/identity/AVATAR_SYSTEM.md)
+- voice architecture: [`identity/VOICE_SYSTEM.md`](/home/nawaf/Projects/Qantara/identity/VOICE_SYSTEM.md)
+- lipsync contract: [`identity/LIPSYNC_CONTRACT.md`](/home/nawaf/Projects/Qantara/identity/LIPSYNC_CONTRACT.md)
 
 ## What The Current Spike Can Do
 
@@ -105,6 +114,10 @@ The current runnable spike can:
 - fall back to a synthetic tone path when Piper is unavailable
 - route text turns through either the fake backend or the real Ollama-backed backend using the same adapter contract
 - short-circuit recurring short voice cases in the local backend before they hit the model
+- route voice turns through a real OpenClaw agent via the OpenClaw bridge backend
+- render a minimal client-side avatar with listening, thinking, and speaking states
+- drive mouth motion from the current playback signal
+- expose avatar presets, voice presets, and speech speed in the browser spike
 
 ## What The Current Spike Does Not Do Yet
 
@@ -146,6 +159,10 @@ Validated by actual testing:
 - hands-free auto-submit overlap is improved by browser-side gating
 - browser-side barge-in is working and speaker-mode protection has been added for non-headset runs
 - disconnects seen in recent browser logs have been characterized as clean closes, not gateway crashes
+- Qantara is now talking end-to-end to a real OpenClaw agent (`spectra`) through the session-oriented HTTP contract
+- the OpenClaw bridge has been improved for cancellation by terminating the full subprocess group and reducing noisy cancel failures
+- the shared OpenClaw `agent:spectra:main` session is reset when Qantara switches between HTTP sessions to reduce cross-talk
+- the new avatar/presence layer and selector UI do not break the transport loop
 
 Not yet validated by actual experiment results:
 
@@ -214,6 +231,9 @@ The main unresolved technical risks are:
 - response quality outside the currently covered deterministic voice cases still depends on whichever backend model is under test
 - STT errors on proper nouns and locations still create follow-up friction in voice-only runs
 - clean socket closes still occur in the browser, but they are now characterized and are not currently treated as transport failures
+- the OpenClaw bridge still uses a shared underlying session instead of true per-user OpenClaw session isolation
+- current browser voice selection is not yet true backend multi-voice because only one real Piper model is installed
+- the owned identity layer is architected, but descriptor-driven rendering and backend voice registry support are not implemented yet
 
 ## Definition Of A Good M0 State
 
@@ -230,10 +250,10 @@ Qantara reaches a good M0 state when:
 
 The highest-value next steps are:
 
-1. Keep validating the current speaker-mode path in repeated real voice runs.
-2. Extend deterministic handling only for recurring real-world STT variants that actually show up in logs.
-3. Keep backend playback-stop telemetry distinct from user-perceived audible stop timing.
-4. Decide whether to keep optimizing `Piper` or evaluate a faster TTS path.
+1. Keep validating the current OpenClaw-backed `spectra` path in repeated real voice runs.
+2. Implement true backend `voice_id` support and the first real voice registry.
+3. Replace hardcoded browser avatar presets with descriptor-driven presets backed by the identity layer.
+4. Keep backend playback-stop telemetry distinct from user-perceived audible stop timing.
 
 ## Repository Interpretation
 

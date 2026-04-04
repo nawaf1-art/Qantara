@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import signal
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -16,6 +17,11 @@ OPENCLAW_BIN = os.environ.get("QANTARA_OPENCLAW_BIN", "openclaw")
 OPENCLAW_AGENT_ID = os.environ.get("QANTARA_OPENCLAW_AGENT_ID", "spectra").strip() or "spectra"
 OPENCLAW_TIMEOUT_SECONDS = float(os.environ.get("QANTARA_OPENCLAW_TIMEOUT", "120"))
 OPENCLAW_THINKING = os.environ.get("QANTARA_OPENCLAW_THINKING", "").strip()
+OPENCLAW_CANCEL_GRACE_SECONDS = float(os.environ.get("QANTARA_OPENCLAW_CANCEL_GRACE", "2"))
+OPENCLAW_SHARED_SESSION_KEY = os.environ.get(
+    "QANTARA_OPENCLAW_SHARED_SESSION_KEY",
+    f"agent:{OPENCLAW_AGENT_ID}:main",
+).strip() or f"agent:{OPENCLAW_AGENT_ID}:main"
 
 
 def utc_now() -> str:
@@ -43,6 +49,7 @@ class OpenClawSessionBackend:
         self.sessions: dict[str, SessionState] = {}
         self.active_processes: dict[str, asyncio.subprocess.Process] = {}
         self.turn_lock = asyncio.Lock()
+        self.bound_session_handle: str | None = None
 
     def create_session(self, client_context: dict | None = None) -> str:
         session_handle = str(uuid.uuid4())
@@ -61,6 +68,10 @@ class OpenClawSessionBackend:
 
 
 BACKEND = OpenClawSessionBackend()
+
+
+class TurnCancelledError(RuntimeError):
+    pass
 
 
 def _normalize_text(text: str) -> str:
@@ -84,23 +95,69 @@ def _build_openclaw_command(transcript: str) -> list[str]:
     return command
 
 
-async def _run_openclaw_turn(turn_handle: str, transcript: str) -> tuple[str, dict]:
+async def _run_openclaw_gateway_call(method: str, params: dict) -> dict:
+    process = await asyncio.create_subprocess_exec(
+        OPENCLAW_BIN,
+        "gateway",
+        "call",
+        method,
+        "--json",
+        "--params",
+        json.dumps(params),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+    if process.returncode != 0:
+        message = (stderr or stdout).decode("utf-8", errors="replace").strip()
+        raise RuntimeError(message or f"openclaw gateway call failed for {method}")
+    return json.loads(stdout.decode("utf-8", errors="replace"))
+
+
+async def _reset_shared_openclaw_session() -> None:
+    await _run_openclaw_gateway_call("sessions.reset", {"key": OPENCLAW_SHARED_SESSION_KEY})
+
+
+async def _terminate_process_group(process: asyncio.subprocess.Process, hard: bool = False) -> None:
+    if process.returncode is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGKILL if hard else signal.SIGTERM)
+    except ProcessLookupError:
+        return
+
+
+async def _escalate_cancel(turn_handle: str, process: asyncio.subprocess.Process) -> None:
+    await asyncio.sleep(max(0.0, OPENCLAW_CANCEL_GRACE_SECONDS))
+    if process.returncode is None and turn_handle in BACKEND.active_processes:
+        await _terminate_process_group(process, hard=True)
+
+
+async def _run_openclaw_turn(session_handle: str, turn_handle: str, transcript: str) -> tuple[str, dict]:
     command = _build_openclaw_command(transcript)
     async with BACKEND.turn_lock:
+        if BACKEND.bound_session_handle not in (None, session_handle):
+            await _reset_shared_openclaw_session()
+        BACKEND.bound_session_handle = session_handle
         process = await asyncio.create_subprocess_exec(
             *command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
         BACKEND.active_processes[turn_handle] = process
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=OPENCLAW_TIMEOUT_SECONDS)
         except asyncio.TimeoutError:
-            process.kill()
+            await _terminate_process_group(process, hard=True)
             await process.communicate()
             raise RuntimeError(f"openclaw agent timed out after {int(OPENCLAW_TIMEOUT_SECONDS)} seconds")
         finally:
             BACKEND.active_processes.pop(turn_handle, None)
+
+    turn = BACKEND.sessions[session_handle].turns[turn_handle]
+    if turn.cancelled:
+        raise TurnCancelledError("turn cancelled")
 
     if process.returncode != 0:
         message = (stderr or stdout).decode("utf-8", errors="replace").strip()
@@ -183,7 +240,7 @@ async def stream_turn_events_handler(request: web.Request) -> web.StreamResponse
     await response.prepare(request)
 
     try:
-        final_text, meta = await _run_openclaw_turn(turn_handle, turn.transcript)
+        final_text, meta = await _run_openclaw_turn(session_handle, turn_handle, turn.transcript)
         if turn.cancelled:
             await response.write((json.dumps({"type": "cancel_acknowledged", "turn_handle": turn_handle}) + "\n").encode("utf-8"))
             await response.write_eof()
@@ -207,6 +264,10 @@ async def stream_turn_events_handler(request: web.Request) -> web.StreamResponse
         )
         await response.write_eof()
         return response
+    except TurnCancelledError:
+        await response.write((json.dumps({"type": "cancel_acknowledged", "turn_handle": turn_handle}) + "\n").encode("utf-8"))
+        await response.write_eof()
+        return response
     except Exception as exc:
         await response.write((json.dumps({"type": "turn_failed", "message": str(exc), "turn_handle": turn_handle}) + "\n").encode("utf-8"))
         await response.write_eof()
@@ -225,7 +286,8 @@ async def cancel_turn_handler(request: web.Request) -> web.Response:
     BACKEND.sessions[session_handle].turns[turn_handle].cancelled = True
     process = BACKEND.active_processes.get(turn_handle)
     if process and process.returncode is None:
-        process.terminate()
+        await _terminate_process_group(process, hard=False)
+        asyncio.create_task(_escalate_cancel(turn_handle, process))
     return web.json_response({"status": "acknowledged", "mode": "best_effort"})
 
 

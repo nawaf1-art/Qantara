@@ -20,3 +20,11 @@ Run:
 ```bash
 ./.venv/bin/python gateway/openclaw_session_backend/server.py
 ```
+
+Current bridge behavior:
+
+- uses the shared OpenClaw session key `agent:spectra:main`
+- resets that shared session when Qantara switches between HTTP sessions to
+  reduce cross-talk
+- runs each CLI turn in its own process group so barge-in cancellation can
+  terminate the full subprocess tree cleanly

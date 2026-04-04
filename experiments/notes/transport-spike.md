@@ -12,14 +12,17 @@
 - Browser: LAN browser session over HTTPS
 - Headset used: no
 - current active backend under test:
-  - Host A Ollama
-  - model: `gemma4:26b`
+  - OpenClaw session bridge
+  - target agent: `spectra`
+  - agent model: `openai-codex/gpt-5.4-mini`
 - audio mode under test:
   - `Speakers`
 - current gateway focus:
+  - OpenClaw-backed real-agent validation
   - speaker-mode stability
   - barge-in behavior
   - post-playback re-entry control
+  - avatar and presence-layer experimentation
 
 ## Observations
 
@@ -31,12 +34,14 @@
 - endpointing behavior: browser-side endpoint-ready fired successfully after `700 ms` silence and now supports auto-submit of recent speech
 - current limitation: fragmented follow-ups can still happen when STT breaks an utterance across pauses
 - real backend path: validated against an Ollama-backed session backend using the same HTTP contract
+- OpenClaw path: validated against a real OpenClaw agent through the same HTTP contract shape
 - current status after recent tuning:
   - auto-submit overlap is improved by browser-side active-turn and playback gating
   - some weak or low-value speech fragments are now skipped before STT submission
   - browser-side barge-in now clears playback through the gateway
   - browser-side audio mode now distinguishes `Headset` and `Speakers`
   - `Speakers` mode adds stricter playback-time speech detection and a longer post-playback cooldown
+  - browser-side avatar presets, voice presets, and speech-speed control do not break the transport loop
   - current open question is how much residual speaker leakage still survives the heuristic speaker-mode guard
 - disconnect characterization:
   - recent browser disconnects are clean closes (`code=1000`), not transport crashes
@@ -50,6 +55,10 @@
 - current speaker-mode result:
   - intentional interruption works
   - accidental immediate post-playback triggers appear reduced versus earlier runs
+- current OpenClaw bridge result:
+  - real agent conversation works end to end
+  - cancellation noise is improved after process-group kill handling
+  - shared-session cross-talk risk is reduced by resetting the shared OpenClaw session when switching HTTP sessions
 
 ### Transport Decision
 
@@ -79,6 +88,7 @@
 - fallback tone used: yes, during the earlier pre-Piper runs
 - current result: first validated TTS candidate
 - real backend speaking result: working; multi-turn voice interaction now works through the Ollama-backed backend
+- OpenClaw agent speaking result: working; multi-turn voice interaction now works through `spectra`
 - recent local baseline:
   - first-audio commonly around `1.4s` to `1.6s`
   - occasional outliers still appear above `2.0s`
@@ -86,7 +96,11 @@
 ### Follow-Ups
 
 - keep validating the current `Speakers` mode in real speaker-plus-mic runs
+- keep validating the OpenClaw-backed `spectra` path under real voice interaction
 - extend deterministic handling only for recurring real STT variants seen in logs
 - keep validating whether the current weak-speech filter is rejecting too much soft speech
 - keep backend playback-stop telemetry separate from user-perceived audible stop timing
-- keep the gateway layer runtime-agnostic while using Host A `gemma4:26b` as a temporary higher-capability test backend
+- keep the gateway layer runtime-agnostic while using `spectra` as the current real-agent validation target
+- Phase 1 identity follow-up:
+  - replace hardcoded avatar presets with descriptor-driven presets
+  - add true backend `voice_id` support once more Piper voices are available

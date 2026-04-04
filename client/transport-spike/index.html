@@ -125,6 +125,221 @@
       border-radius: 12px;
       padding: 14px;
     }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(220px, 260px) 1fr;
+      gap: 18px;
+      margin-bottom: 18px;
+      align-items: stretch;
+    }
+
+    .avatar-card {
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 280px;
+      background:
+        radial-gradient(circle at top, rgba(15, 118, 110, 0.18), transparent 45%),
+        linear-gradient(160deg, #fffdf8 0%, #f4ece0 100%);
+    }
+
+    .selectors {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .selector-card {
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.62);
+    }
+
+    .selector-card label {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .selector-card select {
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      font: inherit;
+      background: var(--panel);
+      color: var(--ink);
+    }
+
+    .avatar-shell {
+      position: relative;
+      width: 190px;
+      height: 220px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      --mouth-open: 6;
+      --mouth-width: 22;
+    }
+
+    .avatar-shell::before {
+      content: "";
+      position: absolute;
+      inset: 18px;
+      border-radius: 999px;
+      background: radial-gradient(circle, rgba(15, 118, 110, 0.16), transparent 70%);
+      transition: transform 180ms ease, opacity 180ms ease;
+      opacity: 0.8;
+      transform: scale(0.96);
+    }
+
+    .avatar-shell.listening::before {
+      animation: avatarPulse 1.35s ease-in-out infinite;
+    }
+
+    .avatar-shell.thinking::before,
+    .avatar-shell.speaking::before {
+      opacity: 1;
+      transform: scale(1.05);
+    }
+
+    .avatar-badge {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .avatar-svg {
+      width: 100%;
+      height: auto;
+      position: relative;
+      z-index: 1;
+      filter: drop-shadow(0 10px 26px rgba(31, 35, 40, 0.12));
+    }
+
+    .avatar-halo {
+      fill: rgba(15, 118, 110, 0.12);
+    }
+
+    .avatar-face {
+      fill: #f9edd9;
+      stroke: #8f7a62;
+      stroke-width: 2.5;
+    }
+
+    .avatar-eye {
+      fill: #1f2328;
+      transform-origin: center;
+      transition: transform 160ms ease;
+    }
+
+    .avatar-shell.thinking .avatar-eye.left {
+      transform: translateX(-3px);
+    }
+
+    .avatar-shell.thinking .avatar-eye.right {
+      transform: translateX(3px);
+    }
+
+    .avatar-brow {
+      fill: none;
+      stroke: #705c48;
+      stroke-width: 3;
+      stroke-linecap: round;
+    }
+
+    .avatar-mouth {
+      fill: #7a3b3b;
+      transition: all 70ms linear;
+    }
+
+    .avatar-caption {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .avatar-title {
+      margin: 0 0 8px;
+      font-size: 1.2rem;
+      font-weight: 600;
+    }
+
+    .avatar-state {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      color: var(--muted);
+    }
+
+    .avatar-state-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--line);
+      transition: background 160ms ease, transform 160ms ease;
+    }
+
+    .avatar-state[data-state="listening"] .avatar-state-dot {
+      background: var(--accent);
+      transform: scale(1.15);
+    }
+
+    .avatar-state[data-state="thinking"] .avatar-state-dot {
+      background: #a16207;
+      transform: scale(1.15);
+    }
+
+    .avatar-state[data-state="speaking"] .avatar-state-dot {
+      background: #c2410c;
+      transform: scale(1.25);
+    }
+
+    .avatar-meter {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(31, 35, 40, 0.08);
+      overflow: hidden;
+      border: 1px solid rgba(31, 35, 40, 0.08);
+    }
+
+    .avatar-meter-fill {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #0f766e, #c2410c);
+      transition: width 60ms linear;
+    }
+
+    @keyframes avatarPulse {
+      0%, 100% { transform: scale(0.96); opacity: 0.72; }
+      50% { transform: scale(1.05); opacity: 1; }
+    }
+
+    @media (max-width: 760px) {
+      .hero {
+        grid-template-columns: 1fr;
+      }
+
+      .avatar-card {
+        min-height: 240px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -136,6 +351,69 @@
     </p>
 
     <section class="panel">
+      <section class="hero">
+        <div class="panel avatar-card" style="margin-top: 0;">
+          <div id="avatarShell" class="avatar-shell idle">
+            <div id="avatarBadge" class="avatar-badge">Idle</div>
+            <svg class="avatar-svg" viewBox="0 0 220 250" aria-label="Qantara Avatar" role="img">
+              <ellipse id="avatarHalo" class="avatar-halo" cx="110" cy="123" rx="90" ry="96"></ellipse>
+              <path id="avatarFace" class="avatar-face" d="M110 30C150 30 179 63 179 118C179 176 146 217 110 217C74 217 41 176 41 118C41 63 70 30 110 30Z"></path>
+              <path id="avatarBrowLeft" class="avatar-brow" d="M72 97C82 91 91 90 100 93"></path>
+              <path id="avatarBrowRight" class="avatar-brow" d="M120 93C129 90 138 91 148 97"></path>
+              <ellipse id="avatarEyeLeft" class="avatar-eye left" cx="87" cy="113" rx="8" ry="10"></ellipse>
+              <ellipse id="avatarEyeRight" class="avatar-eye right" cx="133" cy="113" rx="8" ry="10"></ellipse>
+              <ellipse id="avatarMouth" class="avatar-mouth" cx="110" cy="164" rx="22" ry="6"></ellipse>
+            </svg>
+          </div>
+        </div>
+        <div class="panel avatar-caption" style="margin-top: 0;">
+          <h2 id="avatarTitle" class="avatar-title">Qantara Presence Layer</h2>
+          <div id="avatarState" class="avatar-state" data-state="idle">
+            <span class="avatar-state-dot"></span>
+            <span id="avatarStateText">Idle</span>
+          </div>
+          <p>
+            Minimal avatar for the transport spike. It reflects listening, thinking, and speaking
+            states and opens its mouth from the assistant playback signal.
+          </p>
+          <div class="avatar-meter">
+            <div id="avatarMeterFill" class="avatar-meter-fill"></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="selectors">
+        <div class="selector-card">
+          <label for="avatarPreset">
+            <span>Avatar</span>
+            <select id="avatarPreset">
+              <option value="qantara">Qantara</option>
+              <option value="spectra">Spectra</option>
+              <option value="atlas">Atlas</option>
+              <option value="nouf">Nouf</option>
+            </select>
+          </label>
+        </div>
+        <div class="selector-card">
+          <label for="voicePreset">
+            <span>Voice</span>
+            <select id="voicePreset">
+              <option value="steady">Steady</option>
+              <option value="warm">Warm</option>
+              <option value="bright">Bright</option>
+              <option value="swift">Swift</option>
+            </select>
+          </label>
+        </div>
+        <div class="selector-card">
+          <label for="speechSpeed">
+            <span>Speech Speed</span>
+            <input id="speechSpeed" type="range" min="0.85" max="1.4" step="0.05" value="1.15">
+            <span id="speechSpeedValue">1.15x</span>
+          </label>
+        </div>
+      </div>
+
       <div class="controls">
         <button id="connectBtn" class="primary">Connect</button>
         <button id="disconnectBtn" class="warn" disabled>Disconnect</button>
@@ -222,6 +500,77 @@
     const submitSpeechBtn = document.getElementById("submitSpeechBtn");
     const clearBtn = document.getElementById("clearBtn");
     const audioModeSelect = document.getElementById("audioMode");
+    const avatarPresetSelect = document.getElementById("avatarPreset");
+    const voicePresetSelect = document.getElementById("voicePreset");
+    const speechSpeedInput = document.getElementById("speechSpeed");
+    const speechSpeedValue = document.getElementById("speechSpeedValue");
+    const avatarShell = document.getElementById("avatarShell");
+    const avatarBadge = document.getElementById("avatarBadge");
+    const avatarState = document.getElementById("avatarState");
+    const avatarStateText = document.getElementById("avatarStateText");
+    const avatarTitle = document.getElementById("avatarTitle");
+    const avatarFace = document.getElementById("avatarFace");
+    const avatarHalo = document.getElementById("avatarHalo");
+    const avatarEyeLeft = document.getElementById("avatarEyeLeft");
+    const avatarEyeRight = document.getElementById("avatarEyeRight");
+    const avatarBrowLeft = document.getElementById("avatarBrowLeft");
+    const avatarBrowRight = document.getElementById("avatarBrowRight");
+    const avatarMouth = document.getElementById("avatarMouth");
+    const avatarMeterFill = document.getElementById("avatarMeterFill");
+
+    const AVATAR_PRESETS = {
+      qantara: {
+        title: "Qantara Presence Layer",
+        faceFill: "#f9edd9",
+        faceStroke: "#8f7a62",
+        haloFill: "rgba(15, 118, 110, 0.12)",
+        eyeFill: "#1f2328",
+        browStroke: "#705c48",
+        mouthFill: "#7a3b3b",
+        shellGlow: "rgba(15, 118, 110, 0.16)",
+        shellBg: "radial-gradient(circle at top, rgba(15, 118, 110, 0.18), transparent 45%), linear-gradient(160deg, #fffdf8 0%, #f4ece0 100%)",
+      },
+      spectra: {
+        title: "Spectra Visual Profile",
+        faceFill: "#e8eef5",
+        faceStroke: "#53667b",
+        haloFill: "rgba(26, 86, 219, 0.14)",
+        eyeFill: "#0f172a",
+        browStroke: "#334155",
+        mouthFill: "#1d4ed8",
+        shellGlow: "rgba(37, 99, 235, 0.18)",
+        shellBg: "radial-gradient(circle at top, rgba(37, 99, 235, 0.16), transparent 45%), linear-gradient(160deg, #f7fbff 0%, #dde7f3 100%)",
+      },
+      atlas: {
+        title: "Atlas Heavy Console",
+        faceFill: "#eee3d0",
+        faceStroke: "#75644f",
+        haloFill: "rgba(180, 83, 9, 0.14)",
+        eyeFill: "#20130b",
+        browStroke: "#6f4a1d",
+        mouthFill: "#9a3412",
+        shellGlow: "rgba(180, 83, 9, 0.16)",
+        shellBg: "radial-gradient(circle at top, rgba(180, 83, 9, 0.16), transparent 45%), linear-gradient(160deg, #fff7ed 0%, #ead7c0 100%)",
+      },
+      nouf: {
+        title: "Nouf Studio Portrait",
+        faceFill: "#f6e7df",
+        faceStroke: "#8f6b70",
+        haloFill: "rgba(190, 24, 93, 0.12)",
+        eyeFill: "#3f1d2e",
+        browStroke: "#7a3c59",
+        mouthFill: "#be185d",
+        shellGlow: "rgba(190, 24, 93, 0.16)",
+        shellBg: "radial-gradient(circle at top, rgba(190, 24, 93, 0.16), transparent 45%), linear-gradient(160deg, #fff8fb 0%, #f0dfe7 100%)",
+      },
+    };
+
+    const VOICE_PRESETS = {
+      steady: { label: "Steady", playbackRate: 1.0, detune: 0 },
+      warm: { label: "Warm", playbackRate: 0.95, detune: -140 },
+      bright: { label: "Bright", playbackRate: 1.03, detune: 110 },
+      swift: { label: "Swift", playbackRate: 1.08, detune: 40 },
+    };
 
     let socket = null;
     let micContext = null;
@@ -229,6 +578,9 @@
     let sourceNode = null;
     let processorNode = null;
     let playbackContext = null;
+    let playbackAnalyser = null;
+    let playbackAnalyserData = null;
+    let avatarAnimationFrame = null;
     let nextPlaybackAt = 0;
     let framesSent = 0;
     let framesReceived = 0;
@@ -255,8 +607,23 @@
     let weakSpeechSkipCount = 0;
     let bargeInPending = false;
     let audioMode = localStorage.getItem("qantara_audio_mode") || audioModeSelect?.value || "speakers";
+    let avatarPreset = localStorage.getItem("qantara_avatar_preset") || avatarPresetSelect?.value || "qantara";
+    let voicePreset = localStorage.getItem("qantara_voice_preset") || voicePresetSelect?.value || "steady";
+    let speechSpeed = Number(localStorage.getItem("qantara_speech_speed") || speechSpeedInput?.value || "1.15");
     if (audioModeSelect) {
       audioModeSelect.value = audioMode;
+    }
+    if (avatarPresetSelect) {
+      avatarPresetSelect.value = avatarPreset;
+    }
+    if (voicePresetSelect) {
+      voicePresetSelect.value = voicePreset;
+    }
+    if (speechSpeedInput) {
+      speechSpeedInput.value = String(speechSpeed);
+    }
+    if (speechSpeedValue) {
+      speechSpeedValue.textContent = `${speechSpeed.toFixed(2)}x`;
     }
 
     function $(id) {
@@ -288,11 +655,13 @@
     function setMicState(value) {
       updateText("micState", value);
       micBtn.textContent = value === "running" ? "Stop Mic" : "Start Mic";
+      updateAvatarState();
     }
 
     function setPlaybackState(value) {
       updateText("playbackState", value);
       playbackActive = value === "playing";
+      updateAvatarState();
     }
 
     function setTtsState(value) {
@@ -305,6 +674,7 @@
 
     function setVadState(value) {
       updateText("vadState", value);
+      updateAvatarState();
     }
 
     function setVadRms(value) {
@@ -313,6 +683,96 @@
 
     function setEndpointState(value) {
       updateText("endpointState", value);
+      updateAvatarState();
+    }
+
+    function getAvatarVisualState() {
+      if (playbackActive) return "speaking";
+      if (backendTurnActive) return "thinking";
+      if (micActive) return "listening";
+      return "idle";
+    }
+
+    function setAvatarMeter(level) {
+      const clamped = Math.max(0, Math.min(1, level));
+      if (avatarMeterFill) {
+        avatarMeterFill.style.width = `${clamped * 100}%`;
+      }
+      if (avatarMouth) {
+        avatarMouth.setAttribute("ry", (6 + clamped * 15).toFixed(1));
+        avatarMouth.setAttribute("rx", (22 + clamped * 18).toFixed(1));
+      }
+    }
+
+    function applyAvatarPreset() {
+      const preset = AVATAR_PRESETS[avatarPreset] || AVATAR_PRESETS.qantara;
+      if (avatarTitle) {
+        avatarTitle.textContent = preset.title;
+      }
+      if (avatarFace) {
+        avatarFace.setAttribute("fill", preset.faceFill);
+        avatarFace.setAttribute("stroke", preset.faceStroke);
+      }
+      if (avatarHalo) {
+        avatarHalo.setAttribute("fill", preset.haloFill);
+      }
+      if (avatarEyeLeft) avatarEyeLeft.setAttribute("fill", preset.eyeFill);
+      if (avatarEyeRight) avatarEyeRight.setAttribute("fill", preset.eyeFill);
+      if (avatarBrowLeft) avatarBrowLeft.setAttribute("stroke", preset.browStroke);
+      if (avatarBrowRight) avatarBrowRight.setAttribute("stroke", preset.browStroke);
+      if (avatarMouth) avatarMouth.setAttribute("fill", preset.mouthFill);
+      if (avatarShell) {
+        avatarShell.style.setProperty("--avatar-glow", preset.shellGlow);
+      }
+      const avatarCard = document.querySelector(".avatar-card");
+      if (avatarCard) {
+        avatarCard.style.background = preset.shellBg;
+      }
+    }
+
+    function getVoiceProfile() {
+      return VOICE_PRESETS[voicePreset] || VOICE_PRESETS.steady;
+    }
+
+    function getSpeechSpeed() {
+      return Math.max(0.85, Math.min(1.4, Number.isFinite(speechSpeed) ? speechSpeed : 1.15));
+    }
+
+    function updateAvatarState() {
+      const state = getAvatarVisualState();
+      if (avatarShell) {
+        avatarShell.className = `avatar-shell ${state}`;
+      }
+      if (avatarBadge) {
+        avatarBadge.textContent = state;
+      }
+      if (avatarState) {
+        avatarState.dataset.state = state;
+      }
+      if (avatarStateText) {
+        avatarStateText.textContent = state.charAt(0).toUpperCase() + state.slice(1);
+      }
+      if (state !== "speaking") {
+        setAvatarMeter(0);
+      }
+    }
+
+    function startAvatarAnimationLoop() {
+      if (avatarAnimationFrame != null) return;
+      const tick = () => {
+        avatarAnimationFrame = requestAnimationFrame(tick);
+        if (!playbackAnalyser || !playbackActive) {
+          return;
+        }
+        playbackAnalyser.getByteTimeDomainData(playbackAnalyserData);
+        let total = 0;
+        for (let i = 0; i < playbackAnalyserData.length; i += 1) {
+          total += Math.abs(playbackAnalyserData[i] - 128);
+        }
+        const level = Math.min(1, (total / playbackAnalyserData.length) / 42);
+        setAvatarMeter(level);
+      };
+      avatarAnimationFrame = requestAnimationFrame(tick);
     }
 
     function setFirstAudioMs(value) {
@@ -427,6 +887,12 @@
     async function ensurePlaybackContext() {
       if (!playbackContext) {
         playbackContext = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
+        playbackAnalyser = playbackContext.createAnalyser();
+        playbackAnalyser.fftSize = 256;
+        playbackAnalyser.smoothingTimeConstant = 0.72;
+        playbackAnalyserData = new Uint8Array(playbackAnalyser.fftSize);
+        playbackAnalyser.connect(playbackContext.destination);
+        startAvatarAnimationLoop();
       }
       if (playbackContext.state === "suspended") {
         await playbackContext.resume();
@@ -445,8 +911,12 @@
       buffer.copyToChannel(float32, 0);
 
       const source = playbackContext.createBufferSource();
+      const voiceProfile = getVoiceProfile();
+      const speedMultiplier = getSpeechSpeed();
       source.buffer = buffer;
-      source.connect(playbackContext.destination);
+      source.playbackRate.value = voiceProfile.playbackRate * speedMultiplier;
+      source.detune.value = voiceProfile.detune;
+      source.connect(playbackAnalyser);
       activePlaybackSources.add(source);
 
       const now = playbackContext.currentTime;
@@ -454,7 +924,7 @@
       source.start(nextPlaybackAt);
       setPlaybackState("playing");
 
-      const duration = buffer.duration;
+      const duration = buffer.duration / source.playbackRate.value;
       nextPlaybackAt += duration;
 
       source.onended = () => {
@@ -475,6 +945,7 @@
       }
       activePlaybackSources.clear();
       setPlaybackState("idle");
+      setAvatarMeter(0);
     }
 
     function clearEndpointTimer() {
@@ -686,6 +1157,7 @@
       setVadState("silence");
       setEndpointState("idle");
       setVadRms(0);
+      updateAvatarState();
       updateText("sampleRate", TARGET_SAMPLE_RATE);
       sendJson({ type: "mic_stream_started", sample_rate: TARGET_SAMPLE_RATE });
       log("microphone capture started");
@@ -718,6 +1190,7 @@
       setVadState("silence");
       setEndpointState("idle");
       setVadRms(0);
+      updateAvatarState();
       sendJson({ type: "mic_stream_stopped" });
       log("microphone capture stopped");
     }
@@ -737,6 +1210,7 @@
         setEndpointState("idle");
         backendTurnActive = false;
         playbackCooldownUntil = 0;
+        updateAvatarState();
         sendJson({ type: "session_init", client_name: "browser-transport-spike" });
         log("socket connected");
       };
@@ -753,6 +1227,8 @@
         backendTurnActive = false;
         playbackCooldownUntil = 0;
         clearEndpointTimer();
+        setAvatarMeter(0);
+        updateAvatarState();
         log(
           `socket disconnected code=${event.code} clean=${event.wasClean}${event.reason ? ` reason=${event.reason}` : ""}`
         );
@@ -798,6 +1274,7 @@
               if (!backendTurnActive && !playbackActive) {
                 playbackCooldownUntil = performance.now() + getPostPlaybackCooldownMs();
               }
+              updateAvatarState();
               log(`turn state: ${payload.state}${payload.reason ? ` (${payload.reason})` : ""}`);
             } else if (payload.type === "playback_metrics") {
               setFirstAudioMs(payload.tts_to_first_audio_ms);
@@ -818,6 +1295,8 @@
               setClearPending(false);
               bargeInPending = false;
               playbackCooldownUntil = performance.now() + getPostPlaybackCooldownMs();
+              setAvatarMeter(0);
+              updateAvatarState();
               log(`playback stopped (${payload.reason})${clearStopMs == null ? "" : ` ${clearStopMs} ms`}`);
             } else if (payload.type === "cancel_status") {
               bargeInPending = false;
@@ -904,6 +1383,31 @@
       localStorage.setItem("qantara_audio_mode", audioMode);
       log(`audio mode set to ${audioMode}`);
     });
+
+    avatarPresetSelect?.addEventListener("change", () => {
+      avatarPreset = avatarPresetSelect.value;
+      localStorage.setItem("qantara_avatar_preset", avatarPreset);
+      applyAvatarPreset();
+      log(`avatar preset set to ${avatarPreset}`);
+    });
+
+    voicePresetSelect?.addEventListener("change", () => {
+      voicePreset = voicePresetSelect.value;
+      localStorage.setItem("qantara_voice_preset", voicePreset);
+      log(`voice preset set to ${voicePreset} (playback profile)`);
+    });
+
+    speechSpeedInput?.addEventListener("input", () => {
+      speechSpeed = Number(speechSpeedInput.value);
+      localStorage.setItem("qantara_speech_speed", String(speechSpeed));
+      if (speechSpeedValue) {
+        speechSpeedValue.textContent = `${speechSpeed.toFixed(2)}x`;
+      }
+      log(`speech speed set to ${speechSpeed.toFixed(2)}x`);
+    });
+
+    applyAvatarPreset();
+    updateAvatarState();
   </script>
 </body>
 </html>

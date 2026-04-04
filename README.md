@@ -64,6 +64,10 @@ Qantara should behave as a voice channel adapter around a downstream conversatio
 - [`M0_EXPERIMENTS.md`](/home/nawaf/Projects/Qantara/M0_EXPERIMENTS.md): explicit M0 validation program
 - [`experiments/RUN_TRANSPORT_SPIKE.md`](/home/nawaf/Projects/Qantara/experiments/RUN_TRANSPORT_SPIKE.md): how to run the current spike and record results
 - [`ops/README.md`](/home/nawaf/Projects/Qantara/ops/README.md): LAN HTTPS serving guidance for browser microphone access
+- [`identity/README.md`](/home/nawaf/Projects/Qantara/identity/README.md): owned avatar and voice layer foundation
+- [`identity/AVATAR_SYSTEM.md`](/home/nawaf/Projects/Qantara/identity/AVATAR_SYSTEM.md): Phase 1 avatar architecture
+- [`identity/VOICE_SYSTEM.md`](/home/nawaf/Projects/Qantara/identity/VOICE_SYSTEM.md): Phase 1 voice architecture
+- [`identity/LIPSYNC_CONTRACT.md`](/home/nawaf/Projects/Qantara/identity/LIPSYNC_CONTRACT.md): stable lipsync contract between TTS and renderer
 
 ## Current Status
 

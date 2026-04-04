@@ -18,6 +18,7 @@ Qantara is a LAN-first voice gateway for OpenClaw-compatible agent runtimes. It 
 - session-oriented HTTP adapter path is working
 - local fake backend is working
 - real Ollama session backend is working
+- real OpenClaw session backend bridge is working
 - end-to-end cancel is working
 - endpoint-ready auto-submit flow is working
 - hands-free auto-submit is now gated against active turns, active playback, and short post-playback re-entry
@@ -25,6 +26,10 @@ Qantara is a LAN-first voice gateway for OpenClaw-compatible agent runtimes. It 
 - browser-side `Audio Mode` selection now distinguishes `Headset` vs `Speakers`
 - `Speakers` mode now uses stricter playback-time barge-in and a longer post-playback cooldown
 - browser-side disconnects observed in recent runs are clean closes (`code=1000`), not transport crashes
+- Qantara now works end-to-end against the OpenClaw agent `spectra`
+- browser spike now includes a minimal avatar layer with preset selection
+- browser spike now includes voice-style presets and a speech speed control
+- identity foundation docs and schemas now exist for avatar packs, avatar descriptors, voice registry, and lipsync
 - the local backend now has deterministic fast paths for recurring voice cases:
   - greeting
   - identity / `Qantara` alias questions
@@ -41,9 +46,12 @@ Current runtime chain:
 - browser client
 - Qantara gateway spike
 - `session_gateway_http` adapter
-- Ollama session backend
+- OpenClaw session backend bridge
 
-This intentionally avoids binding to the user's local OpenClaw agents for now.
+Current active real target:
+
+- agent: `spectra`
+- model: `openai-codex/gpt-5.4-mini`
 
 ## Important Files
 
@@ -55,6 +63,8 @@ This intentionally avoids binding to the user's local OpenClaw agents for now.
 - gateway spike: [`gateway/transport_spike/server.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/server.py)
 - HTTP adapter: [`adapters/session_gateway_http.py`](/home/nawaf/Projects/Qantara/adapters/session_gateway_http.py)
 - fake backend: [`gateway/fake_session_backend/server.py`](/home/nawaf/Projects/Qantara/gateway/fake_session_backend/server.py)
+- OpenClaw bridge backend: [`gateway/openclaw_session_backend/server.py`](/home/nawaf/Projects/Qantara/gateway/openclaw_session_backend/server.py)
+- identity layer: [`identity/README.md`](/home/nawaf/Projects/Qantara/identity/README.md)
 - experiment notes: [`experiments/notes/transport-spike.md`](/home/nawaf/Projects/Qantara/experiments/notes/transport-spike.md)
 
 ## How To Run
@@ -90,6 +100,14 @@ Open:
 https://<lan-ip>:9443/spike
 ```
 
+Run OpenClaw bridge backend:
+
+```bash
+QANTARA_REAL_BACKEND_PORT=19120 \
+QANTARA_OPENCLAW_AGENT_ID=spectra \
+./.venv/bin/python gateway/openclaw_session_backend/server.py
+```
+
 ## Observed Baselines
 
 - first TTS chunk: commonly about `1.4s` to `1.6s`
@@ -97,11 +115,12 @@ https://<lan-ip>:9443/spike
 - local clear acknowledgement: near-immediate
 - local stop after clear: tens of milliseconds
 - current active real backend for validation:
-  - Host A Ollama on `192.168.68.69:11434`
-  - model: `gemma4:26b`
-- previously validated local baseline:
-  - local Ollama on `127.0.0.1:11434`
-  - model: `qwen2.5:7b`
+  - OpenClaw bridge on `127.0.0.1:19120`
+  - target agent: `spectra`
+  - agent model: `openai-codex/gpt-5.4-mini`
+- previously validated model backends:
+  - Host A Ollama on `192.168.68.69:11434` with `gemma4:26b`
+  - local Ollama on `127.0.0.1:11434` with `qwen2.5:7b`
 
 ## Known Weaknesses
 
@@ -112,12 +131,15 @@ https://<lan-ip>:9443/spike
 - some STT variants still need targeted handling if they recur in real runs
 - response quality is more stable now, but only for the currently covered voice cases
 - real backend integration is no longer deferred; it is active but still early
+- OpenClaw bridge still uses the shared `agent:spectra:main` session under the current CLI path
+- browser voice selection is still a playback-profile layer because only one real Piper model is installed
+- the Phase 1 identity system is architected, but Avatar Studio and true backend multi-voice are not implemented yet
 
 ## Recommended Next Steps
 
-1. Keep validating the current speaker-mode path in repeated real voice runs.
-2. Extend deterministic handling only for recurring real-world STT variants, not speculatively.
-3. Decide whether to keep optimizing `Piper` or evaluate a faster TTS path.
+1. Keep validating the current `spectra` OpenClaw path in repeated real voice runs.
+2. Implement true backend `voice_id` support plus the first real `voices.json` registry.
+3. Replace hardcoded avatar presets with descriptor-driven presets from the identity layer.
 4. Revisit browser-side VAD thresholds only if real speech is still being skipped too often.
 
 Latest tuning change:
@@ -128,16 +150,17 @@ Latest tuning change:
   - a short post-playback cooldown
 - browser-side weak-speech filtering now skips some low-value speech fragments before STT submission
 - browser-side audio mode now persists and uses stricter speaker-mode behavior during and just after playback
-- backend-side deterministic reply handling now covers the most common short voice patterns seen in recent runs
+- OpenClaw bridge now kills the full subprocess group on cancel and resets the shared OpenClaw session when switching HTTP sessions
+- browser spike now includes avatar presets, voice presets, and speech speed control
 - current decision:
   - keep the gateway focus primary and treat model quality as secondary
-  - use the current active backend only as a test target, not as a product decision
-  - use Claude Code CLI for second-opinion and alternative-solution checks, not as the primary implementation path
+  - use the current active agent/backend only as a test target, not as a product decision
+  - use Claude Code CLI selectively as reviewer and scoped co-developer, with Codex remaining the owner and integrator
 
 ## Notes For Another Coding Agent
 
 - Keep the project runtime-agnostic.
-- Do not bind to the user's current local OpenClaw agents unless explicitly requested.
+- The repo is now explicitly allowed to use OpenClaw agents when requested; current target is `spectra`.
 - Preserve the `session-oriented backend` contract shape.
 - Treat browser-perceived playback stop and backend stop telemetry as different things.
-- Current active test runtime is Host A `gemma4:26b`, but the gateway work should remain runtime-agnostic.
+- Current active real test target is the OpenClaw-backed `spectra` agent, but the gateway work should remain runtime-agnostic.

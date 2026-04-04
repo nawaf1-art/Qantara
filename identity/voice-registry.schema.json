@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qantara/voice-registry.schema.json",
+  "title": "Qantara Voice Registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "voices"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^1\\.0$"
+    },
+    "voices": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "voice_id",
+          "label",
+          "engine",
+          "locale",
+          "model_path",
+          "base_sample_rate",
+          "defaults"
+        ],
+        "properties": {
+          "voice_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "engine": {
+            "type": "string",
+            "enum": ["piper", "coqui", "melo", "custom"]
+          },
+          "locale": {
+            "type": "string",
+            "minLength": 2
+          },
+          "model_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "config_path": {
+            "type": "string"
+          },
+          "preview_text": {
+            "type": "string"
+          },
+          "preview_audio_path": {
+            "type": "string"
+          },
+          "base_sample_rate": {
+            "type": "integer",
+            "minimum": 8000
+          },
+          "defaults": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["rate", "pitch", "tone"],
+            "properties": {
+              "rate": { "type": "number", "minimum": 0.5, "maximum": 2.0 },
+              "pitch": { "type": "number", "minimum": -24, "maximum": 24 },
+              "tone": { "type": "string", "minLength": 1 }
+            }
+          },
+          "allowed_transforms": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["rate", "pitch", "tone", "formant"]
+            }
+          },
+          "license": {
+            "type": "string"
+          },
+          "commercial_notes": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
