@@ -51,19 +51,52 @@ Browser (mic + speaker)
 
 ## Quick Start
 
-**Requirements:** Linux, Python 3, `make`, a modern browser (Chrome recommended)
+**Requirements:** Docker, Docker Compose, a modern browser (Chrome recommended)
 
 ```bash
-# Install dependencies
-make spike-install
+docker compose up
+```
 
-# Run the gateway
+Then open **http://127.0.0.1:8765/spike** in your browser and start speaking.
+
+Notes:
+
+- the first run builds the Qantara image, starts Ollama, and pulls the default model `qwen2.5:3b`
+- first startup can take several minutes on a fresh machine
+- the default Docker stack uses:
+  - `faster-whisper` for STT
+  - `kokoro` for TTS
+  - Ollama as the agent backend
+- no extra environment variables are required for the default stack
+
+If port `8765` is already in use on your machine:
+
+```bash
+QANTARA_PORT=9765 docker compose up
+```
+
+Then open **http://127.0.0.1:9765/spike**.
+
+Helpful commands:
+
+```bash
+make docker-build
+make docker-up
+make docker-down
+```
+
+## Manual Local Start
+
+**Requirements:** Linux, Python 3, `make`
+
+```bash
+make spike-install
 make spike-run
 ```
 
 Open **http://127.0.0.1:8765/spike** in your browser.
 
-### With a Real Backend
+### Manual Local Backend Options
 
 **Ollama:**
 ```bash
@@ -173,8 +206,8 @@ qantara/
 | Layer | Technology |
 |-------|-----------|
 | Gateway | Python 3, aiohttp (async) |
-| STT | faster-whisper (ONNX) |
-| TTS | Piper (ONNX), Kokoro (optional) |
+| STT | faster-whisper |
+| TTS | Kokoro, Piper |
 | Transport | WebSocket, PCM16 mono 16kHz |
 | Browser | Vanilla JS, WebAudio API |
 | TLS | Caddy or self-signed certs |

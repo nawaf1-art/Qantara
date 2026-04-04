@@ -1,0 +1,5 @@
+aiohttp==3.13.5
+faster-whisper==1.2.1
+kokoro==0.9.4
+numpy==2.4.4
+soundfile==0.13.1
