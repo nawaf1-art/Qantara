@@ -147,6 +147,15 @@ def _looks_like_qantara_alias(token: str) -> bool:
     return token in aliases
 
 
+def _looks_like_openclaw_alias(token: str) -> bool:
+    aliases = {
+        "openclaw",
+        "open",
+        "claw",
+    }
+    return token in aliases
+
+
 def _deterministic_reply(transcript: str) -> str | None:
     normalized = _normalize_assistant_text(transcript)
     if not normalized:
@@ -198,6 +207,9 @@ def _deterministic_reply(transcript: str) -> str | None:
 
     collapsed = "".join(tokens)
     has_qantara_alias = any(_looks_like_qantara_alias(token) for token in tokens)
+    has_openclaw_alias = "openclaw" in collapsed or (
+        any(token == "open" for token in tokens) and any(token == "claw" for token in tokens)
+    )
     if collapsed in greetings:
         return "Hello! How can I assist you today?"
 
@@ -222,6 +234,16 @@ def _deterministic_reply(transcript: str) -> str | None:
 
     if _contains_phrase(normalized, ("how are you", "how are you doing", "are you okay")):
         return "I'm doing well. How can I help you today?"
+
+    if "weather" in tokens:
+        if any(token in {"kuwait", "kuwaiti"} for token in tokens):
+            return "I cannot check live weather in Kuwait from here. Please check a weather app or website for the latest update."
+        return "I cannot check live weather from here. Please tell me your location, or check a weather app for the latest update."
+
+    if has_openclaw_alias:
+        if "agent" in tokens or _contains_phrase(normalized, ("do you know", "tell me about", "ask you about")):
+            return "Yes, I know OpenClaw Agent. What would you like to know about it?"
+        return "If you mean OpenClaw, please tell me what you want to know about it."
 
     if _contains_phrase(normalized, ("what can you do", "what kind of things", "how can you help")):
         return "I can answer questions, help with simple information, and handle short voice conversations. What do you need?"

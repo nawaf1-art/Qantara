@@ -151,6 +151,16 @@
         <input id="mockInput" type="text" value="hello from the browser spike" style="flex: 1; min-width: 260px; padding: 10px 14px; border-radius: 999px; border: 1px solid var(--line); font: inherit;">
       </div>
 
+      <div class="controls">
+        <label for="audioMode" style="display: inline-flex; align-items: center; gap: 8px; color: var(--muted);">
+          <span>Audio Mode</span>
+          <select id="audioMode" style="padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); font: inherit; background: var(--panel); color: var(--ink);">
+            <option value="headset">Headset</option>
+            <option value="speakers" selected>Speakers</option>
+          </select>
+        </label>
+      </div>
+
       <div class="status-grid">
         <div class="stat"><span class="stat-label">Socket</span><span id="socketState">disconnected</span></div>
         <div class="stat"><span class="stat-label">Mic</span><span id="micState">stopped</span></div>
@@ -162,6 +172,8 @@
         <div class="stat"><span class="stat-label">Last RMS</span><span id="vadRms">0.0000</span></div>
         <div class="stat"><span class="stat-label">Frames Sent</span><span id="framesSent">0</span></div>
         <div class="stat"><span class="stat-label">Frames Received</span><span id="framesReceived">0</span></div>
+        <div class="stat"><span class="stat-label">Speech Submits</span><span id="speechSubmits">0</span></div>
+        <div class="stat"><span class="stat-label">Weak Skips</span><span id="weakSpeechSkips">0</span></div>
         <div class="stat"><span class="stat-label">Sample Rate</span><span id="sampleRate">16000</span></div>
         <div class="stat"><span class="stat-label">First Audio</span><span id="firstAudioMs">-</span></div>
         <div class="stat"><span class="stat-label">Clear Ack</span><span id="clearAckMs">-</span></div>
@@ -191,9 +203,12 @@
     const VAD_STOP_RMS = 0.012;
     const VAD_START_FRAMES = 4;
     const VAD_STOP_FRAMES = 7;
+    const PLAYBACK_BARGE_IN_START_RMS = 0.09;
+    const PLAYBACK_BARGE_IN_START_FRAMES = 6;
     const ENDPOINT_SILENCE_MS = 1200;
     const AUTO_SUBMIT_COOLDOWN_MS = 1400;
     const POST_PLAYBACK_SUBMIT_COOLDOWN_MS = 900;
+    const SPEAKERS_POST_PLAYBACK_SUBMIT_COOLDOWN_MS = 1400;
     const MIN_SPEECH_MS_FOR_SUBMIT = 700;
     const MIN_AVG_RMS_FOR_SUBMIT = 0.04;
     const MIN_PEAK_RMS_FOR_SUBMIT = 0.085;
@@ -206,6 +221,7 @@
     const transcribeBtn = document.getElementById("transcribeBtn");
     const submitSpeechBtn = document.getElementById("submitSpeechBtn");
     const clearBtn = document.getElementById("clearBtn");
+    const audioModeSelect = document.getElementById("audioMode");
 
     let socket = null;
     let micContext = null;
@@ -235,6 +251,13 @@
     let speechRmsTotal = 0;
     let speechRmsSamples = 0;
     let speechPeakRms = 0;
+    let speechSubmitCount = 0;
+    let weakSpeechSkipCount = 0;
+    let bargeInPending = false;
+    let audioMode = localStorage.getItem("qantara_audio_mode") || audioModeSelect?.value || "speakers";
+    if (audioModeSelect) {
+      audioModeSelect.value = audioMode;
+    }
 
     function $(id) {
       return document.getElementById(id);
@@ -298,6 +321,28 @@
 
     function setClearAckMs(value) {
       updateText("clearAckMs", value == null ? "-" : `${value} ms`);
+    }
+
+    function setSpeechSubmitCount(value) {
+      updateText("speechSubmits", value);
+    }
+
+    function setWeakSpeechSkipCount(value) {
+      updateText("weakSpeechSkips", value);
+    }
+
+    function getPlaybackStartRms() {
+      return audioMode === "speakers" ? PLAYBACK_BARGE_IN_START_RMS : VAD_START_RMS;
+    }
+
+    function getPlaybackStartFrames() {
+      return audioMode === "speakers" ? PLAYBACK_BARGE_IN_START_FRAMES : VAD_START_FRAMES;
+    }
+
+    function getPostPlaybackCooldownMs() {
+      return audioMode === "speakers"
+        ? SPEAKERS_POST_PLAYBACK_SUBMIT_COOLDOWN_MS
+        : POST_PLAYBACK_SUBMIT_COOLDOWN_MS;
     }
 
     function setClearPending(value) {
@@ -440,6 +485,24 @@
       setEndpointState("idle");
     }
 
+    function requestBargeInClear(reason) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      if (clearPending || bargeInPending) {
+        return;
+      }
+      if (!playbackActive && !backendTurnActive) {
+        return;
+      }
+      bargeInPending = true;
+      clearPlaybackQueue();
+      clearRequestedAt = performance.now();
+      setClearPending(true);
+      sendJson({ type: "clear_playback" });
+      log(`barge-in clear requested (${reason})`);
+    }
+
     function scheduleEndpointTimer() {
       clearEndpointTimer();
       setEndpointState("pending");
@@ -452,6 +515,8 @@
         const strongEnough = averageSpeechRms >= MIN_AVG_RMS_FOR_SUBMIT || speechPeakRms >= MIN_PEAK_RMS_FOR_SUBMIT;
         if (speechDurationMs < MIN_SPEECH_MS_FOR_SUBMIT || !strongEnough) {
           setEndpointState("idle");
+          weakSpeechSkipCount += 1;
+          setWeakSpeechSkipCount(weakSpeechSkipCount);
           log(
             `auto-submit skipped for weak speech (duration=${Math.round(speechDurationMs)} ms avg_rms=${averageSpeechRms.toFixed(4)} peak_rms=${speechPeakRms.toFixed(4)})`
           );
@@ -503,6 +568,8 @@
           return;
         }
         lastAutoSubmitAt = now;
+        speechSubmitCount += 1;
+        setSpeechSubmitCount(speechSubmitCount);
       }
       setTranscriptText("");
       setTranscribePending(true);
@@ -547,6 +614,8 @@
         }
         rms = Math.sqrt(rms / input.length);
         setVadRms(rms);
+        const activeStartRms = playbackActive ? getPlaybackStartRms() : VAD_START_RMS;
+        const activeStartFrames = playbackActive ? getPlaybackStartFrames() : VAD_START_FRAMES;
         if (vadSpeech) {
           if (rms > VAD_STOP_RMS) {
             silenceCandidateFrames = 0;
@@ -564,12 +633,12 @@
             log(`vad ${state} rms=${rms.toFixed(4)}`);
           }
         } else {
-          if (rms > VAD_START_RMS) {
+          if (rms > activeStartRms) {
             speechCandidateFrames += 1;
           } else {
             speechCandidateFrames = 0;
           }
-          if (speechCandidateFrames >= VAD_START_FRAMES) {
+          if (speechCandidateFrames >= activeStartFrames) {
             vadSpeech = true;
             speechCandidateFrames = 0;
             silenceCandidateFrames = 0;
@@ -582,6 +651,7 @@
             setVadState(state);
             sendJson({ type: "vad_state", state, rms: Number(rms.toFixed(4)) });
             log(`vad ${state} rms=${rms.toFixed(4)}`);
+            requestBargeInClear("speech_detected");
           }
         }
         if (vadSpeech) {
@@ -611,6 +681,7 @@
       sourceNode.connect(processorNode);
       processorNode.connect(micContext.destination);
       micActive = true;
+      bargeInPending = false;
       setMicState("running");
       setVadState("silence");
       setEndpointState("idle");
@@ -641,6 +712,7 @@
       speechRmsTotal = 0;
       speechRmsSamples = 0;
       speechPeakRms = 0;
+      bargeInPending = false;
       clearEndpointTimer();
       setMicState("stopped");
       setVadState("silence");
@@ -677,6 +749,7 @@
         setMockTurnPending(false);
         setTranscribePending(false);
         setClearPending(false);
+        bargeInPending = false;
         backendTurnActive = false;
         playbackCooldownUntil = 0;
         clearEndpointTimer();
@@ -723,7 +796,7 @@
             } else if (payload.type === "turn_state") {
               backendTurnActive = payload.state === "active";
               if (!backendTurnActive && !playbackActive) {
-                playbackCooldownUntil = performance.now() + POST_PLAYBACK_SUBMIT_COOLDOWN_MS;
+                playbackCooldownUntil = performance.now() + getPostPlaybackCooldownMs();
               }
               log(`turn state: ${payload.state}${payload.reason ? ` (${payload.reason})` : ""}`);
             } else if (payload.type === "playback_metrics") {
@@ -734,6 +807,7 @@
             } else if (payload.type === "playback_cleared") {
               const clearAckMs = clearRequestedAt == null ? null : Math.round(performance.now() - clearRequestedAt);
               setClearAckMs(clearAckMs);
+              bargeInPending = false;
               log(`playback cleared ack${clearAckMs == null ? "" : ` ${clearAckMs} ms`}`);
             } else if (payload.type === "playback_stopped") {
               const clearStopMs = clearRequestedAt == null ? null : Math.round(performance.now() - clearRequestedAt);
@@ -742,9 +816,11 @@
               }
               clearRequestedAt = null;
               setClearPending(false);
-              playbackCooldownUntil = performance.now() + POST_PLAYBACK_SUBMIT_COOLDOWN_MS;
+              bargeInPending = false;
+              playbackCooldownUntil = performance.now() + getPostPlaybackCooldownMs();
               log(`playback stopped (${payload.reason})${clearStopMs == null ? "" : ` ${clearStopMs} ms`}`);
             } else if (payload.type === "cancel_status") {
+              bargeInPending = false;
               log(`cancel status: ${JSON.stringify(payload.result)}`);
             } else if (payload.type === "turn_rejected") {
               log(`turn rejected: ${payload.reason}`);
@@ -822,6 +898,11 @@
       setClearPending(true);
       sendJson({ type: "clear_playback" });
       log("playback clear requested");
+    });
+    audioModeSelect?.addEventListener("change", () => {
+      audioMode = audioModeSelect.value;
+      localStorage.setItem("qantara_audio_mode", audioMode);
+      log(`audio mode set to ${audioMode}`);
     });
   </script>
 </body>
