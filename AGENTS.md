@@ -25,11 +25,20 @@ qantara/
 ├── gateway/
 │   ├── transport_spike/
 │   │   ├── server.py              # Main gateway — aiohttp async server, session state machine
-│   │   ├── stt_faster_whisper.py  # STT integration
-│   │   └── tts_piper.py           # TTS integration
+│   │   ├── stt_faster_whisper.py  # Backward-compatible import shim
+│   │   └── tts_piper.py           # Backward-compatible import shim
 │   ├── fake_session_backend/      # Test backend implementing session contract
 │   ├── ollama_session_backend/    # Real Ollama-backed backend
 │   └── openclaw_session_backend/  # OpenClaw bridge backend
+│
+├── providers/                     # STT/TTS provider plugin system
+│   ├── factory.py                 # Provider selection by QANTARA_STT_PROVIDER / QANTARA_TTS_PROVIDER
+│   ├── stt/
+│   │   ├── base.py                # Abstract STT provider interface
+│   │   └── faster_whisper.py      # Current STT provider
+│   └── tts/
+│       ├── base.py                # Abstract TTS provider interface
+│       └── piper.py               # Current TTS provider
 │
 ├── identity/                      # Avatar and voice systems
 │   ├── avatar-descriptor.schema.json
@@ -47,18 +56,20 @@ qantara/
 
 ### Adding a New STT Provider
 
-1. Copy `gateway/transport_spike/stt_faster_whisper.py`
-2. Implement the same interface: `transcribe(audio_buffer) -> str`
-3. Add env var selection in `server.py` (pattern: `QANTARA_STT_PROVIDER`)
-4. Add a test that validates transcription of a known audio sample
+1. Copy `providers/stt/faster_whisper.py`
+2. Subclass `providers/stt/base.py:STTProvider`
+3. Implement the same interface: `transcribe(samples, sample_rate) -> str`
+4. Register it in `providers/factory.py` (pattern: `QANTARA_STT_PROVIDER`)
+5. Add a test that validates transcription of a known audio sample
 
 ### Adding a New TTS Provider
 
-1. Copy `gateway/transport_spike/tts_piper.py`
-2. Implement the same interface: `synthesize(text) -> PCM16 audio chunks`
-3. Support chunked/streaming output for low first-audio latency
-4. Add env var selection in `server.py` (pattern: `QANTARA_TTS_PROVIDER`)
-5. Add a test that validates synthesis produces valid PCM audio
+1. Copy `providers/tts/piper.py`
+2. Subclass `providers/tts/base.py:TTSProvider`
+3. Implement the same interface: `synthesize(text) -> PCM16 audio chunks`
+4. Support chunked/streaming output for low first-audio latency
+5. Register it in `providers/factory.py` (pattern: `QANTARA_TTS_PROVIDER`)
+6. Add a test that validates synthesis produces valid PCM audio
 
 ### Adding a New Backend Adapter
 
