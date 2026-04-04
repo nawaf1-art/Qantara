@@ -170,9 +170,14 @@ async def _cleanup_bridge(_app: web.Application) -> None:
     await _stop_managed_bridge()
 
 
+def _ollama_base_url() -> str:
+    """Return the Ollama base URL, preferring QANTARA_OLLAMA_BASE_URL env var."""
+    return os.environ.get("QANTARA_OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+
+
 async def _probe_ollama() -> dict[str, Any]:
-    """Probe localhost Ollama for available models."""
-    url = "http://localhost:11434/api/tags"
+    """Probe Ollama for available models."""
+    url = f"{_ollama_base_url()}/api/tags"
     try:
         timeout = _aiohttp.ClientTimeout(total=3)
         async with _aiohttp.ClientSession(timeout=timeout) as session:
@@ -277,6 +282,9 @@ async def api_configure_handler(request: web.Request) -> web.Response:
     elif backend_type == "ollama":
         adapter_kind = "session_gateway_http"
         env_overrides: dict[str, str] = {}
+        ollama_url = os.environ.get("QANTARA_OLLAMA_BASE_URL")
+        if ollama_url:
+            env_overrides["QANTARA_OLLAMA_BASE_URL"] = ollama_url
         if model:
             env_overrides["QANTARA_OLLAMA_MODEL"] = model
         await _start_managed_bridge("ollama", env_overrides=env_overrides)
