@@ -5,6 +5,7 @@ import os
 from providers.stt.base import STTProvider
 from providers.stt.faster_whisper import FasterWhisperSTTProvider
 from providers.tts.base import TTSProvider
+from providers.tts.kokoro import KokoroTTSProvider
 from providers.tts.piper import PiperTTSProvider
 
 
@@ -22,5 +23,7 @@ def create_tts_provider(kind: str | None = None) -> TTSProvider:
 
     if provider_kind == "piper":
         return PiperTTSProvider()
+    if provider_kind == "kokoro":
+        return KokoroTTSProvider()
 
     raise ValueError(f"unsupported TTS provider: {provider_kind}")

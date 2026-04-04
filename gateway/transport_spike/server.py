@@ -170,9 +170,14 @@ async def _cleanup_bridge(_app: web.Application) -> None:
     await _stop_managed_bridge()
 
 
+def _ollama_base_url() -> str:
+    """Return the Ollama base URL, preferring QANTARA_OLLAMA_BASE_URL env var."""
+    return os.environ.get("QANTARA_OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+
+
 async def _probe_ollama() -> dict[str, Any]:
-    """Probe localhost Ollama for available models."""
-    url = "http://localhost:11434/api/tags"
+    """Probe Ollama for available models."""
+    url = f"{_ollama_base_url()}/api/tags"
     try:
         timeout = _aiohttp.ClientTimeout(total=3)
         async with _aiohttp.ClientSession(timeout=timeout) as session:
@@ -277,6 +282,9 @@ async def api_configure_handler(request: web.Request) -> web.Response:
     elif backend_type == "ollama":
         adapter_kind = "session_gateway_http"
         env_overrides: dict[str, str] = {}
+        ollama_url = os.environ.get("QANTARA_OLLAMA_BASE_URL")
+        if ollama_url:
+            env_overrides["QANTARA_OLLAMA_BASE_URL"] = ollama_url
         if model:
             env_overrides["QANTARA_OLLAMA_MODEL"] = model
         await _start_managed_bridge("ollama", env_overrides=env_overrides)
@@ -512,6 +520,7 @@ async def send_pcm_samples(
     samples: list[int],
     sample_rate: int,
     kind: str,
+    engine: str | None = None,
     tts_started_ms: float | None = None,
     synthesis_ms: float | None = None,
     expected_generation: int | None = None,
@@ -543,7 +552,7 @@ async def send_pcm_samples(
                 session,
                 {
                     "type": "playback_metrics",
-                    "engine": TTS.kind if kind == f"{TTS.kind}_tts" else "synthetic",
+                    "engine": engine or "synthetic",
                     "kind": kind,
                     "tts_to_first_audio_ms": first_audio_ms,
                     "synthesis_ms": synthesis_ms,
@@ -654,6 +663,7 @@ async def speak_text(session: Session, text: str, expected_generation: int | Non
                 samples,
                 resolved_voice.sample_rate,
                 f"{TTS.kind}_tts",
+                engine=TTS.kind,
                 tts_started_ms=session.last_tts_started_ms,
                 synthesis_ms=synthesis_ms,
                 expected_generation=expected_generation,

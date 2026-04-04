@@ -1,4 +1,4 @@
-.PHONY: spike-install spike-run spike-run-venv spike-run-lan-venv fake-backend-run fake-backend-run-venv real-backend-run-venv spike-clean
+.PHONY: spike-install spike-run spike-run-venv spike-run-lan-venv fake-backend-run fake-backend-run-venv real-backend-run-venv spike-clean docker-build docker-up docker-down
 
 spike-install:
 	pip install -r gateway/transport_spike/requirements.txt
@@ -23,3 +23,12 @@ real-backend-run-venv:
 
 spike-clean:
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
+
+docker-build:
+	docker compose build
+
+docker-up:
+	docker compose up
+
+docker-down:
+	docker compose down

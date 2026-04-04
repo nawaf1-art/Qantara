@@ -51,19 +51,52 @@ Browser (mic + speaker)
 
 ## Quick Start
 
-**Requirements:** Linux, Python 3, `make`, a modern browser (Chrome recommended)
+**Requirements:** Docker, Docker Compose, a modern browser (Chrome recommended)
 
 ```bash
-# Install dependencies
-make spike-install
+docker compose up
+```
 
-# Run the gateway
+Then open **http://127.0.0.1:8765/spike** in your browser and start speaking.
+
+Notes:
+
+- the first run builds the Qantara image, starts Ollama, and pulls the default model `qwen2.5:3b`
+- first startup can take several minutes on a fresh machine
+- the default Docker stack uses:
+  - `faster-whisper` for STT
+  - `kokoro` for TTS
+  - Ollama as the agent backend
+- no extra environment variables are required for the default stack
+
+If port `8765` is already in use on your machine:
+
+```bash
+QANTARA_PORT=9765 docker compose up
+```
+
+Then open **http://127.0.0.1:9765/spike**.
+
+Helpful commands:
+
+```bash
+make docker-build
+make docker-up
+make docker-down
+```
+
+## Manual Local Start
+
+**Requirements:** Linux, Python 3, `make`
+
+```bash
+make spike-install
 make spike-run
 ```
 
 Open **http://127.0.0.1:8765/spike** in your browser.
 
-### With a Real Backend
+### Manual Local Backend Options
 
 **Ollama:**
 ```bash
@@ -103,6 +136,28 @@ make spike-run-venv
 
 See [ops/README.md](ops/README.md) for TLS setup details.
 
+### Optional: Kokoro TTS
+
+Kokoro is now available as an optional local TTS provider.
+
+```bash
+./.venv/bin/pip install "kokoro>=0.9.4" soundfile
+QANTARA_TTS_PROVIDER=kokoro make spike-run-venv
+```
+
+For best English fallback pronunciation, install `espeak-ng` on the host.
+
+Observed local timings on this development machine:
+
+- Piper synthesize time for a short sentence: about `1.52s`
+- Kokoro first synthesize time after assets are cached: about `3.32s`
+- Kokoro warm synthesize time in the same process: about `0.63s`
+
+Important:
+
+- the very first Kokoro run downloads model and language assets locally, so cold-start can be much slower
+- Kokoro outputs `24 kHz` audio, which Qantara now respects through the provider path
+
 ## Architecture
 
 Qantara is designed as an **external voice gateway** that sits beside your AI runtime, not inside it.
@@ -137,6 +192,7 @@ qantara/
 │   ├── fake_session_backend/  # Test backend
 │   ├── ollama_session_backend/# Ollama integration
 │   └── openclaw_session_backend/ # OpenClaw bridge
+├── providers/                 # STT/TTS provider plugin system
 ├── adapters/                  # Backend adapter framework
 ├── docs/internal/             # Internal checkpoints, experiments, handoff notes
 ├── identity/                  # Avatar, voice, and lipsync systems
@@ -150,8 +206,8 @@ qantara/
 | Layer | Technology |
 |-------|-----------|
 | Gateway | Python 3, aiohttp (async) |
-| STT | faster-whisper (ONNX) |
-| TTS | Piper (ONNX) |
+| STT | faster-whisper |
+| TTS | Kokoro, Piper |
 | Transport | WebSocket, PCM16 mono 16kHz |
 | Browser | Vanilla JS, WebAudio API |
 | TLS | Caddy or self-signed certs |
