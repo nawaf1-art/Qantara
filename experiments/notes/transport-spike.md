@@ -8,13 +8,18 @@
 
 ## Update
 
-- Date: 2026-04-02
+- Date: 2026-04-04
 - Browser: LAN browser session over HTTPS
 - Headset used: no
-- current preferred backend baseline:
-  - local Ollama
-  - model: `qwen2.5:7b`
-- recent LAN Ollama experiments were less stable overall and are not the current Alpha baseline
+- current active backend under test:
+  - Host A Ollama
+  - model: `gemma4:26b`
+- audio mode under test:
+  - `Speakers`
+- current gateway focus:
+  - speaker-mode stability
+  - barge-in behavior
+  - post-playback re-entry control
 
 ## Observations
 
@@ -24,12 +29,15 @@
 - resampling issues: none explicitly observed from the browser logs yet
 - disconnect behavior: connection established successfully after HTTPS, WSS, and port fixes
 - endpointing behavior: browser-side endpoint-ready fired successfully after `700 ms` silence and now supports auto-submit of recent speech
-- current limitation: auto-submit still over-segments speech when the user keeps talking during assistant playback
+- current limitation: fragmented follow-ups can still happen when STT breaks an utterance across pauses
 - real backend path: validated against an Ollama-backed session backend using the same HTTP contract
 - current status after recent tuning:
   - auto-submit overlap is improved by browser-side active-turn and playback gating
   - some weak or low-value speech fragments are now skipped before STT submission
-  - current open question is whether soft but valid speech is still being skipped too aggressively
+  - browser-side barge-in now clears playback through the gateway
+  - browser-side audio mode now distinguishes `Headset` and `Speakers`
+  - `Speakers` mode adds stricter playback-time speech detection and a longer post-playback cooldown
+  - current open question is how much residual speaker leakage still survives the heuristic speaker-mode guard
 - disconnect characterization:
   - recent browser disconnects are clean closes (`code=1000`), not transport crashes
 
@@ -39,6 +47,9 @@
 - queue behavior: basic playback path is working
 - clear or stop behavior: local browser playback stop now feels immediate; measured local clear acknowledgement reached `1 ms` on the latest run
 - end-to-end cancel path: validated through the session-oriented HTTP adapter and fake backend, with `cancel status: {"status":"acknowledged"}` and local playback stop measured at `27 ms`
+- current speaker-mode result:
+  - intentional interruption works
+  - accidental immediate post-playback triggers appear reduced versus earlier runs
 
 ### Transport Decision
 
@@ -74,8 +85,8 @@
 
 ### Follow-Ups
 
-- keep using the current local Ollama baseline for Alpha validation
+- keep validating the current `Speakers` mode in real speaker-plus-mic runs
 - extend deterministic handling only for recurring real STT variants seen in logs
 - keep validating whether the current weak-speech filter is rejecting too much soft speech
 - keep backend playback-stop telemetry separate from user-perceived audible stop timing
-- move beyond the fake backend once a real session-oriented backend target is chosen
+- keep the gateway layer runtime-agnostic while using Host A `gemma4:26b` as a temporary higher-capability test backend

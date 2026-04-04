@@ -21,7 +21,9 @@ Qantara is a LAN-first voice gateway for OpenClaw-compatible agent runtimes. It 
 - end-to-end cancel is working
 - endpoint-ready auto-submit flow is working
 - hands-free auto-submit is now gated against active turns, active playback, and short post-playback re-entry
-- the local baseline is currently better than the recent LAN Ollama experiments
+- browser-side barge-in is working through `clear_playback`
+- browser-side `Audio Mode` selection now distinguishes `Headset` vs `Speakers`
+- `Speakers` mode now uses stricter playback-time barge-in and a longer post-playback cooldown
 - browser-side disconnects observed in recent runs are clean closes (`code=1000`), not transport crashes
 - the local backend now has deterministic fast paths for recurring voice cases:
   - greeting
@@ -39,7 +41,7 @@ Current runtime chain:
 - browser client
 - Qantara gateway spike
 - `session_gateway_http` adapter
-- local Ollama session backend
+- Ollama session backend
 
 This intentionally avoids binding to the user's local OpenClaw agents for now.
 
@@ -94,7 +96,10 @@ https://<lan-ip>:9443/spike
 - occasional first-chunk outliers still occur above `2.0s`
 - local clear acknowledgement: near-immediate
 - local stop after clear: tens of milliseconds
-- current preferred real backend baseline:
+- current active real backend for validation:
+  - Host A Ollama on `192.168.68.69:11434`
+  - model: `gemma4:26b`
+- previously validated local baseline:
   - local Ollama on `127.0.0.1:11434`
   - model: `qwen2.5:7b`
 
@@ -103,13 +108,14 @@ https://<lan-ip>:9443/spike
 - `Piper` is still slow enough to be noticeable
 - VAD is improved but not yet fully tuned
 - weak or junk speech filtering is improved but still heuristic
+- speaker-plus-mic runs still depend on heuristic protection rather than real echo cancellation
 - some STT variants still need targeted handling if they recur in real runs
 - response quality is more stable now, but only for the currently covered voice cases
 - real backend integration is no longer deferred; it is active but still early
 
 ## Recommended Next Steps
 
-1. Keep validating the improved local baseline in repeated real voice runs.
+1. Keep validating the current speaker-mode path in repeated real voice runs.
 2. Extend deterministic handling only for recurring real-world STT variants, not speculatively.
 3. Decide whether to keep optimizing `Piper` or evaluate a faster TTS path.
 4. Revisit browser-side VAD thresholds only if real speech is still being skipped too often.
@@ -121,9 +127,11 @@ Latest tuning change:
   - active assistant playback
   - a short post-playback cooldown
 - browser-side weak-speech filtering now skips some low-value speech fragments before STT submission
+- browser-side audio mode now persists and uses stricter speaker-mode behavior during and just after playback
 - backend-side deterministic reply handling now covers the most common short voice patterns seen in recent runs
 - current decision:
-  - use the local Ollama baseline for Alpha-stage validation
+  - keep the gateway focus primary and treat model quality as secondary
+  - use the current active backend only as a test target, not as a product decision
   - use Claude Code CLI for second-opinion and alternative-solution checks, not as the primary implementation path
 
 ## Notes For Another Coding Agent
@@ -132,4 +140,4 @@ Latest tuning change:
 - Do not bind to the user's current local OpenClaw agents unless explicitly requested.
 - Preserve the `session-oriented backend` contract shape.
 - Treat browser-perceived playback stop and backend stop telemetry as different things.
-- Current preferred runtime for validation is local Ollama, not the LAN host experiments.
+- Current active test runtime is Host A `gemma4:26b`, but the gateway work should remain runtime-agnostic.

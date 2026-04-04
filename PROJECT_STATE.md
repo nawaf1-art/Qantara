@@ -29,6 +29,7 @@ The project has moved beyond planning-only status. It now includes:
 - bounded backend history for the local `7b` model
 - deterministic local reply handling for repeated short voice cases
 - browser-side turn gating and weak-speech filtering for hands-free runs
+- browser-side barge-in handling with `Headset` and `Speakers` audio modes
 
 ## What Is Decided
 
@@ -94,6 +95,8 @@ The current runnable spike can:
 - request transcription of the recent audio buffer through a working faster-whisper path
 - mark endpoint-ready after stable silence in the browser
 - auto-submit recent speech through the endpoint-ready flow
+- interrupt assistant playback from the browser through `clear_playback`
+- expose a browser-side audio mode selector for `Headset` and `Speakers`
 - suppress auto-submit during active turns, active playback, and a short post-playback cooldown
 - select a downstream adapter by configuration
 - submit text turns through the selected adapter
@@ -108,9 +111,9 @@ The current runnable spike can:
 The current spike does not yet provide:
 
 - real downstream runtime integration
-- robust barge-in semantics across active generation
 - production-ready playback buffering
-- speaker-mode echo mitigation
+- fully hardened speaker-mode echo mitigation
+- robust handling of fragmented or ambiguous spoken follow-ups across all STT variants
 - persisted metrics or experiment notes from actual test runs
 
 ## What Has Been Validated
@@ -132,6 +135,7 @@ Validated by actual testing:
 - end-to-end cancellation is working across browser, gateway, HTTP adapter, and fake backend
 - endpoint-ready auto-submit is working across browser, gateway, STT, HTTP adapter, and fake backend
 - real model-backed assistant conversation is working across browser, gateway, HTTP adapter, and the local Ollama session backend
+- the same gateway path is also working against a remote Host A Ollama backend for model comparison
 - current local baseline now handles recent high-frequency voice cases with deterministic short replies:
   - greeting
   - identity / `Qantara` alias questions
@@ -140,6 +144,7 @@ Validated by actual testing:
   - short story requests
   - translation requests
 - hands-free auto-submit overlap is improved by browser-side gating
+- browser-side barge-in is working and speaker-mode protection has been added for non-headset runs
 - disconnects seen in recent browser logs have been characterized as clean closes, not gateway crashes
 
 Not yet validated by actual experiment results:
@@ -206,7 +211,8 @@ The main unresolved technical risks are:
 - VAD threshold quality and false positives
 - weak-speech filtering may still reject some valid soft speech and needs more repeated-run evidence
 - first-audio latency for Piper under repeated runs, currently around `1.5s` for the first spoken chunk after early chunking
-- response quality outside the currently covered deterministic voice cases still depends on the local `7b` model
+- response quality outside the currently covered deterministic voice cases still depends on whichever backend model is under test
+- STT errors on proper nouns and locations still create follow-up friction in voice-only runs
 - clean socket closes still occur in the browser, but they are now characterized and are not currently treated as transport failures
 
 ## Definition Of A Good M0 State
@@ -224,7 +230,7 @@ Qantara reaches a good M0 state when:
 
 The highest-value next steps are:
 
-1. Keep validating the improved local baseline in repeated real voice runs.
+1. Keep validating the current speaker-mode path in repeated real voice runs.
 2. Extend deterministic handling only for recurring real-world STT variants that actually show up in logs.
 3. Keep backend playback-stop telemetry distinct from user-perceived audible stop timing.
 4. Decide whether to keep optimizing `Piper` or evaluate a faster TTS path.
