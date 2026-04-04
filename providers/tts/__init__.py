@@ -1,4 +1,4 @@
-from providers.tts.base import PiperVoiceSpec, TTSProvider
-from providers.tts.piper import PiperTTSProvider
+from providers.tts.base import TTSProvider, VoiceSpec
+from providers.tts.piper import PiperTTSProvider, PiperVoiceSpec
 
-__all__ = ["PiperVoiceSpec", "TTSProvider", "PiperTTSProvider"]
+__all__ = ["VoiceSpec", "PiperVoiceSpec", "TTSProvider", "PiperTTSProvider"]

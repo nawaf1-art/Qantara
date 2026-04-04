@@ -4,8 +4,15 @@ import asyncio
 import json
 import os
 import sys
+from dataclasses import dataclass
 
-from providers.tts.base import PiperVoiceSpec, TTSProvider
+from providers.tts.base import TTSProvider, VoiceSpec
+
+
+@dataclass(frozen=True)
+class PiperVoiceSpec(VoiceSpec):
+    model_path: str
+    config_path: str | None
 
 
 def _default_model_path() -> str | None:
@@ -63,7 +70,7 @@ class PiperTTSProvider(TTSProvider):
                 )
         return available
 
-    def resolve_voice(self, voice_id: str | None) -> tuple[PiperVoiceSpec, str | None]:
+    def resolve_voice(self, voice_id: str | None) -> tuple[VoiceSpec, str | None]:
         requested = voice_id or self.default_voice_id
         if requested and requested in self.voices:
             voice = self.voices[requested]
@@ -82,7 +89,7 @@ class PiperTTSProvider(TTSProvider):
         text: str,
         voice_id: str | None = None,
         speech_rate: float | None = None,
-    ) -> tuple[list[int], PiperVoiceSpec, str | None]:
+    ) -> tuple[list[int], VoiceSpec, str | None]:
         voice, fallback_reason = self.resolve_voice(voice_id)
         effective_rate = speech_rate if isinstance(speech_rate, (int, float)) else 1.0
         effective_rate = max(0.85, min(1.30, float(effective_rate)))

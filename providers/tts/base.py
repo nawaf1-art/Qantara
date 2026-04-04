@@ -5,11 +5,9 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class PiperVoiceSpec:
+class VoiceSpec:
     voice_id: str
     label: str
-    model_path: str
-    config_path: str | None
     sample_rate: int
     locale: str = "en-US"
 
@@ -32,7 +30,7 @@ class TTSProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def resolve_voice(self, voice_id: str | None) -> tuple[PiperVoiceSpec, str | None]:
+    def resolve_voice(self, voice_id: str | None) -> tuple[VoiceSpec, str | None]:
         raise NotImplementedError
 
     @abstractmethod
@@ -41,5 +39,5 @@ class TTSProvider(ABC):
         text: str,
         voice_id: str | None = None,
         speech_rate: float | None = None,
-    ) -> tuple[list[int], PiperVoiceSpec, str | None]:
+    ) -> tuple[list[int], VoiceSpec, str | None]:
         raise NotImplementedError

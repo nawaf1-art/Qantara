@@ -290,7 +290,7 @@ async def send_pcm_samples(
                 session,
                 {
                     "type": "playback_metrics",
-                    "engine": "piper" if kind == "piper_tts" else "synthetic",
+                    "engine": TTS.kind if kind == f"{TTS.kind}_tts" else "synthetic",
                     "kind": kind,
                     "tts_to_first_audio_ms": first_audio_ms,
                     "synthesis_ms": synthesis_ms,
@@ -373,7 +373,7 @@ async def speak_text(session: Session, text: str, expected_generation: int | Non
                 "playback",
                 {
                     "char_count": len(spoken_text),
-                    "engine": "piper",
+                    "engine": TTS.kind,
                     "sample_count": len(samples),
                     "synthesis_ms": synthesis_ms,
                     "voice_id": resolved_voice.voice_id,
@@ -394,8 +394,8 @@ async def speak_text(session: Session, text: str, expected_generation: int | Non
                         "requested_voice_id": session.requested_voice_id,
                         "speech_rate": session.speech_rate,
                         "reason": fallback_reason,
-                },
-            )
+                    },
+                )
             await send_pcm_samples(
                 session,
                 samples,
@@ -418,7 +418,7 @@ async def speak_text(session: Session, text: str, expected_generation: int | Non
                     "type": "tts_status",
                     "engine": "synthetic",
                     "available": False,
-                    "reason": f"piper failed: {exc}",
+                    "reason": f"{TTS.kind} failed: {exc}",
                 },
             )
 
@@ -542,7 +542,7 @@ async def cancel_active_turn(session: Session, reason: str) -> None:
             "adapter",
             {"turn_handle": session.current_turn_handle, "result": result},
         )
-        await session.websocket.send_str(json.dumps({"type": "cancel_status", "result": result}))
+        await safe_send_str(session, {"type": "cancel_status", "result": result})
     except Exception as exc:
         await session.emit(
             "recoverable_error",
@@ -580,7 +580,8 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                     "adapter",
                     {"turn_handle": turn_handle, "delta_chars": len(event["text"]), "buffered_chars": len(buffered)},
                 )
-                await session.websocket.send_str(json.dumps({"type": "assistant_text_delta", "text": event["text"]}))
+                if not await safe_send_str(session, {"type": "assistant_text_delta", "text": event["text"]}):
+                    return
                 if not spoken_prefix:
                     candidate = buffered.strip()
                     if candidate and (candidate.endswith((".", "!", "?")) or len(candidate) >= 48):
@@ -593,14 +594,15 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                     "adapter",
                     {"turn_handle": turn_handle, "final_chars": len(event["text"])},
                 )
-                await session.websocket.send_str(json.dumps({"type": "assistant_text_final", "text": event["text"]}))
+                if not await safe_send_str(session, {"type": "assistant_text_final", "text": event["text"]}):
+                    return
                 remaining = event["text"]
                 if spoken_prefix and event["text"].startswith(spoken_prefix):
                     remaining = event["text"][len(spoken_prefix):]
                 enqueue_speech(session, remaining.strip())
             elif event_type == "cancel_acknowledged":
                 await session.emit("turn_cancel_acknowledged", "adapter", {"turn_handle": turn_handle})
-                await session.websocket.send_str(json.dumps({"type": "cancel_status", "result": {"status": "acknowledged"}}))
+                await safe_send_str(session, {"type": "cancel_status", "result": {"status": "acknowledged"}})
                 return
             elif event_type == "turn_failed":
                 await session.emit(
@@ -608,7 +610,7 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                     "adapter",
                     {"component": "turn", "turn_handle": turn_handle, "message": event.get("message", "turn failed")},
                 )
-                await session.websocket.send_str(json.dumps({"type": "turn_failed", "message": event.get("message", "turn failed")}))
+                await safe_send_str(session, {"type": "turn_failed", "message": event.get("message", "turn failed")})
                 return
             elif event_type == "turn_completed":
                 session.turns_completed += 1
@@ -620,7 +622,7 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                 "adapter",
                 {"turn_handle": turn_handle, "final_chars": len(buffered), "completed_via": "buffer_flush"},
             )
-            await session.websocket.send_str(json.dumps({"type": "assistant_text_final", "text": buffered}))
+            await safe_send_str(session, {"type": "assistant_text_final", "text": buffered})
             remaining = buffered
             if spoken_prefix and buffered.startswith(spoken_prefix):
                 remaining = buffered[len(spoken_prefix):]
@@ -637,7 +639,7 @@ async def start_assistant_turn(session: Session, transcript: str) -> None:
             "gateway",
             {"component": "control", "message": "turn already active"},
         )
-        await session.websocket.send_str(json.dumps({"type": "turn_rejected", "reason": "turn already active"}))
+        await safe_send_str(session, {"type": "turn_rejected", "reason": "turn already active"})
         return
 
     session.current_turn_task = asyncio.create_task(stream_assistant_turn(session, transcript))
