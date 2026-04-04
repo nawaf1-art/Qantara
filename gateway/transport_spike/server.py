@@ -18,8 +18,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from adapters.factory import create_adapter, load_adapter_config
-from gateway.transport_spike.stt_faster_whisper import FasterWhisperSTT
-from gateway.transport_spike.tts_piper import PiperTTS
+from providers.factory import create_stt_provider, create_tts_provider
 
 
 PCM_KIND = 0x01
@@ -27,10 +26,6 @@ TARGET_SAMPLE_RATE = 16000
 TONE_HZ = 440.0
 TONE_SECONDS = 1.25
 FRAME_SAMPLES = 640
-PIPER_VOICE_PATH = os.environ.get("QANTARA_PIPER_MODEL")
-FASTER_WHISPER_MODEL = os.environ.get("QANTARA_WHISPER_MODEL", "base.en")
-FASTER_WHISPER_DEVICE = os.environ.get("QANTARA_WHISPER_DEVICE", "cpu")
-FASTER_WHISPER_COMPUTE = os.environ.get("QANTARA_WHISPER_COMPUTE", "int8")
 DEFAULT_HOST = os.environ.get("QANTARA_SPIKE_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("QANTARA_SPIKE_PORT", "8765"))
 TLS_CERT_FILE = os.environ.get("QANTARA_TLS_CERT")
@@ -65,7 +60,7 @@ class Session:
         self.client_name = "browser-transport-spike"
         self.client_session_id = self.session_id
         self.requested_voice_id: str | None = None
-        self.voice_id: str | None = PIPER.default_voice_id
+        self.voice_id: str | None = TTS.default_voice_id
         self.speech_rate: float = DEFAULT_SPEECH_RATE
 
     async def emit(self, event_name: str, source: str, payload: dict) -> None:
@@ -84,12 +79,8 @@ class Session:
 
 ADAPTER_CONFIG = load_adapter_config()
 ADAPTER = create_adapter(ADAPTER_CONFIG)
-PIPER = PiperTTS(voice_path=PIPER_VOICE_PATH)
-STT = FasterWhisperSTT(
-    model_name=FASTER_WHISPER_MODEL,
-    device=FASTER_WHISPER_DEVICE,
-    compute_type=FASTER_WHISPER_COMPUTE,
-)
+STT = create_stt_provider()
+TTS = create_tts_provider()
 LAST_ADAPTER_HEALTH = {"status": "unknown", "detail": "health pending"}
 
 
@@ -99,29 +90,59 @@ async def refresh_adapter_health(session: Session | None = None) -> None:
         health = await ADAPTER.check_health()
         LAST_ADAPTER_HEALTH = {"status": health.status, "detail": health.detail}
         if session is not None:
-            await session.websocket.send_str(
-                json.dumps(
-                    {
-                        "type": "adapter_status",
-                        "adapter_kind": ADAPTER.adapter_kind,
-                        "adapter_health": health.status,
-                        "adapter_detail": health.detail,
-                    }
+            try:
+                await session.websocket.send_str(
+                    json.dumps(
+                        {
+                            "type": "adapter_status",
+                            "adapter_kind": ADAPTER.adapter_kind,
+                            "adapter_health": health.status,
+                            "adapter_detail": health.detail,
+                        }
+                    )
                 )
-            )
+            except Exception:
+                pass
     except Exception as exc:
         LAST_ADAPTER_HEALTH = {"status": "degraded", "detail": str(exc)}
         if session is not None:
-            await session.websocket.send_str(
-                json.dumps(
-                    {
-                        "type": "adapter_status",
-                        "adapter_kind": ADAPTER.adapter_kind,
-                        "adapter_health": "degraded",
-                        "adapter_detail": str(exc),
-                    }
+            try:
+                await session.websocket.send_str(
+                    json.dumps(
+                        {
+                            "type": "adapter_status",
+                            "adapter_kind": ADAPTER.adapter_kind,
+                            "adapter_health": "degraded",
+                            "adapter_detail": str(exc),
+                        }
+                    )
                 )
-            )
+            except Exception:
+                pass
+
+
+def websocket_is_writable(session: Session) -> bool:
+    return not session.websocket.closed
+
+
+async def safe_send_str(session: Session, payload: dict) -> bool:
+    if not websocket_is_writable(session):
+        return False
+    try:
+        await session.websocket.send_str(json.dumps(payload))
+        return True
+    except Exception:
+        return False
+
+
+async def safe_send_bytes(session: Session, payload: bytes) -> bool:
+    if not websocket_is_writable(session):
+        return False
+    try:
+        await session.websocket.send_bytes(payload)
+        return True
+    except Exception:
+        return False
 
 
 def encode_pcm_frame(samples: list[int]) -> bytes:
@@ -189,28 +210,28 @@ async def send_tone(session: Session) -> None:
     first_frame_sent = False
     for offset in range(0, total_samples, FRAME_SAMPLES):
         if generation != session.playback_generation:
-            await session.websocket.send_str(json.dumps({"type": "playback_stopped", "reason": "cleared", "kind": "synthetic_tone"}))
+            await safe_send_str(session, {"type": "playback_stopped", "reason": "cleared", "kind": "synthetic_tone"})
             await session.emit("playback_stopped", "playback", {"reason": "cleared"})
             return
         frame = []
         for i in range(offset, min(offset + FRAME_SAMPLES, total_samples)):
             value = math.sin(2 * math.pi * TONE_HZ * (i / TARGET_SAMPLE_RATE))
             frame.append(int(amplitude * value))
-        await session.websocket.send_bytes(encode_pcm_frame(frame))
+        if not await safe_send_bytes(session, encode_pcm_frame(frame)):
+            return
         session.frames_out += 1
         sent_any = True
         if not first_frame_sent:
             first_frame_sent = True
-            await session.websocket.send_str(
-                json.dumps(
-                    {
-                        "type": "playback_metrics",
-                        "engine": "synthetic",
-                        "kind": "synthetic_tone",
-                        "tts_to_first_audio_ms": 0,
-                        "synthesis_ms": 0,
-                    }
-                )
+            await safe_send_str(
+                session,
+                {
+                    "type": "playback_metrics",
+                    "engine": "synthetic",
+                    "kind": "synthetic_tone",
+                    "tts_to_first_audio_ms": 0,
+                    "synthesis_ms": 0,
+                },
             )
             await session.emit(
                 "playback_first_frame_sent",
@@ -229,7 +250,7 @@ async def send_tone(session: Session) -> None:
         await asyncio.sleep(len(frame) / TARGET_SAMPLE_RATE)
 
     if sent_any:
-        await session.websocket.send_str(json.dumps({"type": "playback_stopped", "reason": "tone_complete", "kind": "synthetic_tone"}))
+        await safe_send_str(session, {"type": "playback_stopped", "reason": "tone_complete", "kind": "synthetic_tone"})
         await session.emit("playback_stopped", "playback", {"reason": "tone_complete"})
 
 
@@ -251,12 +272,13 @@ async def send_pcm_samples(
     first_frame_sent = False
     for offset in range(0, len(samples), FRAME_SAMPLES):
         if generation != session.playback_generation:
-            await session.websocket.send_str(json.dumps({"type": "playback_stopped", "reason": "cleared", "kind": kind}))
+            await safe_send_str(session, {"type": "playback_stopped", "reason": "cleared", "kind": kind})
             await session.emit("playback_stopped", "playback", {"reason": "cleared"})
             return
 
         frame = samples[offset:offset + FRAME_SAMPLES]
-        await session.websocket.send_bytes(encode_pcm_frame(frame))
+        if not await safe_send_bytes(session, encode_pcm_frame(frame)):
+            return
         session.frames_out += 1
         sent_any = True
         if not first_frame_sent:
@@ -264,16 +286,15 @@ async def send_pcm_samples(
             first_audio_ms = None
             if tts_started_ms is not None:
                 first_audio_ms = round((time.monotonic() * 1000) - tts_started_ms, 3)
-            await session.websocket.send_str(
-                json.dumps(
-                    {
-                        "type": "playback_metrics",
-                        "engine": "piper" if kind == "piper_tts" else "synthetic",
-                        "kind": kind,
-                        "tts_to_first_audio_ms": first_audio_ms,
-                        "synthesis_ms": synthesis_ms,
-                    }
-                )
+            await safe_send_str(
+                session,
+                {
+                    "type": "playback_metrics",
+                    "engine": "piper" if kind == "piper_tts" else "synthetic",
+                    "kind": kind,
+                    "tts_to_first_audio_ms": first_audio_ms,
+                    "synthesis_ms": synthesis_ms,
+                },
             )
             await session.emit(
                 "playback_first_frame_sent",
@@ -298,7 +319,7 @@ async def send_pcm_samples(
 
     if sent_any:
         reason = f"{kind}_complete"
-        await session.websocket.send_str(json.dumps({"type": "playback_stopped", "reason": reason, "kind": kind}))
+        await safe_send_str(session, {"type": "playback_stopped", "reason": reason, "kind": kind})
         await session.emit("playback_stopped", "playback", {"reason": reason})
 
 
@@ -308,12 +329,12 @@ async def speak_text(session: Session, text: str, expected_generation: int | Non
     spoken_text = normalize_tts_text(text)
     if not spoken_text:
         return
-    engine = "piper" if PIPER.available else "synthetic"
+    engine = TTS.kind if TTS.available else "synthetic"
     resolved_voice = None
     fallback_reason = None
-    if PIPER.available:
+    if TTS.available:
         try:
-            resolved_voice, fallback_reason = PIPER.resolve_voice(session.voice_id)
+            resolved_voice, fallback_reason = TTS.resolve_voice(session.voice_id)
         except Exception:
             resolved_voice = None
     session.last_tts_started_ms = time.monotonic() * 1000
@@ -322,25 +343,25 @@ async def speak_text(session: Session, text: str, expected_generation: int | Non
         "playback",
         {"char_count": len(spoken_text), "engine": engine, "source_char_count": len(text)},
     )
-    await session.websocket.send_str(
-        json.dumps(
-            {
-                "type": "tts_status",
-                "engine": engine,
-                "available": PIPER.available,
-                "voice_id": resolved_voice.voice_id if resolved_voice is not None else session.voice_id,
-                "requested_voice_id": session.requested_voice_id or session.voice_id,
-                "speech_rate": session.speech_rate,
-                "sample_rate": resolved_voice.sample_rate if resolved_voice is not None else TARGET_SAMPLE_RATE,
-                "reason": fallback_reason if resolved_voice is not None else (None if PIPER.available else "piper unavailable or no model configured"),
-            }
-        )
-    )
+    if not await safe_send_str(
+        session,
+        {
+            "type": "tts_status",
+            "engine": engine,
+            "available": TTS.available,
+            "voice_id": resolved_voice.voice_id if resolved_voice is not None else session.voice_id,
+            "requested_voice_id": session.requested_voice_id or session.voice_id,
+            "speech_rate": session.speech_rate,
+            "sample_rate": resolved_voice.sample_rate if resolved_voice is not None else TARGET_SAMPLE_RATE,
+            "reason": fallback_reason if resolved_voice is not None else (None if TTS.available else "tts provider unavailable or no voice configured"),
+        },
+    ):
+        return
 
-    if PIPER.available:
+    if TTS.available:
         try:
             synthesis_started_ms = time.monotonic() * 1000
-            samples, resolved_voice, fallback_reason = await PIPER.synthesize(
+            samples, resolved_voice, fallback_reason = await TTS.synthesize(
                 spoken_text,
                 voice_id=session.voice_id,
                 speech_rate=session.speech_rate,
@@ -363,24 +384,23 @@ async def speak_text(session: Session, text: str, expected_generation: int | Non
                 },
             )
             if fallback_reason is not None:
-                await session.websocket.send_str(
-                    json.dumps(
-                        {
-                            "type": "tts_status",
-                            "engine": "piper",
-                            "available": True,
-                            "voice_id": resolved_voice.voice_id,
-                            "requested_voice_id": session.requested_voice_id,
-                            "speech_rate": session.speech_rate,
-                            "reason": fallback_reason,
-                        }
-                    )
-                )
+                await safe_send_str(
+                    session,
+                    {
+                        "type": "tts_status",
+                        "engine": TTS.kind,
+                        "available": True,
+                        "voice_id": resolved_voice.voice_id,
+                        "requested_voice_id": session.requested_voice_id,
+                        "speech_rate": session.speech_rate,
+                        "reason": fallback_reason,
+                },
+            )
             await send_pcm_samples(
                 session,
                 samples,
                 resolved_voice.sample_rate,
-                "piper_tts",
+                f"{TTS.kind}_tts",
                 tts_started_ms=session.last_tts_started_ms,
                 synthesis_ms=synthesis_ms,
                 expected_generation=expected_generation,
@@ -390,17 +410,16 @@ async def speak_text(session: Session, text: str, expected_generation: int | Non
             await session.emit(
                 "recoverable_error",
                 "playback",
-                {"component": "tts", "message": str(exc), "engine": "piper"},
+                {"component": "tts", "message": str(exc), "engine": TTS.kind},
             )
-            await session.websocket.send_str(
-                json.dumps(
-                    {
-                        "type": "tts_status",
-                        "engine": "synthetic",
-                        "available": False,
-                        "reason": f"piper failed: {exc}",
-                    }
-                )
+            await safe_send_str(
+                session,
+                {
+                    "type": "tts_status",
+                    "engine": "synthetic",
+                    "available": False,
+                    "reason": f"piper failed: {exc}",
+                },
             )
 
     await send_tone(session)
@@ -466,15 +485,15 @@ async def emit_turn_state(session: Session, state: str, reason: str | None = Non
     payload = {"type": "turn_state", "state": state}
     if reason:
         payload["reason"] = reason
-    await session.websocket.send_str(json.dumps(payload))
+    await safe_send_str(session, payload)
 
 
 def apply_voice_selection(session: Session, requested_voice_id: str | None) -> dict:
-    session.requested_voice_id = requested_voice_id or PIPER.default_voice_id
+    session.requested_voice_id = requested_voice_id or TTS.default_voice_id
     fallback_reason = None
     sample_rate = None
     try:
-        resolved_voice, fallback_reason = PIPER.resolve_voice(session.requested_voice_id)
+        resolved_voice, fallback_reason = TTS.resolve_voice(session.requested_voice_id)
         session.voice_id = resolved_voice.voice_id
         sample_rate = resolved_voice.sample_rate
     except Exception:
@@ -484,7 +503,7 @@ def apply_voice_selection(session: Session, requested_voice_id: str | None) -> d
         "voice_id": session.voice_id,
         "speech_rate": session.speech_rate,
         "sample_rate": sample_rate,
-        "available_voices": PIPER.list_available_voices(),
+        "available_voices": TTS.list_available_voices(),
         "fallback_reason": fallback_reason,
     }
 
@@ -709,7 +728,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                     "browser",
                     {
                         "available_samples": len(session.recent_pcm),
-                        "engine": "faster-whisper" if STT.available else "fallback",
+                        "engine": STT.kind if STT.available else "fallback",
                         "submit_turn": bool(payload.get("submit_turn")),
                     },
                 )
@@ -721,10 +740,10 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                         await session.emit(
                             "final_transcript_ready",
                             "speech",
-                            {"char_count": len(text), "engine": "faster-whisper"},
+                            {"char_count": len(text), "engine": STT.kind},
                         )
                         await session.websocket.send_str(
-                            json.dumps({"type": "transcript_result", "text": text, "engine": "faster-whisper"})
+                            json.dumps({"type": "transcript_result", "text": text, "engine": STT.kind})
                         )
                         if payload.get("submit_turn") and text.strip():
                             await start_assistant_turn(session, text.strip())
@@ -733,10 +752,10 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                         await session.emit(
                             "recoverable_error",
                             "speech",
-                            {"component": "stt", "message": str(exc), "engine": "faster-whisper"},
+                            {"component": "stt", "message": str(exc), "engine": STT.kind},
                         )
                         await session.websocket.send_str(
-                            json.dumps({"type": "transcript_result", "text": "", "engine": "faster-whisper", "error": str(exc)})
+                            json.dumps({"type": "transcript_result", "text": "", "engine": STT.kind, "error": str(exc)})
                         )
                 else:
                     fallback = f"[stt unavailable] captured {len(session.recent_pcm)} samples"
