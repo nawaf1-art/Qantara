@@ -357,7 +357,9 @@
             <div id="avatarBadge" class="avatar-badge">Idle</div>
             <svg class="avatar-svg" viewBox="0 0 220 250" aria-label="Qantara Avatar" role="img">
               <ellipse id="avatarHalo" class="avatar-halo" cx="110" cy="123" rx="90" ry="96"></ellipse>
+              <path id="avatarHairBack" d=""></path>
               <path id="avatarFace" class="avatar-face" d="M110 30C150 30 179 63 179 118C179 176 146 217 110 217C74 217 41 176 41 118C41 63 70 30 110 30Z"></path>
+              <path id="avatarHairFront" d=""></path>
               <path id="avatarBrowLeft" class="avatar-brow" d="M72 97C82 91 91 90 100 93"></path>
               <path id="avatarBrowRight" class="avatar-brow" d="M120 93C129 90 138 91 148 97"></path>
               <ellipse id="avatarEyeLeft" class="avatar-eye left" cx="87" cy="113" rx="8" ry="10"></ellipse>
@@ -514,7 +516,9 @@
     const avatarState = document.getElementById("avatarState");
     const avatarStateText = document.getElementById("avatarStateText");
     const avatarTitle = document.getElementById("avatarTitle");
+    const avatarHairBack = document.getElementById("avatarHairBack");
     const avatarFace = document.getElementById("avatarFace");
+    const avatarHairFront = document.getElementById("avatarHairFront");
     const avatarHalo = document.getElementById("avatarHalo");
     const avatarEyeLeft = document.getElementById("avatarEyeLeft");
     const avatarEyeRight = document.getElementById("avatarEyeRight");
@@ -522,6 +526,60 @@
     const avatarBrowRight = document.getElementById("avatarBrowRight");
     const avatarMouth = document.getElementById("avatarMouth");
     const avatarMeterFill = document.getElementById("avatarMeterFill");
+    const AVATAR_FACE_SHAPES = {
+      oval_soft: "M110 30C150 30 179 63 179 118C179 176 146 217 110 217C74 217 41 176 41 118C41 63 70 30 110 30Z",
+      oval_sharp: "M110 24C148 24 180 58 176 118C173 182 145 220 110 220C75 220 47 182 44 118C40 58 72 24 110 24Z",
+      oval_heavy: "M110 34C154 34 184 68 184 120C184 180 148 224 110 224C72 224 36 180 36 120C36 68 66 34 110 34Z",
+    };
+    const AVATAR_BROW_SHAPES = {
+      gentle_arc: {
+        left: "M72 97C82 91 91 90 100 93",
+        right: "M120 93C129 90 138 91 148 97",
+      },
+      technical_arc: {
+        left: "M70 95L99 90",
+        right: "M121 90L150 95",
+      },
+      heavy_arc: {
+        left: "M69 100C82 89 94 88 104 91",
+        right: "M116 91C126 88 138 89 151 100",
+      },
+    };
+    const AVATAR_EYE_SHAPES = {
+      round_focus: {
+        left: { cx: 87, cy: 113, rx: 8, ry: 10 },
+        right: { cx: 133, cy: 113, rx: 8, ry: 10 },
+      },
+      almond_alert: {
+        left: { cx: 86, cy: 112, rx: 10, ry: 7 },
+        right: { cx: 134, cy: 112, rx: 10, ry: 7 },
+      },
+      narrow_scan: {
+        left: { cx: 87, cy: 113, rx: 11, ry: 5 },
+        right: { cx: 133, cy: 113, rx: 11, ry: 5 },
+      },
+    };
+    const AVATAR_MOUTH_SHAPES = {
+      soft_speech: { cx: 110, cy: 164, rx: 22, ry: 6 },
+      precise_speech: { cx: 110, cy: 162, rx: 18, ry: 5 },
+      firm_speech: { cx: 110, cy: 166, rx: 24, ry: 4 },
+    };
+    const AVATAR_HAIR_BACK_SHAPES = {
+      none: "",
+      halo_soft: "M58 108C58 58 82 24 110 24C138 24 162 58 162 108C162 76 150 44 110 40C70 44 58 76 58 108Z",
+      bob_round: "M54 110C54 54 82 22 110 22C138 22 166 54 166 110C166 162 146 192 130 208L90 208C74 192 54 162 54 110Z",
+      wave_long: "M52 112C52 54 78 18 110 18C142 18 168 54 168 112C168 173 150 206 134 222L86 222C70 206 52 173 52 112Z",
+      crest_frame: "M46 116C46 52 78 18 110 18C142 18 174 52 174 116C174 176 158 210 138 226L82 226C62 210 46 176 46 116Z",
+      crown_block: "M50 110C50 58 80 26 110 26C140 26 170 58 170 110C170 162 152 190 130 208L90 208C68 190 50 162 50 110Z",
+    };
+    const AVATAR_HAIR_FRONT_SHAPES = {
+      none: "",
+      split_bangs: "M78 62C88 48 101 42 110 42C119 42 132 48 142 62C130 58 120 56 110 56C100 56 90 58 78 62Z",
+      side_sweep_left: "M64 68C86 42 122 36 148 58C132 58 117 60 102 68C90 74 78 74 64 68Z",
+      side_sweep_right: "M72 58C98 36 134 42 156 68C142 74 130 74 118 68C103 60 88 58 72 58Z",
+      blunt_arc: "M68 62C82 46 96 42 110 42C124 42 138 46 152 62C138 60 124 58 110 58C96 58 82 60 68 62Z",
+      sharp_peak: "M92 54L110 40L128 54C122 56 116 58 110 58C104 58 98 56 92 54Z",
+    };
 
     const AVATAR_PRESETS = {};
 
@@ -564,6 +622,7 @@
     let speechRmsTotal = 0;
     let speechRmsSamples = 0;
     let speechPeakRms = 0;
+    let avatarMouthBase = { ...AVATAR_MOUTH_SHAPES.soft_speech };
     let speechSubmitCount = 0;
     let weakSpeechSkipCount = 0;
     let bargeInPending = false;
@@ -664,8 +723,10 @@
         avatarMeterFill.style.width = `${clamped * 100}%`;
       }
       if (avatarMouth) {
-        avatarMouth.setAttribute("ry", (6 + clamped * 15).toFixed(1));
-        avatarMouth.setAttribute("rx", (22 + clamped * 18).toFixed(1));
+        avatarMouth.setAttribute("cx", String(avatarMouthBase.cx));
+        avatarMouth.setAttribute("cy", String(avatarMouthBase.cy));
+        avatarMouth.setAttribute("ry", (avatarMouthBase.ry + clamped * 15).toFixed(1));
+        avatarMouth.setAttribute("rx", (avatarMouthBase.rx + clamped * 18).toFixed(1));
       }
     }
 
@@ -675,26 +736,66 @@
         return;
       }
       const skinColor = normalizeHexColor(preset.palette?.skin, "#f9edd9");
+      const hairPrimary = normalizeHexColor(preset.palette?.hair_primary, "#705c48");
+      const hairSecondary = normalizeHexColor(preset.palette?.hair_secondary, hairPrimary);
       const accentPrimary = normalizeHexColor(preset.palette?.accent_primary, "#0f766e");
       const mouthColor = normalizeHexColor(
         preset.visual?.mouth_fill || preset.palette?.accent_secondary,
         "#7a3b3b",
       );
+      const faceShape = AVATAR_FACE_SHAPES[preset.parts?.face_base] || AVATAR_FACE_SHAPES.oval_soft;
+      const browShape = AVATAR_BROW_SHAPES[preset.parts?.brows] || AVATAR_BROW_SHAPES.gentle_arc;
+      const eyeShape = AVATAR_EYE_SHAPES[preset.parts?.eyes] || AVATAR_EYE_SHAPES.round_focus;
+      const mouthShape = AVATAR_MOUTH_SHAPES[preset.parts?.mouth_set] || AVATAR_MOUTH_SHAPES.soft_speech;
+      const hairBackShape = AVATAR_HAIR_BACK_SHAPES[preset.parts?.hair_back] || "";
+      const hairFrontShape = AVATAR_HAIR_FRONT_SHAPES[preset.parts?.hair_front] || "";
       if (avatarTitle) {
         avatarTitle.textContent = preset.title || preset.display_name || avatarPreset;
       }
+      if (avatarHairBack) {
+        avatarHairBack.setAttribute("d", hairBackShape);
+        avatarHairBack.style.fill = hairSecondary;
+        avatarHairBack.style.opacity = hairBackShape ? "1" : "0";
+      }
       if (avatarFace) {
+        avatarFace.setAttribute("d", faceShape);
         avatarFace.style.fill = skinColor;
         avatarFace.style.stroke = preset.visual?.face_stroke || "#8f7a62";
+      }
+      if (avatarHairFront) {
+        avatarHairFront.setAttribute("d", hairFrontShape);
+        avatarHairFront.style.fill = hairPrimary;
+        avatarHairFront.style.opacity = hairFrontShape ? "1" : "0";
       }
       if (avatarHalo) {
         avatarHalo.style.fill = rgbaFromHex(accentPrimary, 0.12);
       }
-      if (avatarEyeLeft) avatarEyeLeft.style.fill = preset.visual?.eye_fill || "#1f2328";
-      if (avatarEyeRight) avatarEyeRight.style.fill = preset.visual?.eye_fill || "#1f2328";
-      if (avatarBrowLeft) avatarBrowLeft.style.stroke = preset.visual?.brow_stroke || "#705c48";
-      if (avatarBrowRight) avatarBrowRight.style.stroke = preset.visual?.brow_stroke || "#705c48";
-      if (avatarMouth) avatarMouth.style.fill = mouthColor;
+      if (avatarBrowLeft) {
+        avatarBrowLeft.setAttribute("d", browShape.left);
+        avatarBrowLeft.style.stroke = preset.visual?.brow_stroke || "#705c48";
+      }
+      if (avatarBrowRight) {
+        avatarBrowRight.setAttribute("d", browShape.right);
+        avatarBrowRight.style.stroke = preset.visual?.brow_stroke || "#705c48";
+      }
+      if (avatarEyeLeft) {
+        avatarEyeLeft.setAttribute("cx", String(eyeShape.left.cx));
+        avatarEyeLeft.setAttribute("cy", String(eyeShape.left.cy));
+        avatarEyeLeft.setAttribute("rx", String(eyeShape.left.rx));
+        avatarEyeLeft.setAttribute("ry", String(eyeShape.left.ry));
+        avatarEyeLeft.style.fill = preset.visual?.eye_fill || "#1f2328";
+      }
+      if (avatarEyeRight) {
+        avatarEyeRight.setAttribute("cx", String(eyeShape.right.cx));
+        avatarEyeRight.setAttribute("cy", String(eyeShape.right.cy));
+        avatarEyeRight.setAttribute("rx", String(eyeShape.right.rx));
+        avatarEyeRight.setAttribute("ry", String(eyeShape.right.ry));
+        avatarEyeRight.style.fill = preset.visual?.eye_fill || "#1f2328";
+      }
+      avatarMouthBase = { ...mouthShape };
+      if (avatarMouth) {
+        avatarMouth.style.fill = mouthColor;
+      }
       if (avatarShell) {
         avatarShell.style.setProperty("--avatar-glow", rgbaFromHex(accentPrimary, 0.16));
       }

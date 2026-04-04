@@ -10,8 +10,8 @@
       "base_pack_id": "phase1-demo",
       "parts": {
         "face_base": "oval_soft",
-        "hair_front": "none",
-        "hair_back": "none",
+        "hair_front": "split_bangs",
+        "hair_back": "halo_soft",
         "brows": "gentle_arc",
         "eyes": "round_focus",
         "nose": "minimal",
@@ -43,10 +43,10 @@
       "base_pack_id": "phase1-demo",
       "parts": {
         "face_base": "oval_sharp",
-        "hair_front": "none",
-        "hair_back": "none",
+        "hair_front": "sharp_peak",
+        "hair_back": "crest_frame",
         "brows": "technical_arc",
-        "eyes": "round_focus",
+        "eyes": "narrow_scan",
         "nose": "minimal",
         "mouth_set": "precise_speech"
       },
@@ -76,10 +76,10 @@
       "base_pack_id": "phase1-demo",
       "parts": {
         "face_base": "oval_heavy",
-        "hair_front": "none",
-        "hair_back": "none",
+        "hair_front": "blunt_arc",
+        "hair_back": "crown_block",
         "brows": "heavy_arc",
-        "eyes": "round_focus",
+        "eyes": "almond_alert",
         "nose": "minimal",
         "mouth_set": "firm_speech"
       },
@@ -109,10 +109,10 @@
       "base_pack_id": "phase1-demo",
       "parts": {
         "face_base": "oval_soft",
-        "hair_front": "none",
-        "hair_back": "none",
+        "hair_front": "side_sweep_right",
+        "hair_back": "bob_round",
         "brows": "gentle_arc",
-        "eyes": "round_focus",
+        "eyes": "almond_alert",
         "nose": "minimal",
         "mouth_set": "soft_speech"
       },
@@ -142,8 +142,8 @@
       "base_pack_id": "phase1-demo",
       "parts": {
         "face_base": "oval_soft",
-        "hair_front": "none",
-        "hair_back": "none",
+        "hair_front": "side_sweep_left",
+        "hair_back": "wave_long",
         "brows": "gentle_arc",
         "eyes": "round_focus",
         "nose": "minimal",
@@ -175,10 +175,10 @@
       "base_pack_id": "phase1-demo",
       "parts": {
         "face_base": "oval_sharp",
-        "hair_front": "none",
-        "hair_back": "none",
+        "hair_front": "blunt_arc",
+        "hair_back": "crest_frame",
         "brows": "technical_arc",
-        "eyes": "round_focus",
+        "eyes": "narrow_scan",
         "nose": "minimal",
         "mouth_set": "precise_speech"
       },
@@ -208,10 +208,10 @@
       "base_pack_id": "phase1-demo",
       "parts": {
         "face_base": "oval_heavy",
-        "hair_front": "none",
-        "hair_back": "none",
+        "hair_front": "side_sweep_left",
+        "hair_back": "crown_block",
         "brows": "heavy_arc",
-        "eyes": "round_focus",
+        "eyes": "almond_alert",
         "nose": "minimal",
         "mouth_set": "firm_speech"
       },
@@ -241,10 +241,10 @@
       "base_pack_id": "phase1-demo",
       "parts": {
         "face_base": "oval_soft",
-        "hair_front": "none",
-        "hair_back": "none",
+        "hair_front": "split_bangs",
+        "hair_back": "bob_round",
         "brows": "gentle_arc",
-        "eyes": "round_focus",
+        "eyes": "almond_alert",
         "nose": "minimal",
         "mouth_set": "soft_speech"
       },
@@ -274,10 +274,10 @@
       "base_pack_id": "phase1-demo",
       "parts": {
         "face_base": "oval_sharp",
-        "hair_front": "none",
-        "hair_back": "none",
+        "hair_front": "side_sweep_right",
+        "hair_back": "wave_long",
         "brows": "technical_arc",
-        "eyes": "round_focus",
+        "eyes": "narrow_scan",
         "nose": "minimal",
         "mouth_set": "precise_speech"
       },
