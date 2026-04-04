@@ -49,46 +49,46 @@ These decisions are already locked in the repo:
 
 Source:
 
-- [`DECISIONS.md`](/home/nawaf/Projects/Qantara/DECISIONS.md)
+- [`DECISIONS.md`](../../DECISIONS.md)
 
 ## What Exists Right Now
 
 ### Planning And Research
 
-- [`PLAN.md`](/home/nawaf/Projects/Qantara/PLAN.md)
-- [`ARCHITECTURE.md`](/home/nawaf/Projects/Qantara/ARCHITECTURE.md)
-- [`MILESTONES.md`](/home/nawaf/Projects/Qantara/MILESTONES.md)
-- [`RESEARCH.md`](/home/nawaf/Projects/Qantara/RESEARCH.md)
-- [`M0_EXPERIMENTS.md`](/home/nawaf/Projects/Qantara/M0_EXPERIMENTS.md)
+- [`PLAN.md`](../../PLAN.md)
+- [`ARCHITECTURE.md`](../../ARCHITECTURE.md)
+- [`MILESTONES.md`](../../MILESTONES.md)
+- [`RESEARCH.md`](../../RESEARCH.md)
+- [`M0_EXPERIMENTS.md`](M0_EXPERIMENTS.md)
 
 ### Core M0 Architecture Artifacts
 
-- gateway session model: [`gateway/SESSION_MODEL.md`](/home/nawaf/Projects/Qantara/gateway/SESSION_MODEL.md)
-- runtime adapter contract: [`adapters/CONTRACT.md`](/home/nawaf/Projects/Qantara/adapters/CONTRACT.md)
-- event timeline schema: [`schemas/EVENT_TIMELINE.md`](/home/nawaf/Projects/Qantara/schemas/EVENT_TIMELINE.md)
+- gateway session model: [`gateway/SESSION_MODEL.md`](../../gateway/SESSION_MODEL.md)
+- runtime adapter contract: [`adapters/CONTRACT.md`](../../adapters/CONTRACT.md)
+- event timeline schema: [`schemas/EVENT_TIMELINE.md`](../../schemas/EVENT_TIMELINE.md)
 
 ### Runnable M0 Spike
 
-- spike spec: [`experiments/TRANSPORT_SPIKE.md`](/home/nawaf/Projects/Qantara/experiments/TRANSPORT_SPIKE.md)
-- spike runbook: [`experiments/RUN_TRANSPORT_SPIKE.md`](/home/nawaf/Projects/Qantara/experiments/RUN_TRANSPORT_SPIKE.md)
-- browser client: [`client/transport-spike/index.html`](/home/nawaf/Projects/Qantara/client/transport-spike/index.html)
-- gateway server: [`gateway/transport_spike/server.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/server.py)
-- adapter base types: [`adapters/base.py`](/home/nawaf/Projects/Qantara/adapters/base.py)
-- adapter factory: [`adapters/factory.py`](/home/nawaf/Projects/Qantara/adapters/factory.py)
-- mock adapter: [`adapters/mock_adapter.py`](/home/nawaf/Projects/Qantara/adapters/mock_adapter.py)
-- runtime skeleton adapter: [`adapters/runtime_skeleton.py`](/home/nawaf/Projects/Qantara/adapters/runtime_skeleton.py)
-- session-oriented HTTP adapter: [`adapters/session_gateway_http.py`](/home/nawaf/Projects/Qantara/adapters/session_gateway_http.py)
-- session gateway contract: [`SESSION_GATEWAY_CONTRACT.md`](/home/nawaf/Projects/Qantara/SESSION_GATEWAY_CONTRACT.md)
-- local fake session backend: [`gateway/fake_session_backend/server.py`](/home/nawaf/Projects/Qantara/gateway/fake_session_backend/server.py)
-- real Ollama session backend: [`gateway/ollama_session_backend/server.py`](/home/nawaf/Projects/Qantara/gateway/ollama_session_backend/server.py)
-- OpenClaw session backend bridge: [`gateway/openclaw_session_backend/server.py`](/home/nawaf/Projects/Qantara/gateway/openclaw_session_backend/server.py)
-- optional Piper path: [`gateway/transport_spike/tts_piper.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/tts_piper.py)
-- validated first STT path: [`gateway/transport_spike/stt_faster_whisper.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/stt_faster_whisper.py)
-- run notes template: [`experiments/notes/transport-spike.md`](/home/nawaf/Projects/Qantara/experiments/notes/transport-spike.md)
-- identity layer foundation: [`identity/README.md`](/home/nawaf/Projects/Qantara/identity/README.md)
-- avatar architecture: [`identity/AVATAR_SYSTEM.md`](/home/nawaf/Projects/Qantara/identity/AVATAR_SYSTEM.md)
-- voice architecture: [`identity/VOICE_SYSTEM.md`](/home/nawaf/Projects/Qantara/identity/VOICE_SYSTEM.md)
-- lipsync contract: [`identity/LIPSYNC_CONTRACT.md`](/home/nawaf/Projects/Qantara/identity/LIPSYNC_CONTRACT.md)
+- spike spec: [`experiments/TRANSPORT_SPIKE.md`](../../experiments/TRANSPORT_SPIKE.md)
+- spike runbook: [`experiments/RUN_TRANSPORT_SPIKE.md`](../../experiments/RUN_TRANSPORT_SPIKE.md)
+- browser client: [`client/transport-spike/index.html`](../../client/transport-spike/index.html)
+- gateway server: [`gateway/transport_spike/server.py`](../../gateway/transport_spike/server.py)
+- adapter base types: [`adapters/base.py`](../../adapters/base.py)
+- adapter factory: [`adapters/factory.py`](../../adapters/factory.py)
+- mock adapter: [`adapters/mock_adapter.py`](../../adapters/mock_adapter.py)
+- runtime skeleton adapter: [`adapters/runtime_skeleton.py`](../../adapters/runtime_skeleton.py)
+- session-oriented HTTP adapter: [`adapters/session_gateway_http.py`](../../adapters/session_gateway_http.py)
+- session gateway contract: [`SESSION_GATEWAY_CONTRACT.md`](../../SESSION_GATEWAY_CONTRACT.md)
+- local fake session backend: [`gateway/fake_session_backend/server.py`](../../gateway/fake_session_backend/server.py)
+- real Ollama session backend: [`gateway/ollama_session_backend/server.py`](../../gateway/ollama_session_backend/server.py)
+- OpenClaw session backend bridge: [`gateway/openclaw_session_backend/server.py`](../../gateway/openclaw_session_backend/server.py)
+- optional Piper path: [`gateway/transport_spike/tts_piper.py`](../../gateway/transport_spike/tts_piper.py)
+- validated first STT path: [`gateway/transport_spike/stt_faster_whisper.py`](../../gateway/transport_spike/stt_faster_whisper.py)
+- run notes template: [`experiments/notes/transport-spike.md`](../../experiments/notes/transport-spike.md)
+- identity layer foundation: [`identity/README.md`](../../identity/README.md)
+- avatar architecture: [`identity/AVATAR_SYSTEM.md`](../../identity/AVATAR_SYSTEM.md)
+- voice architecture: [`identity/VOICE_SYSTEM.md`](../../identity/VOICE_SYSTEM.md)
+- lipsync contract: [`identity/LIPSYNC_CONTRACT.md`](../../identity/LIPSYNC_CONTRACT.md)
 
 ## What The Current Spike Can Do
 
@@ -174,7 +174,7 @@ That distinction matters. The repo contains a runnable validation slice, but M0 
 
 Primary reference:
 
-- [`experiments/RUN_TRANSPORT_SPIKE.md`](/home/nawaf/Projects/Qantara/experiments/RUN_TRANSPORT_SPIKE.md)
+- [`experiments/RUN_TRANSPORT_SPIKE.md`](../../experiments/RUN_TRANSPORT_SPIKE.md)
 
 Short version:
 

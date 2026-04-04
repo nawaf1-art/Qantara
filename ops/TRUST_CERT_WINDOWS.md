@@ -10,7 +10,7 @@ For browser microphone access on another Windows device, the certificate must be
 
 The generated certificate currently lives at:
 
-- `/home/nawaf/Projects/Qantara/ops/certs/qantara-cert.pem`
+- `ops/certs/qantara-cert.pem`
 
 The private key stays on the server and should not be copied to client devices.
 

@@ -134,7 +134,7 @@ Why it matters:
 Current direction:
 
 - the first concrete backend adapter should target a `session-oriented agent gateway` shape
-- see [`BACKEND_ADAPTER_TARGETS.md`](/home/nawaf/Projects/Qantara/BACKEND_ADAPTER_TARGETS.md)
+- see [`BACKEND_ADAPTER_TARGETS.md`](BACKEND_ADAPTER_TARGETS.md)
 
 ### D-008: Assistant Output To TTS Buffering Policy
 

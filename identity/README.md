@@ -27,11 +27,11 @@ Phase 1 is not:
 
 ## Files
 
-- [`AVATAR_SYSTEM.md`](/home/nawaf/Projects/Qantara/identity/AVATAR_SYSTEM.md)
-- [`VOICE_SYSTEM.md`](/home/nawaf/Projects/Qantara/identity/VOICE_SYSTEM.md)
-- [`LIPSYNC_CONTRACT.md`](/home/nawaf/Projects/Qantara/identity/LIPSYNC_CONTRACT.md)
-- [`avatar-descriptor.schema.json`](/home/nawaf/Projects/Qantara/identity/avatar-descriptor.schema.json)
-- [`voice-registry.schema.json`](/home/nawaf/Projects/Qantara/identity/voice-registry.schema.json)
+- [`AVATAR_SYSTEM.md`](AVATAR_SYSTEM.md)
+- [`VOICE_SYSTEM.md`](VOICE_SYSTEM.md)
+- [`LIPSYNC_CONTRACT.md`](LIPSYNC_CONTRACT.md)
+- [`avatar-descriptor.schema.json`](avatar-descriptor.schema.json)
+- [`voice-registry.schema.json`](voice-registry.schema.json)
 
 ## Future Direction
 

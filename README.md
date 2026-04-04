@@ -138,6 +138,7 @@ qantara/
 │   ├── ollama_session_backend/# Ollama integration
 │   └── openclaw_session_backend/ # OpenClaw bridge
 ├── adapters/                  # Backend adapter framework
+├── docs/internal/             # Internal checkpoints, experiments, handoff notes
 ├── identity/                  # Avatar, voice, and lipsync systems
 ├── schemas/                   # Event timeline and data formats
 ├── ops/                       # LAN deployment (TLS, Caddy)
@@ -176,8 +177,8 @@ Open an issue to discuss before starting large changes.
 | [ROADMAP.md](ROADMAP.md) | Versioned milestone targets |
 | [DECISIONS.md](DECISIONS.md) | Locked architectural decisions |
 | [SESSION_GATEWAY_CONTRACT.md](SESSION_GATEWAY_CONTRACT.md) | Backend adapter HTTP contract |
-| [HANDOFF.md](HANDOFF.md) | Quick-start guide for new contributors |
 | [identity/](identity/) | Avatar system, voice registry, lipsync contract |
+| [docs/internal/](docs/internal/) | Internal checkpoints, experiments, and handoff notes |
 
 ## License
 

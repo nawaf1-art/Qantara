@@ -1,6 +1,6 @@
 # Fake Session Backend
 
-This is a tiny local backend that implements [`SESSION_GATEWAY_CONTRACT.md`](/home/nawaf/Projects/Qantara/SESSION_GATEWAY_CONTRACT.md).
+This is a tiny local backend that implements [`SESSION_GATEWAY_CONTRACT.md`](../../SESSION_GATEWAY_CONTRACT.md).
 
 Purpose:
 
@@ -35,7 +35,7 @@ QANTARA_ADAPTER=session_gateway_http \
 QANTARA_BACKEND_BASE_URL=http://127.0.0.1:19110 \
 QANTARA_SPIKE_HOST=0.0.0.0 \
 QANTARA_SPIKE_PORT=9443 \
-QANTARA_TLS_CERT=/home/nawaf/Projects/Qantara/ops/certs/qantara-cert.pem \
-QANTARA_TLS_KEY=/home/nawaf/Projects/Qantara/ops/certs/qantara-key.pem \
+QANTARA_TLS_CERT=ops/certs/qantara-cert.pem \
+QANTARA_TLS_KEY=ops/certs/qantara-key.pem \
 ./.venv/bin/python gateway/transport_spike/server.py
 ```

@@ -55,24 +55,24 @@ Current active real target:
 
 ## Important Files
 
-- project summary: [`README.md`](/home/nawaf/Projects/Qantara/README.md)
-- current state: [`PROJECT_STATE.md`](/home/nawaf/Projects/Qantara/PROJECT_STATE.md)
-- roadmap: [`ROADMAP.md`](/home/nawaf/Projects/Qantara/ROADMAP.md)
-- backend contract: [`SESSION_GATEWAY_CONTRACT.md`](/home/nawaf/Projects/Qantara/SESSION_GATEWAY_CONTRACT.md)
-- browser spike: [`client/transport-spike/index.html`](/home/nawaf/Projects/Qantara/client/transport-spike/index.html)
-- gateway spike: [`gateway/transport_spike/server.py`](/home/nawaf/Projects/Qantara/gateway/transport_spike/server.py)
-- HTTP adapter: [`adapters/session_gateway_http.py`](/home/nawaf/Projects/Qantara/adapters/session_gateway_http.py)
-- fake backend: [`gateway/fake_session_backend/server.py`](/home/nawaf/Projects/Qantara/gateway/fake_session_backend/server.py)
-- OpenClaw bridge backend: [`gateway/openclaw_session_backend/server.py`](/home/nawaf/Projects/Qantara/gateway/openclaw_session_backend/server.py)
-- identity layer: [`identity/README.md`](/home/nawaf/Projects/Qantara/identity/README.md)
-- experiment notes: [`experiments/notes/transport-spike.md`](/home/nawaf/Projects/Qantara/experiments/notes/transport-spike.md)
+- project summary: [`README.md`](../../README.md)
+- current state: [`PROJECT_STATE.md`](PROJECT_STATE.md)
+- roadmap: [`ROADMAP.md`](../../ROADMAP.md)
+- backend contract: [`SESSION_GATEWAY_CONTRACT.md`](../../SESSION_GATEWAY_CONTRACT.md)
+- browser spike: [`client/transport-spike/index.html`](../../client/transport-spike/index.html)
+- gateway spike: [`gateway/transport_spike/server.py`](../../gateway/transport_spike/server.py)
+- HTTP adapter: [`adapters/session_gateway_http.py`](../../adapters/session_gateway_http.py)
+- fake backend: [`gateway/fake_session_backend/server.py`](../../gateway/fake_session_backend/server.py)
+- OpenClaw bridge backend: [`gateway/openclaw_session_backend/server.py`](../../gateway/openclaw_session_backend/server.py)
+- identity layer: [`identity/README.md`](../../identity/README.md)
+- experiment notes: [`experiments/notes/transport-spike.md`](../../experiments/notes/transport-spike.md)
 
 ## How To Run
 
 Install:
 
 ```bash
-cd /home/nawaf/Projects/Qantara
+cd /path/to/Qantara
 make spike-install
 ```
 
@@ -87,8 +87,8 @@ Run secure spike:
 ```bash
 QANTARA_ADAPTER=session_gateway_http \
 QANTARA_BACKEND_BASE_URL=http://127.0.0.1:19120 \
-QANTARA_TLS_CERT=/home/nawaf/Projects/Qantara/ops/certs/qantara-cert.pem \
-QANTARA_TLS_KEY=/home/nawaf/Projects/Qantara/ops/certs/qantara-key.pem \
+QANTARA_TLS_CERT=ops/certs/qantara-cert.pem \
+QANTARA_TLS_KEY=ops/certs/qantara-key.pem \
 QANTARA_SPIKE_HOST=0.0.0.0 \
 QANTARA_SPIKE_PORT=9443 \
 ./.venv/bin/python gateway/transport_spike/server.py

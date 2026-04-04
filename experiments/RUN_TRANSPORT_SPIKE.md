@@ -120,7 +120,7 @@ If faster-whisper is not installed:
 
 Record findings in:
 
-- [`experiments/notes/transport-spike.md`](/home/nawaf/Projects/Qantara/experiments/notes/transport-spike.md)
+- [`experiments/notes/transport-spike.md`](notes/transport-spike.md)
 
 Minimum notes:
 

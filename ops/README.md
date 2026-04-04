@@ -53,7 +53,7 @@ browser websocket -> wss://qantara.local/ws -> Caddy -> ws://127.0.0.1:8899/ws
 
 See:
 
-- [`Caddyfile`](/home/nawaf/Projects/Qantara/ops/Caddyfile)
+- [`Caddyfile`](Caddyfile)
 
 Example flow:
 
@@ -68,7 +68,7 @@ If you do not have Caddy installed, you can generate a self-signed certificate a
 
 Config template:
 
-- [`openssl-qantara.cnf`](/home/nawaf/Projects/Qantara/ops/openssl-qantara.cnf)
+- [`openssl-qantara.cnf`](openssl-qantara.cnf)
 
 Example certificate generation:
 
@@ -105,7 +105,7 @@ Important:
 
 Windows trust help:
 
-- [`TRUST_CERT_WINDOWS.md`](/home/nawaf/Projects/Qantara/ops/TRUST_CERT_WINDOWS.md)
+- [`TRUST_CERT_WINDOWS.md`](TRUST_CERT_WINDOWS.md)
 
 ## Practical Notes
 

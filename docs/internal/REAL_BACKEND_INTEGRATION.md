@@ -38,7 +38,7 @@ The backend must provide:
 
 Reference:
 
-- [`SESSION_GATEWAY_CONTRACT.md`](/home/nawaf/Projects/Qantara/SESSION_GATEWAY_CONTRACT.md)
+- [`SESSION_GATEWAY_CONTRACT.md`](../../SESSION_GATEWAY_CONTRACT.md)
 
 ## Recommended First Steps
 
@@ -56,7 +56,7 @@ Reference:
 
 The repo now includes a first concrete real backend target:
 
-- [`gateway/ollama_session_backend/server.py`](/home/nawaf/Projects/Qantara/gateway/ollama_session_backend/server.py)
+- [`gateway/ollama_session_backend/server.py`](../../gateway/ollama_session_backend/server.py)
 
 This backend:
 
@@ -83,7 +83,7 @@ export QANTARA_BACKEND_TIMEOUT=30
 
 See:
 
-- [`ops/session-backend.env.example`](/home/nawaf/Projects/Qantara/ops/session-backend.env.example)
+- [`ops/session-backend.env.example`](../../ops/session-backend.env.example)
 
 ## Validation Checklist
 
