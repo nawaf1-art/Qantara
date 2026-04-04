@@ -62,6 +62,7 @@ class Session:
         self.speech_generation = 0
         self.turns_completed = 0
         self.client_name = "browser-transport-spike"
+        self.client_session_id = self.session_id
         self.requested_voice_id: str | None = None
         self.voice_id: str | None = PIPER.default_voice_id
 
@@ -399,6 +400,7 @@ async def ensure_adapter_session(session: Session) -> None:
             {
                 "client_name": session.client_name,
                 "session_id": session.session_id,
+                "client_session_id": session.client_session_id,
                 "voice_id": session.voice_id,
             }
         )
@@ -588,12 +590,14 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
 
             if message_type == "session_init":
                 session.client_name = payload.get("client_name") or session.client_name
+                session.client_session_id = payload.get("client_session_id") or session.client_session_id
                 voice_details = apply_voice_selection(session, payload.get("voice_id"))
                 await session.emit(
                     "session_ready",
                     "gateway",
                     {
                         "client_name": session.client_name,
+                        "client_session_id": session.client_session_id,
                         **voice_details,
                     },
                 )
@@ -603,6 +607,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                         {
                             "type": "session_ready",
                             "session_id": session.session_id,
+                            "client_session_id": session.client_session_id,
                             "adapter_kind": ADAPTER.adapter_kind,
                             "adapter_health": health.status,
                             "adapter_detail": health.detail,

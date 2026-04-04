@@ -23,8 +23,8 @@ Run:
 
 Current bridge behavior:
 
-- uses the shared OpenClaw session key `agent:spectra:main`
-- resets that shared session when Qantara switches between HTTP sessions to
-  reduce cross-talk
+- uses a dedicated OpenClaw `--session-id` per Qantara session
+- resumes that session when the browser reconnects with the same persistent
+  client session id
 - runs each CLI turn in its own process group so barge-in cancellation can
   terminate the full subprocess tree cleanly

@@ -631,6 +631,11 @@
     let avatarPreset = localStorage.getItem("qantara_avatar_preset") || avatarPresetSelect?.value || "qantara";
     let voicePreset = localStorage.getItem("qantara_voice_preset") || voicePresetSelect?.value || "steady";
     let speechSpeed = Number(localStorage.getItem("qantara_speech_speed") || speechSpeedInput?.value || "1.15");
+    let clientSessionId = localStorage.getItem("qantara_client_session_id");
+    if (!clientSessionId) {
+      clientSessionId = (crypto?.randomUUID?.() || `qantara-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+      localStorage.setItem("qantara_client_session_id", clientSessionId);
+    }
     if (audioModeSelect) {
       audioModeSelect.value = audioMode;
     }
@@ -1360,6 +1365,7 @@
         sendJson({
           type: "session_init",
           client_name: "browser-transport-spike",
+          client_session_id: clientSessionId,
           protocol_version: 1,
           sample_rate: TARGET_SAMPLE_RATE,
           voice_id: ttsVoiceId,
@@ -1431,6 +1437,9 @@
               syncTtsVoiceOptions(payload.available_voices, payload.voice_id || ttsVoiceId);
               if (payload.voice_id) {
                 log(`tts voice ready: ${payload.voice_id}${payload.fallback_reason ? ` (${payload.fallback_reason})` : ""}`);
+              }
+              if (payload.client_session_id) {
+                log(`client session: ${payload.client_session_id}`);
               }
               log(`control ${event.data}`);
             } else if (payload.type === "session_updated") {
