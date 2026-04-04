@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import signal
 import time
@@ -18,6 +19,10 @@ OPENCLAW_AGENT_ID = os.environ.get("QANTARA_OPENCLAW_AGENT_ID", "spectra").strip
 OPENCLAW_TIMEOUT_SECONDS = float(os.environ.get("QANTARA_OPENCLAW_TIMEOUT", "120"))
 OPENCLAW_THINKING = os.environ.get("QANTARA_OPENCLAW_THINKING", "").strip()
 OPENCLAW_CANCEL_GRACE_SECONDS = float(os.environ.get("QANTARA_OPENCLAW_CANCEL_GRACE", "2"))
+OPENCLAW_SUBPROCESS_TIMEOUT_BUFFER_SECONDS = float(os.environ.get("QANTARA_OPENCLAW_TIMEOUT_BUFFER", "15"))
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+LOG = logging.getLogger("qantara.openclaw")
 
 
 def utc_now() -> str:
@@ -46,7 +51,7 @@ class OpenClawSessionBackend:
         self.sessions: dict[str, SessionState] = {}
         self.client_session_map: dict[str, str] = {}
         self.active_processes: dict[str, asyncio.subprocess.Process] = {}
-        self.turn_lock = asyncio.Lock()
+        self.session_locks: dict[str, asyncio.Lock] = {}
 
     def create_session(self, client_context: dict | None = None) -> str:
         client_context = client_context or {}
@@ -81,11 +86,22 @@ class OpenClawSessionBackend:
                 session_state.turns.pop(oldest_turn_handle, None)
         return turn_handle
 
+    def get_session_lock(self, session_handle: str) -> asyncio.Lock:
+        lock = self.session_locks.get(session_handle)
+        if lock is None:
+            lock = asyncio.Lock()
+            self.session_locks[session_handle] = lock
+        return lock
+
 
 BACKEND = OpenClawSessionBackend()
 
 
 class TurnCancelledError(RuntimeError):
+    pass
+
+
+class OpenClawGatewayTimeoutError(RuntimeError):
     pass
 
 
@@ -129,7 +145,16 @@ async def _escalate_cancel(turn_handle: str, process: asyncio.subprocess.Process
 
 async def _run_openclaw_turn(session_handle: str, turn_handle: str, transcript: str) -> tuple[str, dict]:
     command = _build_openclaw_command(session_handle, transcript)
-    async with BACKEND.turn_lock:
+    subprocess_timeout = OPENCLAW_TIMEOUT_SECONDS + max(1.0, OPENCLAW_SUBPROCESS_TIMEOUT_BUFFER_SECONDS)
+    started_at = time.monotonic()
+    LOG.info(
+        "openclaw_turn_start session=%s turn=%s agent=%s timeout_s=%s",
+        session_handle,
+        turn_handle,
+        OPENCLAW_AGENT_ID,
+        OPENCLAW_TIMEOUT_SECONDS,
+    )
+    async with BACKEND.get_session_lock(session_handle):
         process = await asyncio.create_subprocess_exec(
             *command,
             stdout=asyncio.subprocess.PIPE,
@@ -138,20 +163,50 @@ async def _run_openclaw_turn(session_handle: str, turn_handle: str, transcript: 
         )
         BACKEND.active_processes[turn_handle] = process
         try:
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=OPENCLAW_TIMEOUT_SECONDS)
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=subprocess_timeout)
         except asyncio.TimeoutError:
             await _terminate_process_group(process, hard=True)
             await process.communicate()
-            raise RuntimeError(f"openclaw agent timed out after {int(OPENCLAW_TIMEOUT_SECONDS)} seconds")
+            elapsed = time.monotonic() - started_at
+            LOG.warning(
+                "openclaw_turn_timeout session=%s turn=%s elapsed_s=%.2f timeout_s=%.2f",
+                session_handle,
+                turn_handle,
+                elapsed,
+                subprocess_timeout,
+            )
+            raise RuntimeError(f"openclaw agent subprocess timed out after {int(subprocess_timeout)} seconds")
         finally:
             BACKEND.active_processes.pop(turn_handle, None)
 
     turn = BACKEND.sessions[session_handle].turns[turn_handle]
     if turn.cancelled:
+        LOG.info("openclaw_turn_cancelled session=%s turn=%s", session_handle, turn_handle)
         raise TurnCancelledError("turn cancelled")
+
+    stderr_text = (stderr or b"").decode("utf-8", errors="replace").strip()
+    if stderr_text:
+        LOG.warning(
+            "openclaw_turn_stderr session=%s turn=%s stderr=%s",
+            session_handle,
+            turn_handle,
+            stderr_text[:800],
+        )
 
     if process.returncode != 0:
         message = (stderr or stdout).decode("utf-8", errors="replace").strip()
+        elapsed = time.monotonic() - started_at
+        LOG.error(
+            "openclaw_turn_failed session=%s turn=%s rc=%s elapsed_s=%.2f message=%s",
+            session_handle,
+            turn_handle,
+            process.returncode,
+            elapsed,
+            (message or "")[:800],
+        )
+        normalized_message = (message or "").lower()
+        if "gateway timeout" in normalized_message:
+            raise OpenClawGatewayTimeoutError(message or "openclaw gateway timeout")
         raise RuntimeError(message or f"openclaw agent failed with exit code {process.returncode}")
 
     payload = json.loads(stdout.decode("utf-8", errors="replace"))
@@ -161,6 +216,14 @@ async def _run_openclaw_turn(session_handle: str, turn_handle: str, transcript: 
     final_text = " ".join(text for text in texts if text).strip()
     if not final_text:
         raise RuntimeError("openclaw agent returned no text payload")
+    elapsed = time.monotonic() - started_at
+    LOG.info(
+        "openclaw_turn_success session=%s turn=%s elapsed_s=%.2f chars=%d",
+        session_handle,
+        turn_handle,
+        elapsed,
+        len(final_text),
+    )
     return final_text, payload
 
 
@@ -182,7 +245,7 @@ async def health_handler(_: web.Request) -> web.Response:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await process.communicate()
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=25)
         if process.returncode != 0:
             message = (stderr or stdout).decode("utf-8", errors="replace").strip()
             return web.json_response({"status": "degraded", "detail": f"{detail}; {message}"}, status=200)
@@ -279,8 +342,38 @@ async def stream_turn_events_handler(request: web.Request) -> web.StreamResponse
         await response.write((json.dumps({"type": "cancel_acknowledged", "turn_handle": turn_handle}) + "\n").encode("utf-8"))
         await response.write_eof()
         return response
+    except OpenClawGatewayTimeoutError as exc:
+        await response.write(
+            (
+                json.dumps(
+                    {
+                        "type": "turn_failed",
+                        "failure_kind": "timeout",
+                        "message": str(exc),
+                        "turn_handle": turn_handle,
+                        "retriable": True,
+                    }
+                )
+                + "\n"
+            ).encode("utf-8")
+        )
+        await response.write_eof()
+        return response
     except Exception as exc:
-        await response.write((json.dumps({"type": "turn_failed", "message": str(exc), "turn_handle": turn_handle}) + "\n").encode("utf-8"))
+        await response.write(
+            (
+                json.dumps(
+                    {
+                        "type": "turn_failed",
+                        "failure_kind": "agent_error",
+                        "message": str(exc),
+                        "turn_handle": turn_handle,
+                        "retriable": False,
+                    }
+                )
+                + "\n"
+            ).encode("utf-8")
+        )
         await response.write_eof()
         return response
 

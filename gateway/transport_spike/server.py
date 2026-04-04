@@ -35,6 +35,7 @@ DEFAULT_HOST = os.environ.get("QANTARA_SPIKE_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("QANTARA_SPIKE_PORT", "8765"))
 TLS_CERT_FILE = os.environ.get("QANTARA_TLS_CERT")
 TLS_KEY_FILE = os.environ.get("QANTARA_TLS_KEY")
+DEFAULT_SPEECH_RATE = float(os.environ.get("QANTARA_DEFAULT_SPEECH_RATE", "1.2"))
 
 
 def utc_now() -> str:
@@ -65,6 +66,7 @@ class Session:
         self.client_session_id = self.session_id
         self.requested_voice_id: str | None = None
         self.voice_id: str | None = PIPER.default_voice_id
+        self.speech_rate: float = DEFAULT_SPEECH_RATE
 
     async def emit(self, event_name: str, source: str, payload: dict) -> None:
         record = {
@@ -88,6 +90,38 @@ STT = FasterWhisperSTT(
     device=FASTER_WHISPER_DEVICE,
     compute_type=FASTER_WHISPER_COMPUTE,
 )
+LAST_ADAPTER_HEALTH = {"status": "unknown", "detail": "health pending"}
+
+
+async def refresh_adapter_health(session: Session | None = None) -> None:
+    global LAST_ADAPTER_HEALTH
+    try:
+        health = await ADAPTER.check_health()
+        LAST_ADAPTER_HEALTH = {"status": health.status, "detail": health.detail}
+        if session is not None:
+            await session.websocket.send_str(
+                json.dumps(
+                    {
+                        "type": "adapter_status",
+                        "adapter_kind": ADAPTER.adapter_kind,
+                        "adapter_health": health.status,
+                        "adapter_detail": health.detail,
+                    }
+                )
+            )
+    except Exception as exc:
+        LAST_ADAPTER_HEALTH = {"status": "degraded", "detail": str(exc)}
+        if session is not None:
+            await session.websocket.send_str(
+                json.dumps(
+                    {
+                        "type": "adapter_status",
+                        "adapter_kind": ADAPTER.adapter_kind,
+                        "adapter_health": "degraded",
+                        "adapter_detail": str(exc),
+                    }
+                )
+            )
 
 
 def encode_pcm_frame(samples: list[int]) -> bytes:
@@ -296,6 +330,7 @@ async def speak_text(session: Session, text: str, expected_generation: int | Non
                 "available": PIPER.available,
                 "voice_id": resolved_voice.voice_id if resolved_voice is not None else session.voice_id,
                 "requested_voice_id": session.requested_voice_id or session.voice_id,
+                "speech_rate": session.speech_rate,
                 "sample_rate": resolved_voice.sample_rate if resolved_voice is not None else TARGET_SAMPLE_RATE,
                 "reason": fallback_reason if resolved_voice is not None else (None if PIPER.available else "piper unavailable or no model configured"),
             }
@@ -305,7 +340,11 @@ async def speak_text(session: Session, text: str, expected_generation: int | Non
     if PIPER.available:
         try:
             synthesis_started_ms = time.monotonic() * 1000
-            samples, resolved_voice, fallback_reason = await PIPER.synthesize(spoken_text, voice_id=session.voice_id)
+            samples, resolved_voice, fallback_reason = await PIPER.synthesize(
+                spoken_text,
+                voice_id=session.voice_id,
+                speech_rate=session.speech_rate,
+            )
             synthesis_ms = round((time.monotonic() * 1000) - synthesis_started_ms, 3)
             session.voice_id = resolved_voice.voice_id
             await session.emit(
@@ -318,6 +357,7 @@ async def speak_text(session: Session, text: str, expected_generation: int | Non
                     "synthesis_ms": synthesis_ms,
                     "voice_id": resolved_voice.voice_id,
                     "requested_voice_id": session.requested_voice_id or resolved_voice.voice_id,
+                    "speech_rate": session.speech_rate,
                     "fallback_reason": fallback_reason,
                     "source_char_count": len(text),
                 },
@@ -331,6 +371,7 @@ async def speak_text(session: Session, text: str, expected_generation: int | Non
                             "available": True,
                             "voice_id": resolved_voice.voice_id,
                             "requested_voice_id": session.requested_voice_id,
+                            "speech_rate": session.speech_rate,
                             "reason": fallback_reason,
                         }
                     )
@@ -441,10 +482,20 @@ def apply_voice_selection(session: Session, requested_voice_id: str | None) -> d
     return {
         "requested_voice_id": session.requested_voice_id,
         "voice_id": session.voice_id,
+        "speech_rate": session.speech_rate,
         "sample_rate": sample_rate,
         "available_voices": PIPER.list_available_voices(),
         "fallback_reason": fallback_reason,
     }
+
+
+def apply_speech_rate(session: Session, requested_speech_rate: float | int | str | None) -> float:
+    try:
+        value = float(requested_speech_rate) if requested_speech_rate is not None else DEFAULT_SPEECH_RATE
+    except (TypeError, ValueError):
+        value = DEFAULT_SPEECH_RATE
+    session.speech_rate = max(0.85, min(1.30, value))
+    return session.speech_rate
 
 
 async def cancel_active_turn(session: Session, reason: str) -> None:
@@ -591,6 +642,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
             if message_type == "session_init":
                 session.client_name = payload.get("client_name") or session.client_name
                 session.client_session_id = payload.get("client_session_id") or session.client_session_id
+                apply_speech_rate(session, payload.get("speech_rate"))
                 voice_details = apply_voice_selection(session, payload.get("voice_id"))
                 await session.emit(
                     "session_ready",
@@ -601,7 +653,6 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                         **voice_details,
                     },
                 )
-                health = await ADAPTER.check_health()
                 await ws.send_str(
                     json.dumps(
                         {
@@ -609,13 +660,15 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                             "session_id": session.session_id,
                             "client_session_id": session.client_session_id,
                             "adapter_kind": ADAPTER.adapter_kind,
-                            "adapter_health": health.status,
-                            "adapter_detail": health.detail,
+                            "adapter_health": LAST_ADAPTER_HEALTH["status"],
+                            "adapter_detail": LAST_ADAPTER_HEALTH["detail"],
                             **voice_details,
                         }
                     )
                 )
+                asyncio.create_task(refresh_adapter_health(session))
             elif message_type == "session_update":
+                apply_speech_rate(session, payload.get("speech_rate"))
                 voice_details = apply_voice_selection(session, payload.get("voice_id"))
                 await session.emit("session_updated", "gateway", voice_details)
                 await ws.send_str(json.dumps({"type": "session_updated", **voice_details}))

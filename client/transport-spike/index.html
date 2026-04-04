@@ -414,8 +414,8 @@
         <div class="selector-card">
           <label for="speechSpeed">
             <span>Speech Speed</span>
-            <input id="speechSpeed" type="range" min="0.85" max="1.4" step="0.05" value="1.15">
-            <span id="speechSpeedValue">1.15x</span>
+            <input id="speechSpeed" type="range" min="0.85" max="1.30" step="0.05" value="1.20">
+            <span id="speechSpeedValue">1.20x</span>
           </label>
         </div>
       </div>
@@ -630,7 +630,7 @@
     let ttsVoiceId = localStorage.getItem("qantara_tts_voice") || ttsVoiceSelect?.value || "lessac";
     let avatarPreset = localStorage.getItem("qantara_avatar_preset") || avatarPresetSelect?.value || "qantara";
     let voicePreset = localStorage.getItem("qantara_voice_preset") || voicePresetSelect?.value || "steady";
-    let speechSpeed = Number(localStorage.getItem("qantara_speech_speed") || speechSpeedInput?.value || "1.15");
+    let speechSpeed = Number(localStorage.getItem("qantara_speech_speed") || speechSpeedInput?.value || "1.20");
     let clientSessionId = localStorage.getItem("qantara_client_session_id");
     if (!clientSessionId) {
       clientSessionId = (crypto?.randomUUID?.() || `qantara-${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -886,7 +886,7 @@
     }
 
     function getSpeechSpeed() {
-      return Math.max(0.85, Math.min(1.4, Number.isFinite(speechSpeed) ? speechSpeed : 1.15));
+      return Math.max(0.85, Math.min(1.30, Number.isFinite(speechSpeed) ? speechSpeed : 1.2));
     }
 
     function updateAvatarState() {
@@ -1063,9 +1063,8 @@
 
       const source = playbackContext.createBufferSource();
       const voiceProfile = getVoiceProfile();
-      const speedMultiplier = getSpeechSpeed();
       source.buffer = buffer;
-      source.playbackRate.value = voiceProfile.playbackRate * speedMultiplier;
+      source.playbackRate.value = voiceProfile.playbackRate;
       source.detune.value = voiceProfile.detune;
       source.connect(playbackAnalyser);
       activePlaybackSources.add(source);
@@ -1369,6 +1368,7 @@
           protocol_version: 1,
           sample_rate: TARGET_SAMPLE_RATE,
           voice_id: ttsVoiceId,
+          speech_rate: getSpeechSpeed(),
         });
         log("socket connected");
       };
@@ -1434,6 +1434,16 @@
                 currentPlaybackSampleRate = payload.sample_rate;
                 updateText("sampleRate", currentPlaybackSampleRate);
               }
+              if (Number.isFinite(Number(payload.speech_rate))) {
+                speechSpeed = Number(payload.speech_rate);
+                localStorage.setItem("qantara_speech_speed", String(speechSpeed));
+                if (speechSpeedInput) {
+                  speechSpeedInput.value = speechSpeed.toFixed(2);
+                }
+                if (speechSpeedValue) {
+                  speechSpeedValue.textContent = `${speechSpeed.toFixed(2)}x`;
+                }
+              }
               syncTtsVoiceOptions(payload.available_voices, payload.voice_id || ttsVoiceId);
               if (payload.voice_id) {
                 log(`tts voice ready: ${payload.voice_id}${payload.fallback_reason ? ` (${payload.fallback_reason})` : ""}`);
@@ -1447,9 +1457,27 @@
                 currentPlaybackSampleRate = payload.sample_rate;
                 updateText("sampleRate", currentPlaybackSampleRate);
               }
+              if (Number.isFinite(Number(payload.speech_rate))) {
+                speechSpeed = Number(payload.speech_rate);
+                localStorage.setItem("qantara_speech_speed", String(speechSpeed));
+                if (speechSpeedInput) {
+                  speechSpeedInput.value = speechSpeed.toFixed(2);
+                }
+                if (speechSpeedValue) {
+                  speechSpeedValue.textContent = `${speechSpeed.toFixed(2)}x`;
+                }
+              }
               syncTtsVoiceOptions(payload.available_voices, payload.voice_id || ttsVoiceId);
               if (payload.voice_id) {
                 log(`tts voice updated: ${payload.voice_id}${payload.fallback_reason ? ` (${payload.fallback_reason})` : ""}`);
+              }
+              log(`control ${event.data}`);
+            } else if (payload.type === "adapter_status") {
+              if (payload.adapter_kind) {
+                const adapterText = payload.adapter_detail
+                  ? `${payload.adapter_kind} (${payload.adapter_health}: ${payload.adapter_detail})`
+                  : `${payload.adapter_kind} (${payload.adapter_health})`;
+                setAdapterState(adapterText);
               }
               log(`control ${event.data}`);
             } else if (payload.type === "turn_state") {
@@ -1488,7 +1516,9 @@
               log(`turn rejected: ${payload.reason}`);
               setMockTurnPending(false);
             } else if (payload.type === "turn_failed") {
-              log(`turn failed: ${payload.message}`);
+              const kind = payload.failure_kind ? `${payload.failure_kind}` : "error";
+              const retryHint = payload.retriable ? " (retriable)" : "";
+              log(`turn failed [${kind}${retryHint}]: ${payload.message}`);
               setMockTurnPending(false);
             } else {
               log(`control ${event.data}`);
@@ -1571,7 +1601,7 @@
       ttsVoiceId = ttsVoiceSelect.value;
       localStorage.setItem("qantara_tts_voice", ttsVoiceId);
       if (socket && socket.readyState === WebSocket.OPEN) {
-        sendJson({ type: "session_update", voice_id: ttsVoiceId, protocol_version: 1 });
+        sendJson({ type: "session_update", voice_id: ttsVoiceId, speech_rate: getSpeechSpeed(), protocol_version: 1 });
       }
       log(`tts voice set to ${ttsVoiceId}`);
     });
@@ -1594,6 +1624,9 @@
       localStorage.setItem("qantara_speech_speed", String(speechSpeed));
       if (speechSpeedValue) {
         speechSpeedValue.textContent = `${speechSpeed.toFixed(2)}x`;
+      }
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        sendJson({ type: "session_update", voice_id: ttsVoiceId, speech_rate: getSpeechSpeed(), protocol_version: 1 });
       }
       log(`speech speed set to ${speechSpeed.toFixed(2)}x`);
     });

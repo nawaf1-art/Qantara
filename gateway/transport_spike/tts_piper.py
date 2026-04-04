@@ -78,14 +78,24 @@ class PiperTTS:
             return fallback, f"requested voice '{requested}' unavailable; using '{fallback.voice_id}'"
         return fallback, None
 
-    async def synthesize(self, text: str, voice_id: str | None = None) -> tuple[list[int], PiperVoiceSpec, str | None]:
+    async def synthesize(
+        self,
+        text: str,
+        voice_id: str | None = None,
+        speech_rate: float | None = None,
+    ) -> tuple[list[int], PiperVoiceSpec, str | None]:
         voice, fallback_reason = self.resolve_voice(voice_id)
+        effective_rate = speech_rate if isinstance(speech_rate, (int, float)) else 1.0
+        effective_rate = max(0.85, min(1.30, float(effective_rate)))
+        length_scale = 1.0 / effective_rate
 
         cmd = [
             *self.command,
             "--model",
             voice.model_path,
             "--output-raw",
+            "--length-scale",
+            f"{length_scale:.4f}",
         ]
         if voice.config_path is not None:
             cmd.extend(["--config", voice.config_path])
