@@ -177,20 +177,6 @@
       color: var(--ink);
     }
 
-    .selector-card input[type="color"] {
-      width: 100%;
-      min-height: 44px;
-      padding: 4px;
-      border-radius: 12px;
-      border: 1px solid var(--line);
-      background: var(--panel);
-      cursor: pointer;
-    }
-
-    .selector-card button {
-      width: 100%;
-    }
-
     .avatar-shell {
       position: relative;
       width: 190px;
@@ -432,30 +418,6 @@
         </div>
       </div>
 
-      <div class="selectors">
-        <div class="selector-card">
-          <label for="avatarSkinColor">
-            <span>Skin Tone</span>
-            <input id="avatarSkinColor" type="color" value="#f9edd9">
-          </label>
-        </div>
-        <div class="selector-card">
-          <label for="avatarAccentColor">
-            <span>Accent Color</span>
-            <input id="avatarAccentColor" type="color" value="#0f766e">
-          </label>
-        </div>
-        <div class="selector-card">
-          <label for="avatarMouthColor">
-            <span>Mouth Color</span>
-            <input id="avatarMouthColor" type="color" value="#7a3b3b">
-          </label>
-        </div>
-        <div class="selector-card" style="display:flex;align-items:end;">
-          <button id="resetAvatarStyleBtn" type="button">Reset Avatar Style</button>
-        </div>
-      </div>
-
       <div class="controls">
         <button id="connectBtn" class="primary">Connect</button>
         <button id="disconnectBtn" class="warn" disabled>Disconnect</button>
@@ -547,10 +509,6 @@
     const voicePresetSelect = document.getElementById("voicePreset");
     const speechSpeedInput = document.getElementById("speechSpeed");
     const speechSpeedValue = document.getElementById("speechSpeedValue");
-    const avatarSkinColorInput = document.getElementById("avatarSkinColor");
-    const avatarAccentColorInput = document.getElementById("avatarAccentColor");
-    const avatarMouthColorInput = document.getElementById("avatarMouthColor");
-    const resetAvatarStyleBtn = document.getElementById("resetAvatarStyleBtn");
     const avatarShell = document.getElementById("avatarShell");
     const avatarBadge = document.getElementById("avatarBadge");
     const avatarState = document.getElementById("avatarState");
@@ -716,67 +674,33 @@
       if (!preset) {
         return;
       }
-      const overrides = getAvatarOverrides();
-      const skinColor = normalizeHexColor(overrides.skin, preset.palette?.skin || "#f9edd9");
-      const accentPrimary = normalizeHexColor(overrides.accent_primary, preset.palette?.accent_primary || "#0f766e");
+      const skinColor = normalizeHexColor(preset.palette?.skin, "#f9edd9");
+      const accentPrimary = normalizeHexColor(preset.palette?.accent_primary, "#0f766e");
       const mouthColor = normalizeHexColor(
-        overrides.mouth_fill,
-        preset.visual?.mouth_fill || preset.palette?.accent_secondary || "#7a3b3b",
+        preset.visual?.mouth_fill || preset.palette?.accent_secondary,
+        "#7a3b3b",
       );
       if (avatarTitle) {
         avatarTitle.textContent = preset.title || preset.display_name || avatarPreset;
       }
       if (avatarFace) {
-        avatarFace.setAttribute("fill", skinColor);
-        avatarFace.setAttribute("stroke", preset.visual?.face_stroke || "#8f7a62");
+        avatarFace.style.fill = skinColor;
+        avatarFace.style.stroke = preset.visual?.face_stroke || "#8f7a62";
       }
       if (avatarHalo) {
-        avatarHalo.setAttribute("fill", preset.visual?.halo_fill || rgbaFromHex(accentPrimary, 0.12));
+        avatarHalo.style.fill = rgbaFromHex(accentPrimary, 0.12);
       }
-      if (avatarEyeLeft) avatarEyeLeft.setAttribute("fill", preset.visual?.eye_fill || "#1f2328");
-      if (avatarEyeRight) avatarEyeRight.setAttribute("fill", preset.visual?.eye_fill || "#1f2328");
-      if (avatarBrowLeft) avatarBrowLeft.setAttribute("stroke", preset.visual?.brow_stroke || "#705c48");
-      if (avatarBrowRight) avatarBrowRight.setAttribute("stroke", preset.visual?.brow_stroke || "#705c48");
-      if (avatarMouth) avatarMouth.setAttribute("fill", mouthColor);
+      if (avatarEyeLeft) avatarEyeLeft.style.fill = preset.visual?.eye_fill || "#1f2328";
+      if (avatarEyeRight) avatarEyeRight.style.fill = preset.visual?.eye_fill || "#1f2328";
+      if (avatarBrowLeft) avatarBrowLeft.style.stroke = preset.visual?.brow_stroke || "#705c48";
+      if (avatarBrowRight) avatarBrowRight.style.stroke = preset.visual?.brow_stroke || "#705c48";
+      if (avatarMouth) avatarMouth.style.fill = mouthColor;
       if (avatarShell) {
-        avatarShell.style.setProperty("--avatar-glow", preset.visual?.shell_glow || rgbaFromHex(accentPrimary, 0.16));
+        avatarShell.style.setProperty("--avatar-glow", rgbaFromHex(accentPrimary, 0.16));
       }
       const avatarCard = document.querySelector(".avatar-card");
       if (avatarCard) {
-        avatarCard.style.background = preset.visual?.shell_bg || `radial-gradient(circle at top, ${rgbaFromHex(accentPrimary, 0.18)}, transparent 45%), linear-gradient(160deg, #fffdf8 0%, #f4ece0 100%)`;
-      }
-      syncAvatarStyleInputs({ skinColor, accentPrimary, mouthColor });
-    }
-
-    function avatarOverrideStorageKey() {
-      return `qantara_avatar_overrides_${avatarPreset}`;
-    }
-
-    function getAvatarOverrides() {
-      try {
-        return JSON.parse(localStorage.getItem(avatarOverrideStorageKey()) || "{}");
-      } catch {
-        return {};
-      }
-    }
-
-    function setAvatarOverrides(nextOverrides) {
-      localStorage.setItem(avatarOverrideStorageKey(), JSON.stringify(nextOverrides));
-    }
-
-    function clearAvatarOverrides() {
-      localStorage.removeItem(avatarOverrideStorageKey());
-    }
-
-    function syncAvatarStyleInputs({ skinColor, accentPrimary, mouthColor }) {
-      if (avatarSkinColorInput) {
-        avatarSkinColorInput.value = normalizeHexColor(skinColor, "#f9edd9");
-      }
-      if (avatarAccentColorInput) {
-        avatarAccentColorInput.value = normalizeHexColor(accentPrimary, "#0f766e");
-      }
-      if (avatarMouthColorInput) {
-        avatarMouthColorInput.value = normalizeHexColor(mouthColor, "#7a3b3b");
+        avatarCard.style.background = `radial-gradient(circle at top, ${rgbaFromHex(accentPrimary, 0.18)}, transparent 45%), linear-gradient(160deg, #fffdf8 0%, #f4ece0 100%)`;
       }
     }
 
@@ -791,13 +715,6 @@
       const g = Number.parseInt(value.slice(2, 4), 16);
       const b = Number.parseInt(value.slice(4, 6), 16);
       return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-    }
-
-    function updateAvatarStyleOverride(key, value) {
-      const current = getAvatarOverrides();
-      current[key] = value;
-      setAvatarOverrides(current);
-      applyAvatarPreset();
     }
 
     async function loadAvatarPresets() {
@@ -1569,24 +1486,6 @@
         speechSpeedValue.textContent = `${speechSpeed.toFixed(2)}x`;
       }
       log(`speech speed set to ${speechSpeed.toFixed(2)}x`);
-    });
-
-    avatarSkinColorInput?.addEventListener("input", () => {
-      updateAvatarStyleOverride("skin", avatarSkinColorInput.value);
-    });
-
-    avatarAccentColorInput?.addEventListener("input", () => {
-      updateAvatarStyleOverride("accent_primary", avatarAccentColorInput.value);
-    });
-
-    avatarMouthColorInput?.addEventListener("input", () => {
-      updateAvatarStyleOverride("mouth_fill", avatarMouthColorInput.value);
-    });
-
-    resetAvatarStyleBtn?.addEventListener("click", () => {
-      clearAvatarOverrides();
-      applyAvatarPreset();
-      log(`avatar style reset for ${avatarPreset}`);
     });
 
     updateAvatarState();

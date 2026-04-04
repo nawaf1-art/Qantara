@@ -132,6 +132,171 @@
         "shell_glow": "rgba(190, 24, 93, 0.16)",
         "shell_bg": "radial-gradient(circle at top, rgba(190, 24, 93, 0.16), transparent 45%), linear-gradient(160deg, #fff8fb 0%, #f0dfe7 100%)"
       }
+    },
+    {
+      "avatar_id": "sora",
+      "display_name": "Sora",
+      "title": "Sora Anime Softlight",
+      "renderer_kind": "svg_parts_2d",
+      "style_family": "anime_soft",
+      "base_pack_id": "phase1-demo",
+      "parts": {
+        "face_base": "oval_soft",
+        "hair_front": "none",
+        "hair_back": "none",
+        "brows": "gentle_arc",
+        "eyes": "round_focus",
+        "nose": "minimal",
+        "mouth_set": "soft_speech"
+      },
+      "palette": {
+        "skin": "#f3dfd3",
+        "hair_primary": "#5d4f6d",
+        "hair_secondary": "#8f7aa8",
+        "accent_primary": "#7c3aed",
+        "accent_secondary": "#9d4edd"
+      },
+      "visual": {
+        "face_stroke": "#8f7aa8",
+        "halo_fill": "rgba(124, 58, 237, 0.12)",
+        "eye_fill": "#2b2036",
+        "brow_stroke": "#5d4f6d",
+        "mouth_fill": "#9d4edd",
+        "shell_glow": "rgba(124, 58, 237, 0.16)",
+        "shell_bg": "radial-gradient(circle at top, rgba(124, 58, 237, 0.16), transparent 45%), linear-gradient(160deg, #fcf7ff 0%, #eadff8 100%)"
+      }
+    },
+    {
+      "avatar_id": "kaia",
+      "display_name": "Kaia",
+      "title": "Kaia Neon Pulse",
+      "renderer_kind": "svg_parts_2d",
+      "style_family": "anime_sharp",
+      "base_pack_id": "phase1-demo",
+      "parts": {
+        "face_base": "oval_sharp",
+        "hair_front": "none",
+        "hair_back": "none",
+        "brows": "technical_arc",
+        "eyes": "round_focus",
+        "nose": "minimal",
+        "mouth_set": "precise_speech"
+      },
+      "palette": {
+        "skin": "#f5e8da",
+        "hair_primary": "#0f172a",
+        "hair_secondary": "#334155",
+        "accent_primary": "#06b6d4",
+        "accent_secondary": "#0891b2"
+      },
+      "visual": {
+        "face_stroke": "#64748b",
+        "halo_fill": "rgba(6, 182, 212, 0.12)",
+        "eye_fill": "#0f172a",
+        "brow_stroke": "#334155",
+        "mouth_fill": "#0891b2",
+        "shell_glow": "rgba(6, 182, 212, 0.16)",
+        "shell_bg": "radial-gradient(circle at top, rgba(6, 182, 212, 0.16), transparent 45%), linear-gradient(160deg, #f4fdff 0%, #dff2f8 100%)"
+      }
+    },
+    {
+      "avatar_id": "rakan",
+      "display_name": "Rakan",
+      "title": "Rakan Ember Frame",
+      "renderer_kind": "svg_parts_2d",
+      "style_family": "action_figure",
+      "base_pack_id": "phase1-demo",
+      "parts": {
+        "face_base": "oval_heavy",
+        "hair_front": "none",
+        "hair_back": "none",
+        "brows": "heavy_arc",
+        "eyes": "round_focus",
+        "nose": "minimal",
+        "mouth_set": "firm_speech"
+      },
+      "palette": {
+        "skin": "#ead9c2",
+        "hair_primary": "#4a2f1d",
+        "hair_secondary": "#7c5a43",
+        "accent_primary": "#dc2626",
+        "accent_secondary": "#b91c1c"
+      },
+      "visual": {
+        "face_stroke": "#7c5a43",
+        "halo_fill": "rgba(220, 38, 38, 0.12)",
+        "eye_fill": "#2b140d",
+        "brow_stroke": "#4a2f1d",
+        "mouth_fill": "#b91c1c",
+        "shell_glow": "rgba(220, 38, 38, 0.16)",
+        "shell_bg": "radial-gradient(circle at top, rgba(220, 38, 38, 0.16), transparent 45%), linear-gradient(160deg, #fff7f5 0%, #f3dfd6 100%)"
+      }
+    },
+    {
+      "avatar_id": "mira",
+      "display_name": "Mira",
+      "title": "Mira Blossom Panel",
+      "renderer_kind": "svg_parts_2d",
+      "style_family": "cartoon_playful",
+      "base_pack_id": "phase1-demo",
+      "parts": {
+        "face_base": "oval_soft",
+        "hair_front": "none",
+        "hair_back": "none",
+        "brows": "gentle_arc",
+        "eyes": "round_focus",
+        "nose": "minimal",
+        "mouth_set": "soft_speech"
+      },
+      "palette": {
+        "skin": "#f6e1d8",
+        "hair_primary": "#8b5e83",
+        "hair_secondary": "#b28aa8",
+        "accent_primary": "#ec4899",
+        "accent_secondary": "#db2777"
+      },
+      "visual": {
+        "face_stroke": "#b28aa8",
+        "halo_fill": "rgba(236, 72, 153, 0.12)",
+        "eye_fill": "#48253f",
+        "brow_stroke": "#8b5e83",
+        "mouth_fill": "#db2777",
+        "shell_glow": "rgba(236, 72, 153, 0.16)",
+        "shell_bg": "radial-gradient(circle at top, rgba(236, 72, 153, 0.16), transparent 45%), linear-gradient(160deg, #fff9fc 0%, #f4e1ea 100%)"
+      }
+    },
+    {
+      "avatar_id": "vega",
+      "display_name": "Vega",
+      "title": "Vega Signal Deck",
+      "renderer_kind": "svg_parts_2d",
+      "style_family": "anime_sharp",
+      "base_pack_id": "phase1-demo",
+      "parts": {
+        "face_base": "oval_sharp",
+        "hair_front": "none",
+        "hair_back": "none",
+        "brows": "technical_arc",
+        "eyes": "round_focus",
+        "nose": "minimal",
+        "mouth_set": "precise_speech"
+      },
+      "palette": {
+        "skin": "#e8e3d8",
+        "hair_primary": "#1f2937",
+        "hair_secondary": "#4b5563",
+        "accent_primary": "#22c55e",
+        "accent_secondary": "#15803d"
+      },
+      "visual": {
+        "face_stroke": "#6b7280",
+        "halo_fill": "rgba(34, 197, 94, 0.12)",
+        "eye_fill": "#111827",
+        "brow_stroke": "#374151",
+        "mouth_fill": "#15803d",
+        "shell_glow": "rgba(34, 197, 94, 0.16)",
+        "shell_bg": "radial-gradient(circle at top, rgba(34, 197, 94, 0.16), transparent 45%), linear-gradient(160deg, #f7fff9 0%, #dceedd 100%)"
+      }
     }
   ]
 }
