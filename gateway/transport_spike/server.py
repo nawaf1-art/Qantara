@@ -16,6 +16,7 @@ from aiohttp import WSMsgType, web
 CURRENT_DIR = os.path.dirname(__file__)
 REPO_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
 CLIENT_SPIKE_DIR = os.path.join(REPO_ROOT, "client", "transport-spike")
+CLIENT_SETUP_DIR = os.path.join(REPO_ROOT, "client", "setup")
 IDENTITY_DIR = os.path.join(REPO_ROOT, "identity")
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
@@ -1092,17 +1093,12 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
     return ws
 
 
-async def index_handler(_: web.Request) -> web.StreamResponse:
-    request = _
-    scheme = "https" if request.secure else "http"
-    spike_url = f"{scheme}://{request.host}/spike"
-    return web.Response(
-        text=(
-            "Qantara transport spike gateway is running.\n"
-            f"Open {spike_url} to use the browser client.\n"
-        ),
-        content_type="text/plain",
-    )
+async def index_handler(_request: web.Request) -> web.StreamResponse:
+    raise web.HTTPFound("/setup/index.html")
+
+
+async def setup_handler(_request: web.Request) -> web.StreamResponse:
+    raise web.HTTPFound("/setup/index.html")
 
 
 async def spike_handler(request: web.Request) -> web.StreamResponse:
@@ -1116,6 +1112,8 @@ def create_app() -> web.Application:
     app.router.add_get("/api/backends", api_backends_handler)
     app.router.add_get("/api/status", api_status_handler)
     app.router.add_post("/api/configure", api_configure_handler)
+    app.router.add_get("/setup", setup_handler)
+    app.router.add_static("/setup", CLIENT_SETUP_DIR, show_index=True)
     app.router.add_get("/spike", spike_handler)
     app.router.add_static("/spike", CLIENT_SPIKE_DIR, show_index=True)
     app.router.add_static("/identity", IDENTITY_DIR, show_index=False)

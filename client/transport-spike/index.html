@@ -340,9 +340,46 @@
         min-height: 240px;
       }
     }
+    .backend-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 8px 20px;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .backend-bar-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .backend-bar-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .backend-bar a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .backend-bar a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
+  <nav id="backendBar" class="backend-bar" style="display:none;">
+    <span class="backend-bar-label">
+      <span class="backend-bar-dot"></span>
+      <span id="backendBarText">—</span>
+    </span>
+    <a href="/setup">Change backend</a>
+  </nav>
   <main>
     <h1>Qantara Transport Spike</h1>
     <p>
@@ -478,6 +515,21 @@
   </main>
 
   <script>
+    // -- Backend status bar from localStorage --
+    (function () {
+      try {
+        var saved = JSON.parse(localStorage.getItem("qantara_backend"));
+        if (saved && saved.type) {
+          var label = saved.type.charAt(0).toUpperCase() + saved.type.slice(1);
+          if (saved.model) label += " \u00b7 " + saved.model;
+          else if (saved.agent) label += " \u00b7 " + saved.agent;
+          else if (saved.url) label += " \u00b7 " + saved.url;
+          document.getElementById("backendBarText").textContent = label;
+          document.getElementById("backendBar").style.display = "";
+        }
+      } catch (_) { /* ignore */ }
+    })();
+
     const TARGET_SAMPLE_RATE = 16000;
     const FRAMES_PER_PACKET = 640;
     const PCM_KIND = 0x01;
