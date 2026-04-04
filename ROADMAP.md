@@ -1,6 +1,6 @@
 # Roadmap
 
-Current version: `0.1.0-alpha.2`
+Current version: `0.1.3`
 
 This roadmap is the single source of truth for what to build and in what order. It is designed to be read by humans, Claude Code, and Codex alike.
 
@@ -13,8 +13,6 @@ Each phase includes **early releases** — small, shippable wins that go out as 
 ## Phase 0: Alpha Checkpoint — COMPLETE
 
 Version: `0.1.0-alpha.2`
-
-Everything below is done:
 
 - [x] Browser mic capture to gateway over WebSocket PCM
 - [x] Gateway-side VAD and endpointing
@@ -33,153 +31,173 @@ Everything below is done:
 
 ---
 
-## Phase 1: "It Just Works" — NEXT
+## Phase 1: "It Just Works" — IN PROGRESS
 
-**Goal:** Anyone can go from zero to a working local voice agent in under 60 seconds.
+**Goal:** Anyone can go from zero to a working local voice agent in under 60 seconds — with zero terminal knowledge.
 
 **Full version target:** `0.2.0`
 
-### Early Releases
+### Completed Releases
 
-#### `0.1.1` — Cleanup and contributor onboarding
+#### `0.1.2` — Provider plugin system — DONE
 
-The quickest release. No new features — just make the repo ready for others.
+- [x] Abstract base classes for STT and TTS providers
+- [x] Moved faster-whisper and Piper behind provider interfaces
+- [x] Factory selects provider by env var
+- [x] Generic `VoiceSpec` base, Piper-specific `PiperVoiceSpec` extends it
+- [x] `providers/README.md` contribution guide
+- [x] `safe_send_str` / `safe_send_bytes` for WebSocket safety
 
-- [ ] Add GitHub topics: `voice-ai`, `voice-agent`, `local-first`, `tts`, `stt`, `ollama`, `speech-to-speech`, `real-time`, `open-source`
-- [ ] Add `CONTRIBUTING.md` referencing AGENTS.md with the provider contribution pattern
-- [ ] Add issue templates: bug report, feature request, new provider (`.github/ISSUE_TEMPLATE/`)
-- [ ] Create 10 "good first issue" tickets with specific file references
-- [ ] Clean up any remaining TODO comments in source files
-- [ ] Add a `make test` target (even if it just runs a smoke test)
+#### `0.1.3` — Kokoro TTS — DONE
 
-**Files:** `.github/ISSUE_TEMPLATE/`, `CONTRIBUTING.md`, `Makefile`
-**Effort:** 1-2 hours
-**Ship when:** All items checked
+- [x] Kokoro provider implementing TTS base class
+- [x] `QANTARA_TTS_PROVIDER=kokoro` selects it
+- [x] 11 voice presets (US + GB English)
+- [x] Warm latency: **783ms** (48% faster than Piper's 1,513ms)
+- [x] Lazy pipeline caching per language code
 
-#### `0.1.2` — Provider plugin system
+### Next Releases
 
-Refactor STT and TTS so adding a new one is a single-file contribution. This unblocks all future provider work.
+#### `0.1.4` — Backend setup experience
 
-- [ ] Abstract base class for STT providers (`providers/stt/base.py`)
-- [ ] Abstract base class for TTS providers (`providers/tts/base.py`)
-- [ ] Move faster-whisper into `providers/stt/faster_whisper.py`
-- [ ] Move Piper into `providers/tts/piper.py`
-- [ ] Factory selects provider by `QANTARA_STT_PROVIDER` / `QANTARA_TTS_PROVIDER`
-- [ ] `providers/README.md` — "How to add a provider" guide
-- [ ] Update AGENTS.md with new provider patterns
+**Priority:** Critical — this is what makes Qantara usable by non-developers.
 
-**Files:** `providers/` (new), `gateway/transport_spike/server.py`
-**Effort:** 1-2 days
-**Ship when:** Existing STT/TTS works unchanged through new plugin system
+Right now, connecting Qantara to a backend requires knowing env vars, running multiple terminals, and understanding the adapter architecture. This must become effortless through three layers:
 
-#### `0.1.3` — Kokoro TTS
+**Layer 1: Browser setup page**
 
-Add the community's favorite local TTS. Immediate quality upgrade.
+When a user opens `http://localhost:8765`, they see a setup/welcome page instead of the raw spike UI.
 
-- [ ] Kokoro provider implementing TTS base class (`providers/tts/kokoro.py`)
-- [ ] `QANTARA_TTS_PROVIDER=kokoro` selects it
-- [ ] Auto-download or clear model setup instructions
-- [ ] First-audio latency measured and added to README
-- [ ] Piper remains the default fallback
+The page should:
+- Auto-detect available backends:
+  - Check `http://localhost:11434/api/tags` — if Ollama is running, show it with available models
+  - Check if an OpenClaw agent is reachable at a known port
+  - Always show "Custom URL" and "Demo (mock)" options
+- Let the user select a backend and configure it:
+  - **Ollama**: pick a model from the detected list
+  - **OpenClaw**: enter or select an agent ID
+  - **Custom**: enter a backend URL that implements the session contract
+  - **Demo**: no config needed, uses mock adapter for testing
+- Store the selection in the browser (localStorage) so it persists across refreshes
+- Show a "Start Talking" button that transitions to the voice UI
+- The voice UI (current spike page) should show the active backend in a compact status bar, with an option to go back to setup
 
-**Files:** `providers/tts/kokoro.py` (new)
-**Depends on:** `0.1.2` (plugin system)
-**Effort:** 1 day
-**Ship when:** Kokoro produces voice output through the full pipeline
+Implementation:
+- [ ] New HTML page: `client/setup/index.html` — served at `/` and `/setup`
+- [ ] Gateway API endpoint: `GET /api/backends` — returns detected backends
+  - Probes `localhost:11434` for Ollama, returns model list
+  - Probes known OpenClaw ports, returns agent list
+  - Returns mock as always-available
+- [ ] Gateway API endpoint: `POST /api/configure` — accepts backend selection
+  - Reconfigures the active adapter at runtime (or per-session)
+  - Returns confirmation with health check result
+- [ ] Gateway API endpoint: `GET /api/status` — returns current backend config
+- [ ] Spike page (`/spike`) updated: shows backend name in status bar, link to `/setup`
+- [ ] Root route `/` serves setup page (currently serves plain text)
 
-#### `0.1.4` — Docker one-command setup
+**Files:** `client/setup/index.html` (new), `gateway/transport_spike/server.py`, `client/transport-spike/index.html`
 
-The big one for Phase 1. This is what we launch with.
+**Layer 2: CLI profiles**
+
+For terminal users who prefer command-line setup:
+
+```bash
+# Auto-detect Ollama on localhost and use it
+qantara --backend ollama
+
+# Specify model
+qantara --backend ollama --model qwen2.5:7b
+
+# Use OpenClaw
+qantara --backend openclaw --agent spectra
+
+# Point at any custom backend
+qantara --backend http://my-service:8080
+
+# Demo mode (no backend needed)
+qantara --backend mock
+```
+
+The gateway starts the appropriate backend bridge as a managed subprocess — no second terminal needed. If Ollama is the backend, the gateway starts the Ollama session bridge internally. If OpenClaw is selected, it starts the OpenClaw bridge.
+
+Implementation:
+- [ ] CLI entry point: `qantara` command (via `pyproject.toml` console_scripts or a `cli.py`)
+- [ ] `--backend` flag with auto-detection
+- [ ] Managed subprocess for backend bridges (Ollama bridge, OpenClaw bridge)
+- [ ] Graceful shutdown of subprocesses on exit
+- [ ] Falls back to env vars if no CLI flags provided (backward compatible)
+
+**Files:** `cli.py` (new), `gateway/transport_spike/server.py`
+
+**Layer 3: Config file**
+
+For Docker Compose and persistent setups:
+
+```yaml
+# qantara.yml
+backend:
+  type: ollama               # ollama | openclaw | custom | mock
+  url: http://localhost:11434
+  model: qwen2.5:7b
+
+voice:
+  stt: faster_whisper
+  tts: kokoro
+
+server:
+  host: 0.0.0.0
+  port: 8765
+```
+
+Implementation:
+- [ ] `qantara.yml` loader — reads from repo root or `QANTARA_CONFIG` env var
+- [ ] Config values override defaults, CLI flags override config file, env vars override CLI
+- [ ] Example `qantara.example.yml` in repo root
+
+**Files:** `config.py` (new), `qantara.example.yml` (new)
+
+**Acceptance criteria (all three layers):**
+- A user opening the browser sees a setup page, picks Ollama, and starts talking — no terminal needed
+- `qantara --backend ollama` starts everything in one command
+- `docker compose up` with a mounted `qantara.yml` works with zero env vars
+- Existing env var workflow still works (backward compatible)
+- Setup page auto-detects running backends
+
+**Effort:** 3-5 days
+**Ship when:** Browser setup page works, CLI profiles work, config file loads
+
+#### `0.1.5` — Docker one-command setup
+
+The Docker release builds on top of the setup experience.
 
 - [ ] `Dockerfile` for Qantara gateway + STT + TTS
 - [ ] `docker-compose.yml` including Ollama with a default model
-- [ ] `docker compose up` → browser → speak → voice response
-- [ ] No env vars required for default setup
+- [ ] Default `qantara.yml` in the image pointing to the Ollama service
+- [ ] `docker compose up` → browser → setup page → select Ollama → speak → voice response
 - [ ] README updated with Docker as the primary quickstart
 
-**Files:** `Dockerfile`, `docker-compose.yml` (new), `README.md`
-**Depends on:** `0.1.3` (Kokoro as default TTS in Docker image)
+**Files:** `Dockerfile`, `docker-compose.yml` (new), `qantara.yml` (new), `README.md`
+**Depends on:** `0.1.4` (backend setup experience)
 **Effort:** 2-3 days
 **Ship when:** Fresh machine with Docker can run one command and have a voice agent
 
-### Full Phase 1 Tasks
+#### `0.1.6` — Contributor onboarding and launch prep
 
-### P1.1 — Docker packaging
+- [ ] Add GitHub topics for discoverability
+- [ ] Add `CONTRIBUTING.md` referencing AGENTS.md
+- [ ] Add issue templates: bug report, feature request, new provider
+- [ ] Create 10 "good first issue" tickets
+- [ ] Add `make test` target
+- [ ] Record 30-second demo video (docker compose up → browser → voice conversation)
+- [ ] Demo GIF or video linked at top of README
 
-**Priority:** Critical
-**Files:** `Dockerfile`, `docker-compose.yml` (new), `Makefile`
+**Files:** `.github/ISSUE_TEMPLATE/`, `CONTRIBUTING.md`, `Makefile`, `README.md`
+**Effort:** 1-2 days
+**Ship when:** All items checked, demo video recorded
 
-Create a single `docker compose up` that starts:
-- Qantara gateway with STT + TTS
-- Ollama backend with a default model (qwen2.5:7b or similar small model)
-- Browser client served at `http://localhost:8765`
+### Phase 1 Completion: `0.2.0` — PUBLIC LAUNCH
 
-Acceptance criteria:
-- Clone repo → `docker compose up` → open browser → speak → get voice response
-- No env vars required for default setup
-- Works on Linux x86_64 with Docker installed
-- README documents the one-command setup
-
-### P1.2 — Kokoro TTS integration
-
-**Priority:** High
-**Files:** `providers/tts/kokoro.py` (new), `gateway/transport_spike/server.py`
-**Depends on:** P1.3
-
-Add Kokoro (82M param, Apache 2.0) as a TTS provider alongside Piper.
-
-Acceptance criteria:
-- `QANTARA_TTS_PROVIDER=kokoro` selects Kokoro
-- `QANTARA_TTS_PROVIDER=piper` keeps current behavior (default)
-- First audio chunk latency measured and documented
-- Kokoro model auto-downloads or has clear setup instructions
-
-### P1.3 — Provider plugin system
-
-**Priority:** High
-**Files:** `providers/stt/base.py`, `providers/tts/base.py`, `providers/stt/faster_whisper.py`, `providers/tts/piper.py`, `providers/tts/kokoro.py`, `providers/README.md` (all new)
-
-Refactor STT and TTS into a clean plugin system:
-- Abstract base class for STT providers
-- Abstract base class for TTS providers
-- Each provider is a single file implementing the base class
-- Factory selects provider by `QANTARA_STT_PROVIDER` / `QANTARA_TTS_PROVIDER` env var
-- `providers/README.md` documents how to add a new provider (copy template, implement 3 methods)
-
-Acceptance criteria:
-- Existing faster-whisper and Piper work unchanged after refactor
-- Adding a new provider requires only: one new file + one line in factory
-- AGENTS.md is updated with the new pattern
-
-### P1.4 — Demo video and launch materials
-
-**Priority:** High
-**Files:** `README.md`, assets
-
-Record a 30-second terminal + browser demo:
-- Show `docker compose up`
-- Show browser opening
-- Show a voice conversation happening
-- No narration needed — just screen recording
-
-Acceptance criteria:
-- GIF or video linked at the top of README.md
-- README updated with docker compose instructions as the primary quickstart
-
-### P1.5 — GitHub discoverability
-
-**Priority:** Medium
-**Files:** GitHub repo settings, `.github/ISSUE_TEMPLATE/` (new)
-
-- Add repo topics
-- Create issue templates: bug report, feature request, new provider
-- Create 10 "good first issue" tickets with specific file references and context
-- Add `CONTRIBUTING.md` with the provider contribution pattern
-
-Acceptance criteria:
-- GitHub shows topics on repo page
-- At least 10 open issues labeled "good first issue"
-- CONTRIBUTING.md exists and references AGENTS.md
+All of the above merged and tested. This is the version we announce.
 
 ---
 
@@ -455,22 +473,23 @@ Acceptance criteria:
 ## Release Cadence
 
 ```
-0.1.0-alpha.2  ← you are here
-0.1.1          ← contributor onboarding (days away)
-0.1.2          ← provider plugin system
-0.1.3          ← Kokoro TTS
-0.1.4          ← Docker one-command setup
-0.2.0          ← Phase 1 complete, public launch
-0.2.1          ← Vosk STT
-0.2.2          ← Chatterbox TTS
-0.2.3          ← Agent protocol + tool calls
-0.2.4          ← pip install qantara
-0.3.0          ← Phase 2 complete
-0.3.1          ← Home Assistant
-0.3.2          ← Speech-native models
-0.3.3          ← Arabic voice
-0.3.4          ← Plugin registry
-0.4.0          ← Phase 3 complete
+0.1.0-alpha.2  ✅ Alpha checkpoint
+0.1.2          ✅ Provider plugin system
+0.1.3          ✅ Kokoro TTS (783ms warm, 48% faster than Piper)
+0.1.4          ⬜ Backend setup experience (browser + CLI + config)  ← CURRENT
+0.1.5          ⬜ Docker one-command setup
+0.1.6          ⬜ Contributor onboarding + demo video
+0.2.0          ⬜ Phase 1 complete → PUBLIC LAUNCH
+0.2.1          ⬜ Vosk STT
+0.2.2          ⬜ Chatterbox TTS
+0.2.3          ⬜ Agent protocol + tool calls
+0.2.4          ⬜ pip install qantara
+0.3.0          ⬜ Phase 2 complete
+0.3.1          ⬜ Home Assistant
+0.3.2          ⬜ Speech-native models
+0.3.3          ⬜ Arabic voice
+0.3.4          ⬜ Plugin registry
+0.4.0          ⬜ Phase 3 complete
 ```
 
 Target: one early release every 1-2 weeks. Each release is a tagged GitHub release with changelog.
