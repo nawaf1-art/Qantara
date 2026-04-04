@@ -1,0 +1,18 @@
+# Qantara configuration file.
+# Copy to qantara.yml and edit to match your setup.
+#
+# Precedence (highest wins): env vars > CLI flags > config file > defaults.
+
+backend:
+  type: ollama               # ollama | openclaw | custom | mock
+  url: http://localhost:11434
+  model: qwen2.5:7b
+  # agent: spectra            # only for openclaw backend
+
+voice:
+  stt: faster_whisper
+  tts: kokoro
+
+server:
+  host: 0.0.0.0
+  port: 8765

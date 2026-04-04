@@ -9,10 +9,10 @@ from dataclasses import dataclass
 from providers.tts.base import TTSProvider, VoiceSpec
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class PiperVoiceSpec(VoiceSpec):
     model_path: str
-    config_path: str | None
+    config_path: str | None = None
 
 
 def _default_model_path() -> str | None:

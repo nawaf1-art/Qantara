@@ -8,15 +8,20 @@ import sys
 import time
 import unicodedata
 import uuid
+from typing import Any
+
+import aiohttp as _aiohttp
 from aiohttp import WSMsgType, web
 
 CURRENT_DIR = os.path.dirname(__file__)
 REPO_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
 CLIENT_SPIKE_DIR = os.path.join(REPO_ROOT, "client", "transport-spike")
+CLIENT_SETUP_DIR = os.path.join(REPO_ROOT, "client", "setup")
 IDENTITY_DIR = os.path.join(REPO_ROOT, "identity")
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
+from adapters.base import AdapterConfig
 from adapters.factory import create_adapter, load_adapter_config
 from providers.factory import create_stt_provider, create_tts_provider
 
@@ -82,6 +87,254 @@ ADAPTER = create_adapter(ADAPTER_CONFIG)
 STT = create_stt_provider()
 TTS = create_tts_provider()
 LAST_ADAPTER_HEALTH = {"status": "unknown", "detail": "health pending"}
+
+# --- In-process configuration state for 0.1.4 setup experience ---
+
+_current_config: dict[str, Any] = {
+    "type": ADAPTER_CONFIG.kind,
+    "url": os.environ.get("QANTARA_BACKEND_BASE_URL", ""),
+    "model": os.environ.get("QANTARA_OLLAMA_MODEL", ""),
+    "agent": "",
+}
+
+# --- Managed backend bridge subprocess ---
+
+_BRIDGE_SCRIPTS: dict[str, str] = {
+    "ollama": os.path.join(REPO_ROOT, "gateway", "ollama_session_backend", "server.py"),
+    "openclaw": os.path.join(REPO_ROOT, "gateway", "openclaw_session_backend", "server.py"),
+}
+_managed_bridge_proc: asyncio.subprocess.Process | None = None
+_managed_bridge_type: str | None = None
+MANAGED_BRIDGE_PORT = 19120
+
+
+async def _stop_managed_bridge() -> None:
+    """Stop the currently running managed bridge subprocess, if any."""
+    global _managed_bridge_proc, _managed_bridge_type
+    if _managed_bridge_proc is None:
+        return
+    try:
+        _managed_bridge_proc.terminate()
+        try:
+            await asyncio.wait_for(_managed_bridge_proc.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            _managed_bridge_proc.kill()
+            await _managed_bridge_proc.wait()
+    except ProcessLookupError:
+        pass
+    _managed_bridge_proc = None
+    _managed_bridge_type = None
+
+
+async def _start_managed_bridge(bridge_type: str, env_overrides: dict[str, str] | None = None) -> None:
+    """Start a managed bridge subprocess, replacing any existing one."""
+    global _managed_bridge_proc, _managed_bridge_type
+    await _stop_managed_bridge()
+
+    script = _BRIDGE_SCRIPTS.get(bridge_type)
+    if script is None or not os.path.isfile(script):
+        return
+
+    env = os.environ.copy()
+    env["QANTARA_REAL_BACKEND_PORT"] = str(MANAGED_BRIDGE_PORT)
+    env["QANTARA_REAL_BACKEND_HOST"] = "127.0.0.1"
+    if env_overrides:
+        env.update(env_overrides)
+
+    _managed_bridge_proc = await asyncio.create_subprocess_exec(
+        sys.executable, script,
+        env=env,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _managed_bridge_type = bridge_type
+
+
+async def _health_check_bridge(url: str, retries: int = 8, delay: float = 0.4) -> dict[str, Any]:
+    """Poll bridge health endpoint until ready or retries exhausted."""
+    timeout = _aiohttp.ClientTimeout(total=2)
+    for attempt in range(retries):
+        try:
+            async with _aiohttp.ClientSession(timeout=timeout) as cs:
+                async with cs.get(f"{url}/health") as resp:
+                    if resp.status < 500:
+                        return {"status": "ok", "detail": "bridge healthy"}
+        except Exception:
+            pass
+        await asyncio.sleep(delay)
+    return {"status": "degraded", "detail": "bridge not ready after retries"}
+
+
+async def _cleanup_bridge(_app: web.Application) -> None:
+    """Cleanup hook: stop managed bridge on app shutdown."""
+    await _stop_managed_bridge()
+
+
+async def _probe_ollama() -> dict[str, Any]:
+    """Probe localhost Ollama for available models."""
+    url = "http://localhost:11434/api/tags"
+    try:
+        timeout = _aiohttp.ClientTimeout(total=3)
+        async with _aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    return {"available": False}
+                data = await resp.json()
+                models = [m.get("name", "") for m in data.get("models", []) if m.get("name")]
+                return {"available": True, "models": models}
+    except Exception:
+        return {"available": False}
+
+
+async def _probe_openclaw() -> dict[str, Any]:
+    """Conservative probe for OpenClaw on known port. Returns only reachability."""
+    if _managed_bridge_proc is not None and _managed_bridge_type != "openclaw":
+        return {"available": False}
+    url = f"http://localhost:{MANAGED_BRIDGE_PORT}/health"
+    try:
+        timeout = _aiohttp.ClientTimeout(total=3)
+        async with _aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url) as resp:
+                return {"available": resp.status < 500}
+    except Exception:
+        return {"available": False}
+
+
+async def api_backends_handler(_request: web.Request) -> web.Response:
+    """GET /api/backends — detect available backends."""
+    ollama_result, openclaw_result = await asyncio.gather(
+        _probe_ollama(), _probe_openclaw()
+    )
+
+    backends: list[dict[str, Any]] = [
+        {"type": "mock", "name": "Demo (mock)", "available": True},
+    ]
+
+    if ollama_result["available"]:
+        backends.append({
+            "type": "ollama",
+            "name": "Ollama",
+            "available": True,
+            "models": ollama_result.get("models", []),
+        })
+    else:
+        backends.append({"type": "ollama", "name": "Ollama", "available": False})
+
+    if openclaw_result["available"]:
+        backends.append({"type": "openclaw", "name": "OpenClaw", "available": True})
+    else:
+        backends.append({"type": "openclaw", "name": "OpenClaw", "available": False})
+
+    backends.append({"type": "custom", "name": "Custom URL", "available": True})
+
+    return web.json_response({"backends": backends})
+
+
+async def api_status_handler(_request: web.Request) -> web.Response:
+    """GET /api/status — return current backend configuration and health."""
+    return web.json_response({
+        "type": _current_config["type"],
+        "model": _current_config["model"],
+        "agent": _current_config["agent"],
+        "url": _current_config["url"],
+        "adapter_kind": ADAPTER.adapter_kind,
+        "health": LAST_ADAPTER_HEALTH,
+        "managed_bridge": _managed_bridge_type,
+    })
+
+
+async def api_configure_handler(request: web.Request) -> web.Response:
+    """POST /api/configure — switch backend adapter in-process.
+
+    Accepted body shapes:
+      {"type":"ollama","model":"qwen2.5:7b"}
+      {"type":"openclaw","agent":"spectra"}
+      {"type":"custom","url":"http://..."}
+      {"type":"mock"}
+    """
+    global ADAPTER, ADAPTER_CONFIG, _current_config
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid JSON body"}, status=400)
+
+    backend_type = body.get("type", "").strip().lower()
+    if not backend_type:
+        return web.json_response({"error": "missing 'type' field"}, status=400)
+
+    url = body.get("url", "").strip().rstrip("/")
+    model = body.get("model", "").strip()
+    agent = body.get("agent", "").strip()
+
+    bridge_url = f"http://127.0.0.1:{MANAGED_BRIDGE_PORT}"
+
+    # Map user-facing type to adapter kind + url, manage bridge subprocess
+    if backend_type == "mock":
+        adapter_kind = "mock"
+        url = ""
+        await _stop_managed_bridge()
+    elif backend_type == "ollama":
+        adapter_kind = "session_gateway_http"
+        env_overrides: dict[str, str] = {}
+        if model:
+            env_overrides["QANTARA_OLLAMA_MODEL"] = model
+        await _start_managed_bridge("ollama", env_overrides=env_overrides)
+        await _health_check_bridge(bridge_url)
+        url = url or bridge_url
+    elif backend_type == "openclaw":
+        adapter_kind = "session_gateway_http"
+        env_overrides = {}
+        if agent:
+            env_overrides["QANTARA_OPENCLAW_AGENT_ID"] = agent
+        await _start_managed_bridge("openclaw", env_overrides=env_overrides)
+        await _health_check_bridge(bridge_url)
+        url = url or bridge_url
+    elif backend_type == "custom":
+        if not url:
+            return web.json_response(
+                {"error": "custom type requires 'url'"}, status=400
+            )
+        adapter_kind = "session_gateway_http"
+        await _stop_managed_bridge()
+    else:
+        return web.json_response(
+            {"error": f"unknown type: {backend_type}"}, status=400
+        )
+
+    # Build new adapter config and swap
+    new_config = AdapterConfig(kind=adapter_kind, name=backend_type)
+    if adapter_kind == "session_gateway_http":
+        new_config.options["base_url"] = url
+
+    new_adapter = create_adapter(new_config)
+    ADAPTER_CONFIG = new_config
+    ADAPTER = new_adapter
+
+    _current_config = {
+        "type": backend_type,
+        "url": url,
+        "model": model,
+        "agent": agent,
+    }
+
+    # Health-check the new adapter
+    try:
+        health = await ADAPTER.check_health()
+        health_result = {"status": health.status, "detail": health.detail}
+    except Exception as exc:
+        health_result = {"status": "degraded", "detail": str(exc)}
+
+    global LAST_ADAPTER_HEALTH
+    LAST_ADAPTER_HEALTH = health_result
+
+    return web.json_response({
+        "ok": True,
+        "type": backend_type,
+        "adapter_kind": adapter_kind,
+        "url": url,
+        "health": health_result,
+    })
 
 
 async def refresh_adapter_health(session: Session | None = None) -> None:
@@ -840,17 +1093,12 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
     return ws
 
 
-async def index_handler(_: web.Request) -> web.StreamResponse:
-    request = _
-    scheme = "https" if request.secure else "http"
-    spike_url = f"{scheme}://{request.host}/spike"
-    return web.Response(
-        text=(
-            "Qantara transport spike gateway is running.\n"
-            f"Open {spike_url} to use the browser client.\n"
-        ),
-        content_type="text/plain",
-    )
+async def index_handler(_request: web.Request) -> web.StreamResponse:
+    raise web.HTTPFound("/setup/index.html")
+
+
+async def setup_handler(_request: web.Request) -> web.StreamResponse:
+    raise web.HTTPFound("/setup/index.html")
 
 
 async def spike_handler(request: web.Request) -> web.StreamResponse:
@@ -861,9 +1109,15 @@ def create_app() -> web.Application:
     app = web.Application()
     app.router.add_get("/", index_handler)
     app.router.add_get("/ws", websocket_handler)
+    app.router.add_get("/api/backends", api_backends_handler)
+    app.router.add_get("/api/status", api_status_handler)
+    app.router.add_post("/api/configure", api_configure_handler)
+    app.router.add_get("/setup", setup_handler)
+    app.router.add_static("/setup", CLIENT_SETUP_DIR, show_index=True)
     app.router.add_get("/spike", spike_handler)
     app.router.add_static("/spike", CLIENT_SPIKE_DIR, show_index=True)
     app.router.add_static("/identity", IDENTITY_DIR, show_index=False)
+    app.on_cleanup.append(_cleanup_bridge)
     return app
 
 
