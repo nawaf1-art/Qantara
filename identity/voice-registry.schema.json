@@ -36,7 +36,7 @@
           },
           "engine": {
             "type": "string",
-            "enum": ["piper", "coqui", "melo", "custom"]
+            "enum": ["piper", "kokoro", "coqui", "melo", "custom"]
           },
           "locale": {
             "type": "string",

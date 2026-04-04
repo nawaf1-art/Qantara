@@ -52,6 +52,10 @@ Primary engine:
 
 - Piper
 
+Next engine:
+
+- Kokoro
+
 Optional later engines:
 
 - Coqui TTS
