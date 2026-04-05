@@ -95,18 +95,33 @@ class KokoroTTSProvider(TTSProvider):
         speed = max(0.85, min(1.30, float(speed)))
         pipeline = self._ensure_pipeline(self._lang_code_for_voice(voice.voice_id))
 
+        # Offload CPU-bound synthesis to a thread so the event loop stays
+        # responsive for barge-in, VAD, and WebSocket control messages.
+        import asyncio
+        samples = await asyncio.to_thread(
+            self._synthesize_sync, pipeline, text, voice.voice_id, speed
+        )
+        return samples, voice, fallback_reason
+
+    def _synthesize_sync(
+        self,
+        pipeline: object,
+        text: str,
+        voice_id: str,
+        speed: float,
+    ) -> list[int]:
+        """Run Kokoro synthesis on a thread pool worker."""
         chunks = []
-        generator = pipeline(text, voice=voice.voice_id, speed=speed, split_pattern=r"\n+")
+        generator = pipeline(text, voice=voice_id, speed=speed, split_pattern=r"\n+")
         for _, _, audio in generator:
             chunks.append(np.asarray(audio, dtype=np.float32))
 
         if not chunks:
-            return [], voice, fallback_reason
+            return []
 
         merged = np.concatenate(chunks)
         clipped = np.clip(merged, -1.0, 1.0)
-        samples = (clipped * 32767.0).astype(np.int16).tolist()
-        return samples, voice, fallback_reason
+        return (clipped * 32767.0).astype(np.int16).tolist()
 
     def _ensure_pipeline(self, lang_code: str):
         if lang_code not in self._pipelines:
