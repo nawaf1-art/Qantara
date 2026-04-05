@@ -1,78 +1,150 @@
 {
-  "schema_version": "2.0",
-  "renderer": "dicebear_adventurer",
+  "schema_version": "3.0",
+  "renderer": "gsap_svg",
   "presets": [
     {
       "avatar_id": "qantara",
       "display_name": "Qantara",
       "title": "Qantara",
-      "dicebear_seed": "Qantara",
-      "dicebear_bg": "d1fae5",
-      "dicebear_accent": "#0f766e"
+      "palette": {
+        "skin": "#f9edd9",
+        "hair_primary": "#705c48",
+        "accent_primary": "#0f766e",
+        "accent_secondary": "#c47070"
+      },
+      "visual": {
+        "eye_fill": "#2d2d2d",
+        "brow_stroke": "#705c48",
+        "face_stroke": "#c4a882"
+      }
     },
     {
       "avatar_id": "spectra",
       "display_name": "Spectra",
       "title": "Spectra",
-      "dicebear_seed": "Spectra",
-      "dicebear_bg": "dbeafe",
-      "dicebear_accent": "#2563eb"
+      "palette": {
+        "skin": "#e8eef5",
+        "hair_primary": "#334155",
+        "accent_primary": "#2563eb",
+        "accent_secondary": "#6366f1"
+      },
+      "visual": {
+        "eye_fill": "#0f172a",
+        "brow_stroke": "#334155",
+        "face_stroke": "#94a3b8"
+      }
     },
     {
       "avatar_id": "atlas",
       "display_name": "Atlas",
       "title": "Atlas",
-      "dicebear_seed": "Atlas",
-      "dicebear_bg": "fef3c7",
-      "dicebear_accent": "#b45309"
+      "palette": {
+        "skin": "#eee3d0",
+        "hair_primary": "#6f4a1d",
+        "accent_primary": "#b45309",
+        "accent_secondary": "#9a3412"
+      },
+      "visual": {
+        "eye_fill": "#20130b",
+        "brow_stroke": "#6f4a1d",
+        "face_stroke": "#b8a080"
+      }
     },
     {
       "avatar_id": "nouf",
       "display_name": "Nouf",
       "title": "Nouf",
-      "dicebear_seed": "Nouf",
-      "dicebear_bg": "fce7f3",
-      "dicebear_accent": "#be185d"
+      "palette": {
+        "skin": "#f6e7df",
+        "hair_primary": "#7a3c59",
+        "accent_primary": "#be185d",
+        "accent_secondary": "#e11d79"
+      },
+      "visual": {
+        "eye_fill": "#3f1d2e",
+        "brow_stroke": "#7a3c59",
+        "face_stroke": "#c4a0a8"
+      }
     },
     {
       "avatar_id": "sora",
       "display_name": "Sora",
       "title": "Sora",
-      "dicebear_seed": "Sora",
-      "dicebear_bg": "ede9fe",
-      "dicebear_accent": "#7c3aed"
+      "palette": {
+        "skin": "#f3dfd3",
+        "hair_primary": "#5d4f6d",
+        "accent_primary": "#7c3aed",
+        "accent_secondary": "#9d4edd"
+      },
+      "visual": {
+        "eye_fill": "#2b2036",
+        "brow_stroke": "#5d4f6d",
+        "face_stroke": "#b8a0c0"
+      }
     },
     {
       "avatar_id": "kaia",
       "display_name": "Kaia",
       "title": "Kaia",
-      "dicebear_seed": "Kaia",
-      "dicebear_bg": "cffafe",
-      "dicebear_accent": "#06b6d4"
+      "palette": {
+        "skin": "#f5e8da",
+        "hair_primary": "#0f172a",
+        "accent_primary": "#06b6d4",
+        "accent_secondary": "#0891b2"
+      },
+      "visual": {
+        "eye_fill": "#0f172a",
+        "brow_stroke": "#334155",
+        "face_stroke": "#94a3b8"
+      }
     },
     {
       "avatar_id": "rakan",
       "display_name": "Rakan",
       "title": "Rakan",
-      "dicebear_seed": "Rakan",
-      "dicebear_bg": "fee2e2",
-      "dicebear_accent": "#dc2626"
+      "palette": {
+        "skin": "#ead9c2",
+        "hair_primary": "#4a2f1d",
+        "accent_primary": "#dc2626",
+        "accent_secondary": "#b91c1c"
+      },
+      "visual": {
+        "eye_fill": "#2b140d",
+        "brow_stroke": "#4a2f1d",
+        "face_stroke": "#b09070"
+      }
     },
     {
       "avatar_id": "mira",
       "display_name": "Mira",
       "title": "Mira",
-      "dicebear_seed": "Mira",
-      "dicebear_bg": "fbcfe8",
-      "dicebear_accent": "#ec4899"
+      "palette": {
+        "skin": "#f6e1d8",
+        "hair_primary": "#8b5e83",
+        "accent_primary": "#ec4899",
+        "accent_secondary": "#db2777"
+      },
+      "visual": {
+        "eye_fill": "#48253f",
+        "brow_stroke": "#8b5e83",
+        "face_stroke": "#c4a0b0"
+      }
     },
     {
       "avatar_id": "vega",
       "display_name": "Vega",
       "title": "Vega",
-      "dicebear_seed": "Vega",
-      "dicebear_bg": "dcfce7",
-      "dicebear_accent": "#22c55e"
+      "palette": {
+        "skin": "#e8e3d8",
+        "hair_primary": "#1f2937",
+        "accent_primary": "#22c55e",
+        "accent_secondary": "#15803d"
+      },
+      "visual": {
+        "eye_fill": "#111827",
+        "brow_stroke": "#374151",
+        "face_stroke": "#9ca3af"
+      }
     }
   ]
 }

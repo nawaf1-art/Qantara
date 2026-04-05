@@ -136,7 +136,7 @@
 
     .avatar-card {
       position: relative;
-      overflow: hidden;
+      overflow: visible;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -179,41 +179,84 @@
 
     .avatar-shell {
       position: relative;
-      width: 190px;
-      height: 190px;
+      width: 200px;
+      height: 200px;
       display: flex;
       align-items: center;
       justify-content: center;
     }
 
+    /* Glowing ring behind avatar */
     .avatar-shell::before {
       content: "";
       position: absolute;
-      inset: 8px;
+      inset: -8px;
       border-radius: 999px;
-      background: radial-gradient(circle, var(--avatar-glow, rgba(15, 118, 110, 0.16)), transparent 70%);
-      transition: transform 180ms ease, opacity 180ms ease;
-      opacity: 0.8;
-      transform: scale(0.96);
+      border: 3px solid var(--avatar-ring, var(--accent));
+      opacity: 0;
+      transform: scale(0.92);
+      transition: all 300ms ease;
     }
 
+    /* Soft glow fill */
+    .avatar-shell::after {
+      content: "";
+      position: absolute;
+      inset: -12px;
+      border-radius: 999px;
+      background: radial-gradient(circle, var(--avatar-glow, rgba(15, 118, 110, 0.18)), transparent 65%);
+      opacity: 0.4;
+      transform: scale(0.9);
+      transition: all 300ms ease;
+    }
+
+    /* Idle: gentle breathing glow */
+    .avatar-shell.idle::after {
+      animation: avatarBreatheGlow 4s ease-in-out infinite;
+    }
+
+    /* Listening: ring appears + pulses */
     .avatar-shell.listening::before {
-      animation: avatarPulse 1.35s ease-in-out infinite;
+      opacity: 0.7;
+      animation: avatarRingPulse 1.5s ease-in-out infinite;
     }
 
-    .avatar-shell.thinking::before,
-    .avatar-shell.speaking::before {
-      opacity: 1;
+    .avatar-shell.listening::after {
+      opacity: 0.8;
       transform: scale(1.05);
+    }
+
+    /* Thinking: ring slow rotate glow */
+    .avatar-shell.thinking::before {
+      opacity: 0.5;
+      border-style: dashed;
+      animation: avatarThinkSpin 3s linear infinite;
+    }
+
+    .avatar-shell.thinking::after {
+      opacity: 0.7;
+      animation: avatarThinkGlow 2s ease-in-out infinite;
+    }
+
+    /* Speaking: strong pulsing ring */
+    .avatar-shell.speaking::before {
+      opacity: 0.9;
+      border-width: 4px;
+      animation: avatarSpeakRing 0.8s ease-in-out infinite;
+    }
+
+    .avatar-shell.speaking::after {
+      opacity: 1;
+      transform: scale(1.1);
     }
 
     .avatar-badge {
       position: absolute;
-      top: 8px;
-      left: 8px;
+      top: 4px;
+      left: 4px;
       border-radius: 999px;
       padding: 5px 9px;
-      background: rgba(255, 255, 255, 0.82);
+      background: rgba(255, 255, 255, 0.85);
       border: 1px solid var(--line);
       color: var(--muted);
       font-size: 0.72rem;
@@ -222,23 +265,45 @@
       z-index: 2;
     }
 
-    .avatar-img {
-      width: 170px;
-      height: 170px;
-      border-radius: 50%;
+    .avatar-svg {
+      width: 190px;
+      height: 210px;
       position: relative;
       z-index: 1;
       filter: drop-shadow(0 10px 26px rgba(31, 35, 40, 0.12));
-      transition: transform 200ms ease;
-      object-fit: cover;
     }
 
-    .avatar-shell.speaking .avatar-img {
-      transform: scale(1.04);
+    .avatar-face-fill {
+      transition: fill 400ms ease;
     }
 
-    .avatar-shell.listening .avatar-img {
-      transform: scale(1.02);
+    .avatar-eye {
+      transform-origin: center;
+    }
+
+    @keyframes avatarBreatheGlow {
+      0%, 100% { transform: scale(0.9); opacity: 0.3; }
+      50% { transform: scale(1.0); opacity: 0.6; }
+    }
+
+    @keyframes avatarRingPulse {
+      0%, 100% { transform: scale(1.0); opacity: 0.5; }
+      50% { transform: scale(1.08); opacity: 0.9; }
+    }
+
+    @keyframes avatarThinkSpin {
+      0% { transform: scale(1.02) rotate(0deg); }
+      100% { transform: scale(1.02) rotate(360deg); }
+    }
+
+    @keyframes avatarThinkGlow {
+      0%, 100% { transform: scale(1.0); opacity: 0.5; }
+      50% { transform: scale(1.08); opacity: 0.8; }
+    }
+
+    @keyframes avatarSpeakRing {
+      0%, 100% { transform: scale(1.0); opacity: 0.6; }
+      50% { transform: scale(1.12); opacity: 1; }
     }
 
     .avatar-caption {
@@ -300,10 +365,7 @@
       transition: width 60ms linear;
     }
 
-    @keyframes avatarPulse {
-      0%, 100% { transform: scale(0.96); opacity: 0.72; }
-      50% { transform: scale(1.05); opacity: 1; }
-    }
+    /* avatarPulse removed — replaced by avatarRingPulse and state-specific animations */
 
     @media (max-width: 760px) {
       .hero {
@@ -366,7 +428,27 @@
         <div class="panel avatar-card" style="margin-top: 0;">
           <div id="avatarShell" class="avatar-shell idle">
             <div id="avatarBadge" class="avatar-badge">Idle</div>
-            <img id="avatarImg" class="avatar-img" src="https://api.dicebear.com/9.x/adventurer/svg?seed=Qantara&radius=50&backgroundColor=d1fae5" alt="Qantara Avatar" />
+            <svg id="avatarSvg" class="avatar-svg" viewBox="0 0 200 220" aria-label="Avatar" role="img">
+              <!-- Neck -->
+              <rect x="88" y="166" width="24" height="18" rx="6" fill="#f9edd9" id="av-neck"/>
+              <!-- Face -->
+              <ellipse id="av-face" class="avatar-face-fill" cx="100" cy="110" rx="52" ry="60" fill="#f9edd9" stroke="#c4a882" stroke-width="1.5"/>
+              <!-- Hair (solid, covers top third of head) -->
+              <path id="av-hair" d="M48 90C48 52 70 30 100 30C130 30 152 52 152 90C152 82 148 72 140 64C140 78 124 88 100 88C76 88 60 78 60 64C52 72 48 82 48 90Z" fill="#705c48"/>
+              <!-- Eyes -->
+              <ellipse id="av-eye-l" class="avatar-eye" cx="80" cy="108" rx="6" ry="8" fill="#2d2d2d"/>
+              <ellipse id="av-eye-r" class="avatar-eye" cx="120" cy="108" rx="6" ry="8" fill="#2d2d2d"/>
+              <!-- Eye highlights -->
+              <ellipse cx="82" cy="106" rx="2" ry="2.5" fill="#fff" opacity="0.8"/>
+              <ellipse cx="122" cy="106" rx="2" ry="2.5" fill="#fff" opacity="0.8"/>
+              <!-- Eyebrows -->
+              <path id="av-brow-l" d="M68 95C74 91 80 90 88 92" fill="none" stroke="#705c48" stroke-width="2.2" stroke-linecap="round"/>
+              <path id="av-brow-r" d="M112 92C120 90 126 91 132 95" fill="none" stroke="#705c48" stroke-width="2.2" stroke-linecap="round"/>
+              <!-- Nose -->
+              <path d="M97 120C99 124 101 124 103 120" fill="none" stroke="#c4a882" stroke-width="1.2" stroke-linecap="round"/>
+              <!-- Mouth (GSAP morphs this) -->
+              <path id="av-mouth" d="M80 138 Q100 142 120 138" fill="#c47070" stroke="#c47070" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
           </div>
         </div>
         <div class="panel avatar-caption" style="margin-top: 0;">
@@ -375,8 +457,7 @@
             <span class="avatar-state-dot"></span>
             <span id="avatarStateText">Idle</span>
           </div>
-          <p>
-            Voice assistant avatar powered by <a href="https://www.dicebear.com/styles/adventurer/" target="_blank" style="color: var(--accent);">DiceBear Adventurer</a>.
+          <p id="avatarDescription">
             Reflects listening, thinking, and speaking states.
           </p>
           <div class="avatar-meter">
@@ -415,8 +496,8 @@
         <div class="selector-card">
           <label for="speechSpeed">
             <span>Speech Speed</span>
-            <input id="speechSpeed" type="range" min="0.85" max="1.30" step="0.05" value="1.20">
-            <span id="speechSpeedValue">1.20x</span>
+            <input id="speechSpeed" type="range" min="0.85" max="1.30" step="0.05" value="1.00">
+            <span id="speechSpeedValue">1.00x</span>
           </label>
         </div>
       </div>
@@ -532,17 +613,7 @@
     const avatarState = document.getElementById("avatarState");
     const avatarStateText = document.getElementById("avatarStateText");
     const avatarTitle = document.getElementById("avatarTitle");
-    const avatarImg = document.getElementById("avatarImg");
     const avatarMeterFill = document.getElementById("avatarMeterFill");
-
-    // DiceBear Adventurer avatar URL builder
-    const DICEBEAR_BASE = "https://api.dicebear.com/9.x/adventurer/svg";
-    function buildAvatarUrl(seed, bgColor, extraParams) {
-      var url = DICEBEAR_BASE + "?seed=" + encodeURIComponent(seed) + "&radius=50";
-      if (bgColor) url += "&backgroundColor=" + bgColor;
-      if (extraParams) url += "&" + extraParams;
-      return url;
-    }
 
     const AVATAR_PRESETS = {};
 
@@ -592,8 +663,15 @@
     let audioMode = localStorage.getItem("qantara_audio_mode") || audioModeSelect?.value || "speakers";
     let ttsVoiceId = localStorage.getItem("qantara_tts_voice") || ttsVoiceSelect?.value || "lessac";
     let avatarPreset = localStorage.getItem("qantara_avatar_preset") || avatarPresetSelect?.value || "qantara";
-    let voicePreset = localStorage.getItem("qantara_voice_preset") || voicePresetSelect?.value || "steady";
-    let speechSpeed = Number(localStorage.getItem("qantara_speech_speed") || speechSpeedInput?.value || "1.20");
+    // Clear stale voice/speed settings that may have been saved with non-default values
+    if (localStorage.getItem("qantara_voice_preset") && localStorage.getItem("qantara_voice_preset") !== "steady") {
+      localStorage.removeItem("qantara_voice_preset");
+    }
+    if (localStorage.getItem("qantara_speech_speed") && localStorage.getItem("qantara_speech_speed") !== "1") {
+      localStorage.removeItem("qantara_speech_speed");
+    }
+    let voicePreset = localStorage.getItem("qantara_voice_preset") || "steady";
+    let speechSpeed = Number(localStorage.getItem("qantara_speech_speed") || speechSpeedInput?.value || "1.00");
     let clientSessionId = localStorage.getItem("qantara_client_session_id");
     if (!clientSessionId) {
       clientSessionId = (crypto?.randomUUID?.() || `qantara-${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -650,9 +728,24 @@
       updateAvatarState();
     }
 
+    var _playbackDisplayTimer = null;
     function setPlaybackState(value) {
-      updateText("playbackState", value);
       playbackActive = value === "playing";
+      if (playbackActive) {
+        // Immediately show "playing"
+        if (_playbackDisplayTimer) { clearTimeout(_playbackDisplayTimer); _playbackDisplayTimer = null; }
+        updateText("playbackState", "playing");
+      } else {
+        // Delay showing "idle" to prevent flickering between PCM chunks
+        if (!_playbackDisplayTimer) {
+          _playbackDisplayTimer = setTimeout(function() {
+            _playbackDisplayTimer = null;
+            if (!playbackActive) {
+              updateText("playbackState", "idle");
+            }
+          }, 600);
+        }
+      }
       updateAvatarState();
     }
 
@@ -678,8 +771,15 @@
       updateAvatarState();
     }
 
+    var _speakingHoldUntil = 0;
+
     function getAvatarVisualState() {
-      if (playbackActive) return "speaking";
+      var now = Date.now();
+      if (playbackActive) {
+        _speakingHoldUntil = now + 800; // hold speaking state for 800ms after last audio frame
+        return "speaking";
+      }
+      if (now < _speakingHoldUntil) return "speaking"; // still in hold period — prevents flickering
       if (backendTurnActive) return "thinking";
       if (micActive) return "listening";
       return "idle";
@@ -689,6 +789,10 @@
       const clamped = Math.max(0, Math.min(1, level));
       if (avatarMeterFill) {
         avatarMeterFill.style.width = `${clamped * 100}%`;
+      }
+      // Drive GSAP mouth morph from amplitude
+      if (window._gsapMouthTween) {
+        window._gsapMouthTween.progress(clamped);
       }
     }
 
@@ -700,23 +804,42 @@
         avatarTitle.textContent = preset.title || preset.display_name || avatarPreset;
       }
 
-      // Build DiceBear Adventurer URL from preset
-      var seed = preset.dicebear_seed || preset.avatar_id || avatarPreset;
-      var bgColor = (preset.dicebear_bg || "d1fae5").replace("#", "");
-      var url = buildAvatarUrl(seed, bgColor);
-      if (avatarImg) {
-        avatarImg.src = url;
-        avatarImg.alt = (preset.display_name || avatarPreset) + " Avatar";
-      }
+      // Apply colors to the SVG face
+      var skin = preset.palette?.skin || "#f9edd9";
+      var hair = preset.palette?.hair_primary || "#705c48";
+      var accent = preset.palette?.accent_primary || "#0f766e";
+      var mouthColor = preset.palette?.accent_secondary || "#c47070";
+      var eyeColor = preset.visual?.eye_fill || "#2d2d2d";
+      var browColor = preset.visual?.brow_stroke || hair;
+      var faceStroke = preset.visual?.face_stroke || "#c4a882";
 
-      // Update glow color
-      var accentHex = preset.dicebear_accent || "#0f766e";
+      var face = document.getElementById("av-face");
+      var hairEl = document.getElementById("av-hair");
+      var mouth = document.getElementById("av-mouth");
+      var eyeL = document.getElementById("av-eye-l");
+      var eyeR = document.getElementById("av-eye-r");
+      var browL = document.getElementById("av-brow-l");
+      var browR = document.getElementById("av-brow-r");
+
+      if (face) { face.setAttribute("fill", skin); face.setAttribute("stroke", faceStroke); }
+      if (hairEl) { hairEl.setAttribute("fill", hair); }
+      if (mouth) { mouth.setAttribute("stroke", mouthColor); }
+      if (eyeL) { eyeL.setAttribute("fill", eyeColor); }
+      if (eyeR) { eyeR.setAttribute("fill", eyeColor); }
+      if (browL) { browL.setAttribute("stroke", browColor); }
+      if (browR) { browR.setAttribute("stroke", browColor); }
+      // Neck matches skin
+      var neck = document.getElementById("av-neck");
+      if (neck) { neck.setAttribute("fill", skin); }
+
+      // Update glow and ring color
       if (avatarShell) {
-        avatarShell.style.setProperty("--avatar-glow", rgbaFromHex(accentHex, 0.20));
+        avatarShell.style.setProperty("--avatar-glow", rgbaFromHex(accent, 0.22));
+        avatarShell.style.setProperty("--avatar-ring", accent);
       }
       var avatarCard = document.querySelector(".avatar-card");
       if (avatarCard) {
-        avatarCard.style.background = "radial-gradient(circle at top, " + rgbaFromHex(accentHex, 0.18) + ", transparent 45%), linear-gradient(160deg, #fffdf8 0%, #f4ece0 100%)";
+        avatarCard.style.background = "radial-gradient(circle at top, " + rgbaFromHex(accent, 0.18) + ", transparent 45%), linear-gradient(160deg, #fffdf8 0%, #f4ece0 100%)";
       }
     }
 
@@ -792,7 +915,7 @@
     }
 
     function getSpeechSpeed() {
-      return Math.max(0.85, Math.min(1.30, Number.isFinite(speechSpeed) ? speechSpeed : 1.2));
+      return Math.max(0.85, Math.min(1.30, Number.isFinite(speechSpeed) ? speechSpeed : 1.0));
     }
 
     function updateAvatarState() {
@@ -826,7 +949,9 @@
         for (let i = 0; i < playbackAnalyserData.length; i += 1) {
           total += Math.abs(playbackAnalyserData[i] - 128);
         }
-        const level = Math.min(1, (total / playbackAnalyserData.length) / 42);
+        // Amplify and curve so mouth opens visibly even for quieter speech
+        const raw = (total / playbackAnalyserData.length) / 28;
+        const level = Math.min(1, Math.pow(Math.min(1, raw), 0.6));
         setAvatarMeter(level);
       };
       avatarAnimationFrame = requestAnimationFrame(tick);
@@ -1539,6 +1664,64 @@
 
     updateAvatarState();
     loadAvatarPresets();
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/MorphSVGPlugin.min.js"></script>
+  <script>
+  (function() {
+    // --- GSAP Mouth Animation ---
+    var mouthEl = document.getElementById("av-mouth");
+    var eyeL = document.getElementById("av-eye-l");
+    var eyeR = document.getElementById("av-eye-r");
+    if (!mouthEl || typeof gsap === "undefined") return;
+
+    // Mouth shapes
+    // Closed: gentle smile line
+    var MOUTH_CLOSED = "M80 138 Q100 142 120 138";
+    // Open: wide oval mouth for speaking
+    var MOUTH_OPEN   = "M80 134 Q100 162 120 134";
+    var MOUTH_SMILE  = "M78 136 Q100 150 122 136";
+
+    // Create a paused morph tween — we scrub it with .progress(amplitude)
+    var mouthTween = gsap.to(mouthEl, {
+      morphSVG: MOUTH_OPEN,
+      duration: 1,
+      paused: true,
+      ease: "none"
+    });
+
+    // Expose for the existing animation loop
+    window._gsapMouthTween = mouthTween;
+
+    // --- Eye Blink ---
+    function blink() {
+      gsap.to([eyeL, eyeR], {
+        attr: { ry: 1 },
+        duration: 0.08,
+        yoyo: true,
+        repeat: 1,
+        ease: "power2.inOut"
+      });
+      var next = 2500 + Math.random() * 4000;
+      // Occasional double blink
+      if (Math.random() < 0.2) {
+        setTimeout(function() {
+          gsap.to([eyeL, eyeR], { attr: { ry: 1 }, duration: 0.06, yoyo: true, repeat: 1 });
+        }, 200);
+      }
+      setTimeout(blink, next);
+    }
+    setTimeout(blink, 1500 + Math.random() * 2000);
+
+    // --- Breathing (idle) ---
+    gsap.to("#avatarSvg", {
+      y: 3,
+      duration: 2.5,
+      yoyo: true,
+      repeat: -1,
+      ease: "sine.inOut"
+    });
+  })();
   </script>
 </body>
 </html>
