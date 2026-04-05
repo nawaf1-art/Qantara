@@ -663,14 +663,7 @@
     let audioMode = localStorage.getItem("qantara_audio_mode") || audioModeSelect?.value || "speakers";
     let ttsVoiceId = localStorage.getItem("qantara_tts_voice") || ttsVoiceSelect?.value || "lessac";
     let avatarPreset = localStorage.getItem("qantara_avatar_preset") || avatarPresetSelect?.value || "qantara";
-    // Clear stale voice/speed settings that may have been saved with non-default values
-    if (localStorage.getItem("qantara_voice_preset") && localStorage.getItem("qantara_voice_preset") !== "steady") {
-      localStorage.removeItem("qantara_voice_preset");
-    }
-    if (localStorage.getItem("qantara_speech_speed") && localStorage.getItem("qantara_speech_speed") !== "1") {
-      localStorage.removeItem("qantara_speech_speed");
-    }
-    let voicePreset = localStorage.getItem("qantara_voice_preset") || "steady";
+    let voicePreset = localStorage.getItem("qantara_voice_preset") || voicePresetSelect?.value || "steady";
     let speechSpeed = Number(localStorage.getItem("qantara_speech_speed") || speechSpeedInput?.value || "1.00");
     let clientSessionId = localStorage.getItem("qantara_client_session_id");
     if (!clientSessionId) {
