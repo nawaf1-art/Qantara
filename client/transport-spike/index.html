@@ -656,7 +656,7 @@
     let speechRmsTotal = 0;
     let speechRmsSamples = 0;
     let speechPeakRms = 0;
-    let avatarMouthBase = { cx: 110, cy: 164, rx: 22, ry: 6 }; // legacy — kept for meter calc
+    // avatarMouthBase removed — mouth is now driven by vanilla JS path interpolation
     let speechSubmitCount = 0;
     let weakSpeechSkipCount = 0;
     let bargeInPending = false;
@@ -1665,62 +1665,94 @@
     updateAvatarState();
     loadAvatarPresets();
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/MorphSVGPlugin.min.js"></script>
   <script>
   (function() {
-    // --- GSAP Mouth Animation ---
+    // --- Vanilla JS Avatar Animation (zero dependencies) ---
     var mouthEl = document.getElementById("av-mouth");
     var eyeL = document.getElementById("av-eye-l");
     var eyeR = document.getElementById("av-eye-r");
-    if (!mouthEl || typeof gsap === "undefined") return;
+    var svgEl = document.getElementById("avatarSvg");
+    if (!mouthEl) return;
 
-    // Mouth shapes
-    // Closed: gentle smile line
-    var MOUTH_CLOSED = "M80 138 Q100 142 120 138";
-    // Open: wide oval mouth for speaking
-    var MOUTH_OPEN   = "M80 134 Q100 162 120 134";
-    var MOUTH_SMILE  = "M78 136 Q100 150 122 136";
+    // --- Mouth: lerp between closed and open quadratic bezier ---
+    // Closed: M80 138 Q100 142 120 138
+    // Open:   M80 134 Q100 162 120 134
+    // Only the Y values change: start_y, control_y, end_y
+    var MOUTH_CLOSED_Y = { sy: 138, cy: 142, ey: 138 };
+    var MOUTH_OPEN_Y   = { sy: 134, cy: 162, ey: 134 };
 
-    // Create a paused morph tween — we scrub it with .progress(amplitude)
-    var mouthTween = gsap.to(mouthEl, {
-      morphSVG: MOUTH_OPEN,
-      duration: 1,
-      paused: true,
-      ease: "none"
-    });
+    function setMouthProgress(t) {
+      t = Math.max(0, Math.min(1, t));
+      var sy = MOUTH_CLOSED_Y.sy + (MOUTH_OPEN_Y.sy - MOUTH_CLOSED_Y.sy) * t;
+      var cy = MOUTH_CLOSED_Y.cy + (MOUTH_OPEN_Y.cy - MOUTH_CLOSED_Y.cy) * t;
+      var ey = MOUTH_CLOSED_Y.ey + (MOUTH_OPEN_Y.ey - MOUTH_CLOSED_Y.ey) * t;
+      mouthEl.setAttribute("d", "M80 " + sy.toFixed(1) + " Q100 " + cy.toFixed(1) + " 120 " + ey.toFixed(1));
+    }
 
-    // Expose for the existing animation loop
-    window._gsapMouthTween = mouthTween;
+    // Expose for the existing amplitude animation loop
+    window._gsapMouthTween = { progress: setMouthProgress };
 
     // --- Eye Blink ---
-    function blink() {
-      gsap.to([eyeL, eyeR], {
-        attr: { ry: 1 },
-        duration: 0.08,
-        yoyo: true,
-        repeat: 1,
-        ease: "power2.inOut"
-      });
-      var next = 2500 + Math.random() * 4000;
-      // Occasional double blink
-      if (Math.random() < 0.2) {
-        setTimeout(function() {
-          gsap.to([eyeL, eyeR], { attr: { ry: 1 }, duration: 0.06, yoyo: true, repeat: 1 });
-        }, 200);
-      }
-      setTimeout(blink, next);
-    }
-    setTimeout(blink, 1500 + Math.random() * 2000);
+    var EYE_RY_NORMAL = 8;
+    var blinkPhase = -1; // -1 = not blinking
+    var blinkStart = 0;
+    var BLINK_DURATION = 150; // ms total (close + open)
 
-    // --- Breathing (idle) ---
-    gsap.to("#avatarSvg", {
-      y: 3,
-      duration: 2.5,
-      yoyo: true,
-      repeat: -1,
-      ease: "sine.inOut"
-    });
+    function scheduleBlink() {
+      var delay = 2500 + Math.random() * 4000;
+      setTimeout(function() {
+        blinkPhase = 0;
+        blinkStart = performance.now();
+        // Occasional double blink
+        if (Math.random() < 0.2) {
+          setTimeout(function() {
+            blinkPhase = 0;
+            blinkStart = performance.now();
+          }, 250);
+        }
+        scheduleBlink();
+      }, delay);
+    }
+    scheduleBlink();
+
+    // --- Breathing ---
+    var breathStart = performance.now();
+    var BREATH_DURATION = 5000; // ms per cycle
+    var BREATH_AMOUNT = 3; // px
+
+    // --- Animation loop for blink + breathing ---
+    function animateFace() {
+      requestAnimationFrame(animateFace);
+      var now = performance.now();
+
+      // Blink
+      if (blinkPhase >= 0) {
+        var elapsed = now - blinkStart;
+        var half = BLINK_DURATION / 2;
+        var ry;
+        if (elapsed < half) {
+          // Closing
+          ry = EYE_RY_NORMAL * (1 - elapsed / half);
+        } else if (elapsed < BLINK_DURATION) {
+          // Opening
+          ry = EYE_RY_NORMAL * ((elapsed - half) / half);
+        } else {
+          ry = EYE_RY_NORMAL;
+          blinkPhase = -1;
+        }
+        ry = Math.max(0.5, ry);
+        if (eyeL) eyeL.setAttribute("ry", ry.toFixed(1));
+        if (eyeR) eyeR.setAttribute("ry", ry.toFixed(1));
+      }
+
+      // Breathing
+      if (svgEl) {
+        var breathT = ((now - breathStart) % BREATH_DURATION) / BREATH_DURATION;
+        var breathY = Math.sin(breathT * Math.PI * 2) * BREATH_AMOUNT;
+        svgEl.style.transform = "translateY(" + breathY.toFixed(1) + "px)";
+      }
+    }
+    requestAnimationFrame(animateFace);
   })();
   </script>
 </body>

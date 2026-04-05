@@ -10,3 +10,5 @@ venv/
 ops/certs/
 models/piper/*.onnx
 models/piper/*.onnx.json
+*.riv
+rive-test.html
