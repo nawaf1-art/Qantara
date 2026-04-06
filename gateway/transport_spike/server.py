@@ -222,7 +222,7 @@ async def _probe_openclaw() -> dict[str, Any]:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
         health = json.loads(stdout.decode("utf-8", errors="replace"))
         if health.get("ok"):
             result["gateway_running"] = True
@@ -231,14 +231,14 @@ async def _probe_openclaw() -> dict[str, Any]:
     except Exception:
         return result
 
-    # List agents
+    # List agents (openclaw agents list can be slow due to channel probes)
     try:
         proc = await asyncio.create_subprocess_exec(
             openclaw_bin, "agents", "list", "--json",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
         agents_data = json.loads(stdout.decode("utf-8", errors="replace"))
         if isinstance(agents_data, list):
             for a in agents_data:
