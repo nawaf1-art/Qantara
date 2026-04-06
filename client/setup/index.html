@@ -182,6 +182,7 @@
     <p class="subtitle">Talk to your AI agent by voice. Choose how your AI is running to get started.</p>
 
     <div class="panel">
+      <div id="getting-started-area"></div>
       <span class="section-label">Available backends</span>
       <div id="backend-list" class="backend-list">
         <div class="loading"><span class="loading-dots">Detecting backends</span></div>
@@ -228,12 +229,13 @@
             showGettingStarted();
             startPolling();
           } else {
+            document.getElementById("getting-started-area").innerHTML = "";
             stopPolling();
-            renderBackends();
-            if (saved && saved.type) {
-              var match = backends.find(function (b) { return b.type === saved.type && b.available; });
-              if (match) { selectBackend(saved.type); restoreSavedConfig(saved); }
-            }
+          }
+          renderBackends();
+          if (saved && saved.type) {
+            var match = backends.find(function (b) { return b.type === saved.type && b.available; });
+            if (match) { selectBackend(saved.type); restoreSavedConfig(saved); }
           }
         })
         .catch(function () {
@@ -251,9 +253,11 @@
     }
 
     function showGettingStarted() {
-      listEl.innerHTML = "";
+      var area = document.getElementById("getting-started-area");
+      area.innerHTML = "";
       var div = document.createElement("div");
       div.className = "getting-started";
+      div.style.marginBottom = "18px";
       div.innerHTML =
         '<h3>No AI backend detected</h3>' +
         '<p>Qantara needs an AI backend to generate responses. The easiest way to start:</p>' +
@@ -261,26 +265,9 @@
         '<p><strong>2.</strong> Download a model:</p>' +
         '<div class="cmd-box"><code>ollama pull gemma4:e4b</code><button class="copy-btn" onclick="navigator.clipboard.writeText(\'ollama pull gemma4:e4b\')">Copy</button></div>' +
         '<p><strong>3.</strong> Come back \u2014 Qantara detects it automatically.</p>' +
-        '<div><button class="scan-btn" onclick="location.reload()">Scan Again</button></div>' +
-        '<p style="margin-top:18px;font-size:0.82rem">Already running something? ' +
-        '<a href="#" style="color:var(--accent)" onclick="showManualSetup();return false">Configure manually \u2192</a></p>';
-      listEl.appendChild(div);
-      // Also show mock option
-      configEl.innerHTML = "";
-      startBtn.disabled = true;
+        '<div><button class="scan-btn" onclick="location.reload()">Scan Again</button></div>';
+      area.appendChild(div);
     }
-
-    window.showManualSetup = function () {
-      stopPolling();
-      // Add custom + mock as available and render
-      if (!backends.find(function (b) { return b.type === "custom"; })) {
-        backends.push({ type: "custom", name: "Custom URL", available: true });
-      }
-      if (!backends.find(function (b) { return b.type === "mock"; })) {
-        backends.push({ type: "mock", name: "Demo", available: true });
-      }
-      renderBackends();
-    };
 
     function renderBackends() {
       listEl.innerHTML = "";
@@ -539,7 +526,14 @@
       resultEl.className = "test-result";
       group.appendChild(resultEl);
 
+      var modelArea = document.createElement("div");
+      modelArea.id = "openai-model-area";
+      group.appendChild(modelArea);
+
       configEl.appendChild(group);
+
+      // If URL is pre-filled (auto-detected), fetch models immediately
+      if (inp.value) testOpenAI(inp.value);
     }
 
     function renderCustomConfig() {
@@ -581,7 +575,9 @@
     function testOpenAI(url) {
       if (!url) return;
       var el = document.getElementById("test-result");
+      var modelArea = document.getElementById("openai-model-area");
       if (el) { el.textContent = "Testing\u2026"; el.className = "test-result"; }
+      if (modelArea) modelArea.innerHTML = "";
       // Normalize
       url = url.replace(/\/+$/, "");
       if (!/^https?:\/\//.test(url)) url = "http://" + url;
@@ -594,6 +590,27 @@
             el.textContent = "\u2713 Connected \u2014 " + models.length + " model" + (models.length !== 1 ? "s" : "") + " found";
             el.className = "test-result ok";
           }
+          // Show model selector if multiple models
+          if (models.length > 0 && modelArea) {
+            var sel = document.createElement("select");
+            sel.id = "cfg-openai-model";
+            sel.style.marginTop = "6px";
+            models.forEach(function (m) {
+              var opt = document.createElement("option");
+              opt.value = m;
+              opt.textContent = m;
+              sel.appendChild(opt);
+            });
+            var lbl = document.createElement("label");
+            lbl.textContent = "Model";
+            lbl.style.fontSize = "0.78rem";
+            lbl.style.color = "var(--muted)";
+            lbl.style.display = "block";
+            lbl.style.marginTop = "10px";
+            modelArea.appendChild(lbl);
+            modelArea.appendChild(sel);
+          }
+          startBtn.disabled = !isConfigValid();
         })
         .catch(function () {
           if (el) {
@@ -685,6 +702,8 @@
         case "openai_compatible":
           var inp = document.getElementById("cfg-openai-url");
           if (inp) payload.url = inp.value.trim();
+          var modelSel = document.getElementById("cfg-openai-model");
+          if (modelSel && modelSel.value) payload.model = modelSel.value;
           break;
         case "custom":
           var inp2 = document.getElementById("cfg-url");
