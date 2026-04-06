@@ -685,7 +685,7 @@ async def speak_text(session: Session, text: str, expected_generation: int | Non
                 },
             )
 
-    await send_tone(session)
+    # No fallback tone — if TTS fails, silence is better than a buzzing sine wave.
 
 
 async def _run_speech_segment(

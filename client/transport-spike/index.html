@@ -136,7 +136,7 @@
 
     .avatar-card {
       position: relative;
-      overflow: hidden;
+      overflow: visible;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -179,92 +179,131 @@
 
     .avatar-shell {
       position: relative;
-      width: 190px;
-      height: 220px;
+      width: 200px;
+      height: 200px;
       display: flex;
       align-items: center;
       justify-content: center;
-      --mouth-open: 6;
-      --mouth-width: 22;
     }
 
+    /* Glowing ring behind avatar */
     .avatar-shell::before {
       content: "";
       position: absolute;
-      inset: 18px;
+      inset: -8px;
       border-radius: 999px;
-      background: radial-gradient(circle, rgba(15, 118, 110, 0.16), transparent 70%);
-      transition: transform 180ms ease, opacity 180ms ease;
-      opacity: 0.8;
-      transform: scale(0.96);
+      border: 3px solid var(--avatar-ring, var(--accent));
+      opacity: 0;
+      transform: scale(0.92);
+      transition: all 300ms ease;
     }
 
+    /* Soft glow fill */
+    .avatar-shell::after {
+      content: "";
+      position: absolute;
+      inset: -12px;
+      border-radius: 999px;
+      background: radial-gradient(circle, var(--avatar-glow, rgba(15, 118, 110, 0.18)), transparent 65%);
+      opacity: 0.4;
+      transform: scale(0.9);
+      transition: all 300ms ease;
+    }
+
+    /* Idle: gentle breathing glow */
+    .avatar-shell.idle::after {
+      animation: avatarBreatheGlow 4s ease-in-out infinite;
+    }
+
+    /* Listening: ring appears + pulses */
     .avatar-shell.listening::before {
-      animation: avatarPulse 1.35s ease-in-out infinite;
+      opacity: 0.7;
+      animation: avatarRingPulse 1.5s ease-in-out infinite;
     }
 
-    .avatar-shell.thinking::before,
-    .avatar-shell.speaking::before {
-      opacity: 1;
+    .avatar-shell.listening::after {
+      opacity: 0.8;
       transform: scale(1.05);
+    }
+
+    /* Thinking: ring slow rotate glow */
+    .avatar-shell.thinking::before {
+      opacity: 0.5;
+      border-style: dashed;
+      animation: avatarThinkSpin 3s linear infinite;
+    }
+
+    .avatar-shell.thinking::after {
+      opacity: 0.7;
+      animation: avatarThinkGlow 2s ease-in-out infinite;
+    }
+
+    /* Speaking: strong pulsing ring */
+    .avatar-shell.speaking::before {
+      opacity: 0.9;
+      border-width: 4px;
+      animation: avatarSpeakRing 0.8s ease-in-out infinite;
+    }
+
+    .avatar-shell.speaking::after {
+      opacity: 1;
+      transform: scale(1.1);
     }
 
     .avatar-badge {
       position: absolute;
-      top: 14px;
-      left: 14px;
+      top: 4px;
+      left: 4px;
       border-radius: 999px;
-      padding: 6px 10px;
-      background: rgba(255, 255, 255, 0.82);
+      padding: 5px 9px;
+      background: rgba(255, 255, 255, 0.85);
       border: 1px solid var(--line);
       color: var(--muted);
-      font-size: 0.8rem;
+      font-size: 0.72rem;
       text-transform: uppercase;
       letter-spacing: 0.05em;
+      z-index: 2;
     }
 
     .avatar-svg {
-      width: 100%;
-      height: auto;
+      width: 190px;
+      height: 210px;
       position: relative;
       z-index: 1;
       filter: drop-shadow(0 10px 26px rgba(31, 35, 40, 0.12));
     }
 
-    .avatar-halo {
-      fill: rgba(15, 118, 110, 0.12);
-    }
-
-    .avatar-face {
-      fill: #f9edd9;
-      stroke: #8f7a62;
-      stroke-width: 2.5;
+    .avatar-face-fill {
+      transition: fill 400ms ease;
     }
 
     .avatar-eye {
-      fill: #1f2328;
       transform-origin: center;
-      transition: transform 160ms ease;
     }
 
-    .avatar-shell.thinking .avatar-eye.left {
-      transform: translateX(-3px);
+    @keyframes avatarBreatheGlow {
+      0%, 100% { transform: scale(0.9); opacity: 0.3; }
+      50% { transform: scale(1.0); opacity: 0.6; }
     }
 
-    .avatar-shell.thinking .avatar-eye.right {
-      transform: translateX(3px);
+    @keyframes avatarRingPulse {
+      0%, 100% { transform: scale(1.0); opacity: 0.5; }
+      50% { transform: scale(1.08); opacity: 0.9; }
     }
 
-    .avatar-brow {
-      fill: none;
-      stroke: #705c48;
-      stroke-width: 3;
-      stroke-linecap: round;
+    @keyframes avatarThinkSpin {
+      0% { transform: scale(1.02) rotate(0deg); }
+      100% { transform: scale(1.02) rotate(360deg); }
     }
 
-    .avatar-mouth {
-      fill: #7a3b3b;
-      transition: all 70ms linear;
+    @keyframes avatarThinkGlow {
+      0%, 100% { transform: scale(1.0); opacity: 0.5; }
+      50% { transform: scale(1.08); opacity: 0.8; }
+    }
+
+    @keyframes avatarSpeakRing {
+      0%, 100% { transform: scale(1.0); opacity: 0.6; }
+      50% { transform: scale(1.12); opacity: 1; }
     }
 
     .avatar-caption {
@@ -326,10 +365,7 @@
       transition: width 60ms linear;
     }
 
-    @keyframes avatarPulse {
-      0%, 100% { transform: scale(0.96); opacity: 0.72; }
-      50% { transform: scale(1.05); opacity: 1; }
-    }
+    /* avatarPulse removed — replaced by avatarRingPulse and state-specific animations */
 
     @media (max-width: 760px) {
       .hero {
@@ -392,16 +428,26 @@
         <div class="panel avatar-card" style="margin-top: 0;">
           <div id="avatarShell" class="avatar-shell idle">
             <div id="avatarBadge" class="avatar-badge">Idle</div>
-            <svg class="avatar-svg" viewBox="0 0 220 250" aria-label="Qantara Avatar" role="img">
-              <ellipse id="avatarHalo" class="avatar-halo" cx="110" cy="123" rx="90" ry="96"></ellipse>
-              <path id="avatarHairBack" d=""></path>
-              <path id="avatarFace" class="avatar-face" d="M110 30C150 30 179 63 179 118C179 176 146 217 110 217C74 217 41 176 41 118C41 63 70 30 110 30Z"></path>
-              <path id="avatarHairFront" d=""></path>
-              <path id="avatarBrowLeft" class="avatar-brow" d="M72 97C82 91 91 90 100 93"></path>
-              <path id="avatarBrowRight" class="avatar-brow" d="M120 93C129 90 138 91 148 97"></path>
-              <ellipse id="avatarEyeLeft" class="avatar-eye left" cx="87" cy="113" rx="8" ry="10"></ellipse>
-              <ellipse id="avatarEyeRight" class="avatar-eye right" cx="133" cy="113" rx="8" ry="10"></ellipse>
-              <ellipse id="avatarMouth" class="avatar-mouth" cx="110" cy="164" rx="22" ry="6"></ellipse>
+            <svg id="avatarSvg" class="avatar-svg" viewBox="0 0 200 220" aria-label="Avatar" role="img">
+              <!-- Neck -->
+              <rect x="88" y="166" width="24" height="18" rx="6" fill="#f9edd9" id="av-neck"/>
+              <!-- Face -->
+              <ellipse id="av-face" class="avatar-face-fill" cx="100" cy="110" rx="52" ry="60" fill="#f9edd9" stroke="#c4a882" stroke-width="1.5"/>
+              <!-- Hair (solid, covers top third of head) -->
+              <path id="av-hair" d="M48 90C48 52 70 30 100 30C130 30 152 52 152 90C152 82 148 72 140 64C140 78 124 88 100 88C76 88 60 78 60 64C52 72 48 82 48 90Z" fill="#705c48"/>
+              <!-- Eyes -->
+              <ellipse id="av-eye-l" class="avatar-eye" cx="80" cy="108" rx="6" ry="8" fill="#2d2d2d"/>
+              <ellipse id="av-eye-r" class="avatar-eye" cx="120" cy="108" rx="6" ry="8" fill="#2d2d2d"/>
+              <!-- Eye highlights -->
+              <ellipse cx="82" cy="106" rx="2" ry="2.5" fill="#fff" opacity="0.8"/>
+              <ellipse cx="122" cy="106" rx="2" ry="2.5" fill="#fff" opacity="0.8"/>
+              <!-- Eyebrows -->
+              <path id="av-brow-l" d="M68 95C74 91 80 90 88 92" fill="none" stroke="#705c48" stroke-width="2.2" stroke-linecap="round"/>
+              <path id="av-brow-r" d="M112 92C120 90 126 91 132 95" fill="none" stroke="#705c48" stroke-width="2.2" stroke-linecap="round"/>
+              <!-- Nose -->
+              <path d="M97 120C99 124 101 124 103 120" fill="none" stroke="#c4a882" stroke-width="1.2" stroke-linecap="round"/>
+              <!-- Mouth (GSAP morphs this) -->
+              <path id="av-mouth" d="M80 138 Q100 142 120 138" fill="#c47070" stroke="#c47070" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </div>
         </div>
@@ -411,9 +457,8 @@
             <span class="avatar-state-dot"></span>
             <span id="avatarStateText">Idle</span>
           </div>
-          <p>
-            Minimal avatar for the transport spike. It reflects listening, thinking, and speaking
-            states and opens its mouth from the assistant playback signal.
+          <p id="avatarDescription">
+            Reflects listening, thinking, and speaking states.
           </p>
           <div class="avatar-meter">
             <div id="avatarMeterFill" class="avatar-meter-fill"></div>
@@ -451,8 +496,8 @@
         <div class="selector-card">
           <label for="speechSpeed">
             <span>Speech Speed</span>
-            <input id="speechSpeed" type="range" min="0.85" max="1.30" step="0.05" value="1.20">
-            <span id="speechSpeedValue">1.20x</span>
+            <input id="speechSpeed" type="range" min="0.85" max="1.30" step="0.05" value="1.00">
+            <span id="speechSpeedValue">1.00x</span>
           </label>
         </div>
       </div>
@@ -568,70 +613,7 @@
     const avatarState = document.getElementById("avatarState");
     const avatarStateText = document.getElementById("avatarStateText");
     const avatarTitle = document.getElementById("avatarTitle");
-    const avatarHairBack = document.getElementById("avatarHairBack");
-    const avatarFace = document.getElementById("avatarFace");
-    const avatarHairFront = document.getElementById("avatarHairFront");
-    const avatarHalo = document.getElementById("avatarHalo");
-    const avatarEyeLeft = document.getElementById("avatarEyeLeft");
-    const avatarEyeRight = document.getElementById("avatarEyeRight");
-    const avatarBrowLeft = document.getElementById("avatarBrowLeft");
-    const avatarBrowRight = document.getElementById("avatarBrowRight");
-    const avatarMouth = document.getElementById("avatarMouth");
     const avatarMeterFill = document.getElementById("avatarMeterFill");
-    const AVATAR_FACE_SHAPES = {
-      oval_soft: "M110 30C150 30 179 63 179 118C179 176 146 217 110 217C74 217 41 176 41 118C41 63 70 30 110 30Z",
-      oval_sharp: "M110 24C148 24 180 58 176 118C173 182 145 220 110 220C75 220 47 182 44 118C40 58 72 24 110 24Z",
-      oval_heavy: "M110 34C154 34 184 68 184 120C184 180 148 224 110 224C72 224 36 180 36 120C36 68 66 34 110 34Z",
-    };
-    const AVATAR_BROW_SHAPES = {
-      gentle_arc: {
-        left: "M72 97C82 91 91 90 100 93",
-        right: "M120 93C129 90 138 91 148 97",
-      },
-      technical_arc: {
-        left: "M70 95L99 90",
-        right: "M121 90L150 95",
-      },
-      heavy_arc: {
-        left: "M69 100C82 89 94 88 104 91",
-        right: "M116 91C126 88 138 89 151 100",
-      },
-    };
-    const AVATAR_EYE_SHAPES = {
-      round_focus: {
-        left: { cx: 87, cy: 113, rx: 8, ry: 10 },
-        right: { cx: 133, cy: 113, rx: 8, ry: 10 },
-      },
-      almond_alert: {
-        left: { cx: 86, cy: 112, rx: 10, ry: 7 },
-        right: { cx: 134, cy: 112, rx: 10, ry: 7 },
-      },
-      narrow_scan: {
-        left: { cx: 87, cy: 113, rx: 11, ry: 5 },
-        right: { cx: 133, cy: 113, rx: 11, ry: 5 },
-      },
-    };
-    const AVATAR_MOUTH_SHAPES = {
-      soft_speech: { cx: 110, cy: 164, rx: 22, ry: 6 },
-      precise_speech: { cx: 110, cy: 162, rx: 18, ry: 5 },
-      firm_speech: { cx: 110, cy: 166, rx: 24, ry: 4 },
-    };
-    const AVATAR_HAIR_BACK_SHAPES = {
-      none: "",
-      halo_soft: "M58 108C58 58 82 24 110 24C138 24 162 58 162 108C162 76 150 44 110 40C70 44 58 76 58 108Z",
-      bob_round: "M54 110C54 54 82 22 110 22C138 22 166 54 166 110C166 162 146 192 130 208L90 208C74 192 54 162 54 110Z",
-      wave_long: "M52 112C52 54 78 18 110 18C142 18 168 54 168 112C168 173 150 206 134 222L86 222C70 206 52 173 52 112Z",
-      crest_frame: "M46 116C46 52 78 18 110 18C142 18 174 52 174 116C174 176 158 210 138 226L82 226C62 210 46 176 46 116Z",
-      crown_block: "M50 110C50 58 80 26 110 26C140 26 170 58 170 110C170 162 152 190 130 208L90 208C68 190 50 162 50 110Z",
-    };
-    const AVATAR_HAIR_FRONT_SHAPES = {
-      none: "",
-      split_bangs: "M78 62C88 48 101 42 110 42C119 42 132 48 142 62C130 58 120 56 110 56C100 56 90 58 78 62Z",
-      side_sweep_left: "M64 68C86 42 122 36 148 58C132 58 117 60 102 68C90 74 78 74 64 68Z",
-      side_sweep_right: "M72 58C98 36 134 42 156 68C142 74 130 74 118 68C103 60 88 58 72 58Z",
-      blunt_arc: "M68 62C82 46 96 42 110 42C124 42 138 46 152 62C138 60 124 58 110 58C96 58 82 60 68 62Z",
-      sharp_peak: "M92 54L110 40L128 54C122 56 116 58 110 58C104 58 98 56 92 54Z",
-    };
 
     const AVATAR_PRESETS = {};
 
@@ -674,7 +656,7 @@
     let speechRmsTotal = 0;
     let speechRmsSamples = 0;
     let speechPeakRms = 0;
-    let avatarMouthBase = { ...AVATAR_MOUTH_SHAPES.soft_speech };
+    // avatarMouthBase removed — mouth is now driven by vanilla JS path interpolation
     let speechSubmitCount = 0;
     let weakSpeechSkipCount = 0;
     let bargeInPending = false;
@@ -682,7 +664,7 @@
     let ttsVoiceId = localStorage.getItem("qantara_tts_voice") || ttsVoiceSelect?.value || "lessac";
     let avatarPreset = localStorage.getItem("qantara_avatar_preset") || avatarPresetSelect?.value || "qantara";
     let voicePreset = localStorage.getItem("qantara_voice_preset") || voicePresetSelect?.value || "steady";
-    let speechSpeed = Number(localStorage.getItem("qantara_speech_speed") || speechSpeedInput?.value || "1.20");
+    let speechSpeed = Number(localStorage.getItem("qantara_speech_speed") || speechSpeedInput?.value || "1.00");
     let clientSessionId = localStorage.getItem("qantara_client_session_id");
     if (!clientSessionId) {
       clientSessionId = (crypto?.randomUUID?.() || `qantara-${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -739,9 +721,24 @@
       updateAvatarState();
     }
 
+    var _playbackDisplayTimer = null;
     function setPlaybackState(value) {
-      updateText("playbackState", value);
       playbackActive = value === "playing";
+      if (playbackActive) {
+        // Immediately show "playing"
+        if (_playbackDisplayTimer) { clearTimeout(_playbackDisplayTimer); _playbackDisplayTimer = null; }
+        updateText("playbackState", "playing");
+      } else {
+        // Delay showing "idle" to prevent flickering between PCM chunks
+        if (!_playbackDisplayTimer) {
+          _playbackDisplayTimer = setTimeout(function() {
+            _playbackDisplayTimer = null;
+            if (!playbackActive) {
+              updateText("playbackState", "idle");
+            }
+          }, 600);
+        }
+      }
       updateAvatarState();
     }
 
@@ -767,8 +764,15 @@
       updateAvatarState();
     }
 
+    var _speakingHoldUntil = 0;
+
     function getAvatarVisualState() {
-      if (playbackActive) return "speaking";
+      var now = Date.now();
+      if (playbackActive) {
+        _speakingHoldUntil = now + 800; // hold speaking state for 800ms after last audio frame
+        return "speaking";
+      }
+      if (now < _speakingHoldUntil) return "speaking"; // still in hold period — prevents flickering
       if (backendTurnActive) return "thinking";
       if (micActive) return "listening";
       return "idle";
@@ -779,100 +783,66 @@
       if (avatarMeterFill) {
         avatarMeterFill.style.width = `${clamped * 100}%`;
       }
-      if (avatarMouth) {
-        avatarMouth.setAttribute("cx", String(avatarMouthBase.cx));
-        avatarMouth.setAttribute("cy", String(avatarMouthBase.cy));
-        avatarMouth.setAttribute("ry", (avatarMouthBase.ry + clamped * 15).toFixed(1));
-        avatarMouth.setAttribute("rx", (avatarMouthBase.rx + clamped * 18).toFixed(1));
+      // Drive GSAP mouth morph from amplitude
+      if (window._gsapMouthTween) {
+        window._gsapMouthTween.progress(clamped);
       }
     }
 
     function applyAvatarPreset() {
       const preset = AVATAR_PRESETS[avatarPreset] || AVATAR_PRESETS.qantara;
-      if (!preset) {
-        return;
-      }
-      const skinColor = normalizeHexColor(preset.palette?.skin, "#f9edd9");
-      const hairPrimary = normalizeHexColor(preset.palette?.hair_primary, "#705c48");
-      const hairSecondary = normalizeHexColor(preset.palette?.hair_secondary, hairPrimary);
-      const accentPrimary = normalizeHexColor(preset.palette?.accent_primary, "#0f766e");
-      const mouthColor = normalizeHexColor(
-        preset.visual?.mouth_fill || preset.palette?.accent_secondary,
-        "#7a3b3b",
-      );
-      const faceShape = AVATAR_FACE_SHAPES[preset.parts?.face_base] || AVATAR_FACE_SHAPES.oval_soft;
-      const browShape = AVATAR_BROW_SHAPES[preset.parts?.brows] || AVATAR_BROW_SHAPES.gentle_arc;
-      const eyeShape = AVATAR_EYE_SHAPES[preset.parts?.eyes] || AVATAR_EYE_SHAPES.round_focus;
-      const mouthShape = AVATAR_MOUTH_SHAPES[preset.parts?.mouth_set] || AVATAR_MOUTH_SHAPES.soft_speech;
-      const hairBackShape = AVATAR_HAIR_BACK_SHAPES[preset.parts?.hair_back] || "";
-      const hairFrontShape = AVATAR_HAIR_FRONT_SHAPES[preset.parts?.hair_front] || "";
+      if (!preset) return;
+
       if (avatarTitle) {
         avatarTitle.textContent = preset.title || preset.display_name || avatarPreset;
       }
-      if (avatarHairBack) {
-        avatarHairBack.setAttribute("d", hairBackShape);
-        avatarHairBack.style.fill = hairSecondary;
-        avatarHairBack.style.opacity = hairBackShape ? "1" : "0";
-      }
-      if (avatarFace) {
-        avatarFace.setAttribute("d", faceShape);
-        avatarFace.style.fill = skinColor;
-        avatarFace.style.stroke = preset.visual?.face_stroke || "#8f7a62";
-      }
-      if (avatarHairFront) {
-        avatarHairFront.setAttribute("d", hairFrontShape);
-        avatarHairFront.style.fill = hairPrimary;
-        avatarHairFront.style.opacity = hairFrontShape ? "1" : "0";
-      }
-      if (avatarHalo) {
-        avatarHalo.style.fill = rgbaFromHex(accentPrimary, 0.12);
-      }
-      if (avatarBrowLeft) {
-        avatarBrowLeft.setAttribute("d", browShape.left);
-        avatarBrowLeft.style.stroke = preset.visual?.brow_stroke || "#705c48";
-      }
-      if (avatarBrowRight) {
-        avatarBrowRight.setAttribute("d", browShape.right);
-        avatarBrowRight.style.stroke = preset.visual?.brow_stroke || "#705c48";
-      }
-      if (avatarEyeLeft) {
-        avatarEyeLeft.setAttribute("cx", String(eyeShape.left.cx));
-        avatarEyeLeft.setAttribute("cy", String(eyeShape.left.cy));
-        avatarEyeLeft.setAttribute("rx", String(eyeShape.left.rx));
-        avatarEyeLeft.setAttribute("ry", String(eyeShape.left.ry));
-        avatarEyeLeft.style.fill = preset.visual?.eye_fill || "#1f2328";
-      }
-      if (avatarEyeRight) {
-        avatarEyeRight.setAttribute("cx", String(eyeShape.right.cx));
-        avatarEyeRight.setAttribute("cy", String(eyeShape.right.cy));
-        avatarEyeRight.setAttribute("rx", String(eyeShape.right.rx));
-        avatarEyeRight.setAttribute("ry", String(eyeShape.right.ry));
-        avatarEyeRight.style.fill = preset.visual?.eye_fill || "#1f2328";
-      }
-      avatarMouthBase = { ...mouthShape };
-      if (avatarMouth) {
-        avatarMouth.style.fill = mouthColor;
-      }
-      if (avatarShell) {
-        avatarShell.style.setProperty("--avatar-glow", rgbaFromHex(accentPrimary, 0.16));
-      }
-      const avatarCard = document.querySelector(".avatar-card");
-      if (avatarCard) {
-        avatarCard.style.background = `radial-gradient(circle at top, ${rgbaFromHex(accentPrimary, 0.18)}, transparent 45%), linear-gradient(160deg, #fffdf8 0%, #f4ece0 100%)`;
-      }
-    }
 
-    function normalizeHexColor(value, fallback) {
-      return /^#[0-9a-fA-F]{6}$/.test(value || "") ? value : fallback;
+      // Apply colors to the SVG face
+      var skin = preset.palette?.skin || "#f9edd9";
+      var hair = preset.palette?.hair_primary || "#705c48";
+      var accent = preset.palette?.accent_primary || "#0f766e";
+      var mouthColor = preset.palette?.accent_secondary || "#c47070";
+      var eyeColor = preset.visual?.eye_fill || "#2d2d2d";
+      var browColor = preset.visual?.brow_stroke || hair;
+      var faceStroke = preset.visual?.face_stroke || "#c4a882";
+
+      var face = document.getElementById("av-face");
+      var hairEl = document.getElementById("av-hair");
+      var mouth = document.getElementById("av-mouth");
+      var eyeL = document.getElementById("av-eye-l");
+      var eyeR = document.getElementById("av-eye-r");
+      var browL = document.getElementById("av-brow-l");
+      var browR = document.getElementById("av-brow-r");
+
+      if (face) { face.setAttribute("fill", skin); face.setAttribute("stroke", faceStroke); }
+      if (hairEl) { hairEl.setAttribute("fill", hair); }
+      if (mouth) { mouth.setAttribute("stroke", mouthColor); }
+      if (eyeL) { eyeL.setAttribute("fill", eyeColor); }
+      if (eyeR) { eyeR.setAttribute("fill", eyeColor); }
+      if (browL) { browL.setAttribute("stroke", browColor); }
+      if (browR) { browR.setAttribute("stroke", browColor); }
+      // Neck matches skin
+      var neck = document.getElementById("av-neck");
+      if (neck) { neck.setAttribute("fill", skin); }
+
+      // Update glow and ring color
+      if (avatarShell) {
+        avatarShell.style.setProperty("--avatar-glow", rgbaFromHex(accent, 0.22));
+        avatarShell.style.setProperty("--avatar-ring", accent);
+      }
+      var avatarCard = document.querySelector(".avatar-card");
+      if (avatarCard) {
+        avatarCard.style.background = "radial-gradient(circle at top, " + rgbaFromHex(accent, 0.18) + ", transparent 45%), linear-gradient(160deg, #fffdf8 0%, #f4ece0 100%)";
+      }
     }
 
     function rgbaFromHex(hex, alpha) {
-      const safeHex = normalizeHexColor(hex, "#0f766e");
-      const value = safeHex.slice(1);
-      const r = Number.parseInt(value.slice(0, 2), 16);
-      const g = Number.parseInt(value.slice(2, 4), 16);
-      const b = Number.parseInt(value.slice(4, 6), 16);
-      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      var safeHex = /^#[0-9a-fA-F]{6}$/.test(hex || "") ? hex : "#0f766e";
+      var value = safeHex.slice(1);
+      var r = parseInt(value.slice(0, 2), 16);
+      var g = parseInt(value.slice(2, 4), 16);
+      var b = parseInt(value.slice(4, 6), 16);
+      return "rgba(" + r + ", " + g + ", " + b + ", " + alpha + ")";
     }
 
     async function loadAvatarPresets() {
@@ -938,7 +908,7 @@
     }
 
     function getSpeechSpeed() {
-      return Math.max(0.85, Math.min(1.30, Number.isFinite(speechSpeed) ? speechSpeed : 1.2));
+      return Math.max(0.85, Math.min(1.30, Number.isFinite(speechSpeed) ? speechSpeed : 1.0));
     }
 
     function updateAvatarState() {
@@ -972,7 +942,9 @@
         for (let i = 0; i < playbackAnalyserData.length; i += 1) {
           total += Math.abs(playbackAnalyserData[i] - 128);
         }
-        const level = Math.min(1, (total / playbackAnalyserData.length) / 42);
+        // Amplify and curve so mouth opens visibly even for quieter speech
+        const raw = (total / playbackAnalyserData.length) / 28;
+        const level = Math.min(1, Math.pow(Math.min(1, raw), 0.6));
         setAvatarMeter(level);
       };
       avatarAnimationFrame = requestAnimationFrame(tick);
@@ -1685,6 +1657,96 @@
 
     updateAvatarState();
     loadAvatarPresets();
+  </script>
+  <script>
+  (function() {
+    // --- Vanilla JS Avatar Animation (zero dependencies) ---
+    var mouthEl = document.getElementById("av-mouth");
+    var eyeL = document.getElementById("av-eye-l");
+    var eyeR = document.getElementById("av-eye-r");
+    var svgEl = document.getElementById("avatarSvg");
+    if (!mouthEl) return;
+
+    // --- Mouth: lerp between closed and open quadratic bezier ---
+    // Closed: M80 138 Q100 142 120 138
+    // Open:   M80 134 Q100 162 120 134
+    // Only the Y values change: start_y, control_y, end_y
+    var MOUTH_CLOSED_Y = { sy: 138, cy: 142, ey: 138 };
+    var MOUTH_OPEN_Y   = { sy: 134, cy: 162, ey: 134 };
+
+    function setMouthProgress(t) {
+      t = Math.max(0, Math.min(1, t));
+      var sy = MOUTH_CLOSED_Y.sy + (MOUTH_OPEN_Y.sy - MOUTH_CLOSED_Y.sy) * t;
+      var cy = MOUTH_CLOSED_Y.cy + (MOUTH_OPEN_Y.cy - MOUTH_CLOSED_Y.cy) * t;
+      var ey = MOUTH_CLOSED_Y.ey + (MOUTH_OPEN_Y.ey - MOUTH_CLOSED_Y.ey) * t;
+      mouthEl.setAttribute("d", "M80 " + sy.toFixed(1) + " Q100 " + cy.toFixed(1) + " 120 " + ey.toFixed(1));
+    }
+
+    // Expose for the existing amplitude animation loop
+    window._gsapMouthTween = { progress: setMouthProgress };
+
+    // --- Eye Blink ---
+    var EYE_RY_NORMAL = 8;
+    var blinkPhase = -1; // -1 = not blinking
+    var blinkStart = 0;
+    var BLINK_DURATION = 150; // ms total (close + open)
+
+    function scheduleBlink() {
+      var delay = 2500 + Math.random() * 4000;
+      setTimeout(function() {
+        blinkPhase = 0;
+        blinkStart = performance.now();
+        // Occasional double blink
+        if (Math.random() < 0.2) {
+          setTimeout(function() {
+            blinkPhase = 0;
+            blinkStart = performance.now();
+          }, 250);
+        }
+        scheduleBlink();
+      }, delay);
+    }
+    scheduleBlink();
+
+    // --- Breathing ---
+    var breathStart = performance.now();
+    var BREATH_DURATION = 5000; // ms per cycle
+    var BREATH_AMOUNT = 3; // px
+
+    // --- Animation loop for blink + breathing ---
+    function animateFace() {
+      requestAnimationFrame(animateFace);
+      var now = performance.now();
+
+      // Blink
+      if (blinkPhase >= 0) {
+        var elapsed = now - blinkStart;
+        var half = BLINK_DURATION / 2;
+        var ry;
+        if (elapsed < half) {
+          // Closing
+          ry = EYE_RY_NORMAL * (1 - elapsed / half);
+        } else if (elapsed < BLINK_DURATION) {
+          // Opening
+          ry = EYE_RY_NORMAL * ((elapsed - half) / half);
+        } else {
+          ry = EYE_RY_NORMAL;
+          blinkPhase = -1;
+        }
+        ry = Math.max(0.5, ry);
+        if (eyeL) eyeL.setAttribute("ry", ry.toFixed(1));
+        if (eyeR) eyeR.setAttribute("ry", ry.toFixed(1));
+      }
+
+      // Breathing
+      if (svgEl) {
+        var breathT = ((now - breathStart) % BREATH_DURATION) / BREATH_DURATION;
+        var breathY = Math.sin(breathT * Math.PI * 2) * BREATH_AMOUNT;
+        svgEl.style.transform = "translateY(" + breathY.toFixed(1) + "px)";
+      }
+    }
+    requestAnimationFrame(animateFace);
+  })();
   </script>
 </body>
 </html>
