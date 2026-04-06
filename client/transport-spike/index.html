@@ -2031,12 +2031,44 @@
     if (useVoiceMode) {
       voiceMode.classList.remove("hidden");
       document.body.classList.add("voice-active");
-      // Auto-connect after a short delay
+      attemptConnect();
+    }
+
+    function attemptConnect() {
       setTimeout(function () {
         var connectBtn = document.getElementById("connectBtn");
         if (connectBtn && !connectBtn.disabled) connectBtn.click();
       }, 500);
     }
+
+    // Monitor connection state — show reconnect in voice mode if disconnected
+    var vcReconnectBtn = null;
+    setInterval(function () {
+      if (voiceMode.classList.contains("hidden")) return;
+      var socketState = document.getElementById("socketState");
+      var isDisconnected = socketState && socketState.textContent === "disconnected";
+      if (isDisconnected && !vcReconnectBtn) {
+        vcReconnectBtn = document.createElement("button");
+        vcReconnectBtn.className = "vc-btn vc-mic";
+        vcReconnectBtn.style.position = "absolute";
+        vcReconnectBtn.style.bottom = "100px";
+        vcReconnectBtn.style.background = "#7c6af0";
+        vcReconnectBtn.innerHTML = '<span style="font-family:DM Sans,sans-serif;font-size:0.82rem;font-weight:500">Reconnect</span>';
+        vcReconnectBtn.addEventListener("click", function () {
+          attemptConnect();
+          if (vcReconnectBtn && vcReconnectBtn.parentNode) {
+            vcReconnectBtn.parentNode.removeChild(vcReconnectBtn);
+            vcReconnectBtn = null;
+          }
+        });
+        voiceMode.appendChild(vcReconnectBtn);
+        vcStatusText.textContent = "Disconnected";
+      } else if (!isDisconnected && vcReconnectBtn) {
+        if (vcReconnectBtn.parentNode) vcReconnectBtn.parentNode.removeChild(vcReconnectBtn);
+        vcReconnectBtn = null;
+        vcStatusText.textContent = "Qantara";
+      }
+    }, 1000);
 
     // Close voice mode → show debug spike
     document.getElementById("vcClose").addEventListener("click", function () {
@@ -2150,6 +2182,8 @@
     // Capture transcript and assistant text for captions
     var lastTranscript = "";
     var lastAssistant = "";
+    var currentAssistantLine = null; // Reused for in-progress updates
+    var assistantFinalized = true;   // Track whether current response is complete
     setInterval(function () {
       if (voiceMode.classList.contains("hidden")) return;
 
@@ -2162,10 +2196,26 @@
       if (t && t !== lastTranscript) {
         lastTranscript = t;
         addCaption("You: " + t, "user");
+        // New user turn — next assistant text is a new response
+        assistantFinalized = true;
+        currentAssistantLine = null;
       }
       if (a && a !== lastAssistant) {
         lastAssistant = a;
-        addCaption(a, "assistant");
+        if (assistantFinalized) {
+          // Start a new assistant caption
+          currentAssistantLine = addCaption(a, "assistant");
+          assistantFinalized = false;
+        } else if (currentAssistantLine) {
+          // Update existing caption in-place (streaming delta)
+          currentAssistantLine.textContent = a;
+        }
+      }
+      // Detect turn completion — assistant text gets cleared
+      if (!a && lastAssistant && currentAssistantLine) {
+        assistantFinalized = true;
+        currentAssistantLine = null;
+        lastAssistant = "";
       }
 
       // Update stats
@@ -2196,6 +2246,7 @@
         old.classList.add("fading");
         setTimeout(function () { if (old.parentNode) old.parentNode.removeChild(old); }, 400);
       }
+      return line;
     }
   })();
   </script>
