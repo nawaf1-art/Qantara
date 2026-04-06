@@ -1360,7 +1360,8 @@
       activePlaybackSources.add(source);
 
       const now = playbackContext.currentTime;
-      nextPlaybackAt = Math.max(nextPlaybackAt, now + 0.02);
+      // Schedule with minimal gap — too much gap causes audible buzzing
+      nextPlaybackAt = Math.max(nextPlaybackAt, now + 0.005);
       source.start(nextPlaybackAt);
       setPlaybackState("playing");
 
@@ -1369,7 +1370,7 @@
 
       source.onended = () => {
         activePlaybackSources.delete(source);
-        if (playbackContext.currentTime >= nextPlaybackAt - 0.03) {
+        if (playbackContext.currentTime >= nextPlaybackAt - 0.01) {
           setPlaybackState("idle");
         }
       };

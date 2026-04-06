@@ -120,6 +120,28 @@ class KokoroTTSProvider(TTSProvider):
             return []
 
         merged = np.concatenate(chunks)
+
+        # Trim leading silence/noise (samples below threshold at the start)
+        threshold = 0.01
+        start_idx = 0
+        for i in range(min(len(merged), KOKORO_SAMPLE_RATE // 4)):  # check first 250ms
+            if abs(merged[i]) > threshold:
+                start_idx = max(0, i - 20)  # keep 20 samples before first real audio
+                break
+        if start_idx > 0:
+            merged = merged[start_idx:]
+
+        # Apply a short fade-in (2ms) to remove onset click/buzz
+        fade_samples = min(48, len(merged))  # 48 samples at 24kHz = 2ms
+        if fade_samples > 0:
+            fade = np.linspace(0.0, 1.0, fade_samples, dtype=np.float32)
+            merged[:fade_samples] *= fade
+
+        # Apply a short fade-out (2ms) to remove end click
+        if fade_samples > 0 and len(merged) > fade_samples:
+            fade_out = np.linspace(1.0, 0.0, fade_samples, dtype=np.float32)
+            merged[-fade_samples:] *= fade_out
+
         clipped = np.clip(merged, -1.0, 1.0)
         return (clipped * 32767.0).astype(np.int16).tolist()
 
