@@ -293,16 +293,19 @@ async def api_backends_handler(_request: web.Request) -> web.Response:
 
     backends: list[dict[str, Any]] = []
 
-    # Ollama
+    # OpenAI-compatible — recommended path (first, always selectable)
+    oai: dict[str, Any] = {
+        "type": "openai_compatible",
+        "name": "OpenAI-Compatible",
+        "available": True,
+    }
+    if openai_result["available"]:
+        oai["servers"] = openai_result.get("servers", [])
+        oai["auto_detected"] = True
+    # Pass Ollama URL hint if detected
     if ollama_result["available"]:
-        backends.append({
-            "type": "ollama",
-            "name": "Ollama",
-            "available": True,
-            "models": ollama_result.get("models", []),
-        })
-    else:
-        backends.append({"type": "ollama", "name": "Ollama", "available": False})
+        oai["ollama_url"] = _ollama_base_url()
+    backends.append(oai)
 
     # OpenClaw
     oc: dict[str, Any] = {"type": "openclaw", "name": "OpenClaw", "available": openclaw_result["available"]}
@@ -311,16 +314,16 @@ async def api_backends_handler(_request: web.Request) -> web.Response:
     oc["agents"] = openclaw_result.get("agents", [])
     backends.append(oc)
 
-    # OpenAI-compatible (auto-detected on common ports)
-    oai: dict[str, Any] = {
-        "type": "openai_compatible",
-        "name": "OpenAI-Compatible",
-        "available": True,  # Always selectable — user can enter any URL
-    }
-    if openai_result["available"]:
-        oai["servers"] = openai_result.get("servers", [])
-        oai["auto_detected"] = True
-    backends.append(oai)
+    # Ollama (bridge mode — kept for backward compatibility)
+    if ollama_result["available"]:
+        backends.append({
+            "type": "ollama",
+            "name": "Ollama (bridge)",
+            "available": True,
+            "models": ollama_result.get("models", []),
+        })
+    else:
+        backends.append({"type": "ollama", "name": "Ollama (bridge)", "available": False})
 
     # Custom URL (always available)
     backends.append({"type": "custom", "name": "Custom URL", "available": True})

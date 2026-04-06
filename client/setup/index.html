@@ -311,20 +311,25 @@
           if (!b.gateway_running) return "Gateway not running";
           return "No agents found";
         }
+        if (b.type === "ollama") return "Not detected \u2014 install from ollama.com";
         return "Not detected on this machine";
+      }
+      if (b.type === "openai_compatible") {
+        // Check if Ollama is available — show as recommended path
+        var ollamaBackend = backends.find(function (x) { return x.type === "ollama" && x.available; });
+        if (ollamaBackend) return "\u2605 Recommended \u2014 fastest path via Ollama";
+        var servers = b.servers || [];
+        if (b.auto_detected && servers.length === 1) return "Detected on port " + servers[0].port;
+        if (b.auto_detected && servers.length > 1) return servers.length + " servers detected";
+        return "llama.cpp, vLLM, LiteLLM, Jan, LM Studio, Ollama";
       }
       if (b.type === "ollama") {
         var models = b.models || [];
-        return models.length + " model" + (models.length !== 1 ? "s" : "") + " available";
+        return models.length + " model" + (models.length !== 1 ? "s" : "") + " \u2014 uses bridge process";
       }
       if (b.type === "openclaw") {
         var agents = b.agents || [];
         return agents.length + " agent" + (agents.length !== 1 ? "s" : "") + " available";
-      }
-      if (b.type === "openai_compatible") {
-        var servers = b.servers || [];
-        if (servers.length === 1) return "Detected on port " + servers[0].port;
-        return servers.length + " server" + (servers.length !== 1 ? "s" : "") + " detected";
       }
       return "";
     }
@@ -506,8 +511,13 @@
       var inp = document.createElement("input");
       inp.type = "url";
       inp.id = "cfg-openai-url";
-      inp.placeholder = "http://localhost:8080";
-      if (servers.length > 0) inp.value = servers[0].url;
+      inp.placeholder = "http://localhost:11434";
+      // Pre-fill: auto-detected server first, then Ollama URL if available
+      if (servers.length > 0) {
+        inp.value = servers[0].url;
+      } else if (b.ollama_url) {
+        inp.value = b.ollama_url;
+      }
       inp.addEventListener("input", function () { startBtn.disabled = !isConfigValid(); });
 
       var testBtn = document.createElement("button");
