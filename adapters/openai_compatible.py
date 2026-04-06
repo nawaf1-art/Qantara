@@ -95,6 +95,8 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
         self._sessions: dict[str, list[dict[str, str]]] = {}
         # Track active turns for cancellation
         self._active_turns: dict[str, bool] = {}
+        # Track turn -> session mapping for rollback on failure
+        self._turn_sessions: dict[str, str] = {}
         # Detected /v1 prefix (auto-probed on first use)
         self._api_prefix: str | None = None
 
@@ -186,6 +188,7 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
 
         turn_handle = str(uuid.uuid4())
         self._active_turns[turn_handle] = True
+        self._turn_sessions[turn_handle] = session_handle
         return turn_handle
 
     async def stream_assistant_output(
@@ -198,12 +201,14 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
 
         messages = self._sessions.get(session_handle, [])
         if not messages:
+            self._rollback_user_message(session_handle)
             yield {"type": "turn_failed", "message": "no session found"}
             return
 
         # Resolve model and API prefix
         model = self.model or await self._auto_detect_model()
         if not model:
+            self._rollback_user_message(session_handle)
             yield {"type": "turn_failed", "message": "no model configured or detected"}
             return
 
@@ -233,6 +238,7 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
                     if resp.status >= 400:
                         body = await resp.text()
                         error_msg = _normalize_error(body)
+                        self._rollback_user_message(session_handle)
                         yield {"type": "turn_failed", "message": error_msg}
                         return
 
@@ -294,25 +300,37 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
                                 }
 
         except aiohttp.ClientConnectorError:
+            self._rollback_user_message(session_handle)
             yield {
                 "type": "turn_failed",
                 "message": f"Cannot reach server at {self.base_url}. Is it running?",
             }
             return
         except aiohttp.ServerTimeoutError:
+            self._rollback_user_message(session_handle)
             yield {
                 "type": "turn_failed",
                 "message": "Server not responding. The model may be loading — try again.",
             }
             return
         except Exception as exc:
+            self._rollback_user_message(session_handle)
             yield {
                 "type": "turn_failed",
                 "message": str(exc),
             }
             return
 
-        # Emit final text
+        # Check if the turn was cancelled during streaming
+        was_cancelled = not self._active_turns.get(turn_handle, False)
+        self._active_turns.pop(turn_handle, None)
+
+        if was_cancelled:
+            # Cancelled turn: emit cancel_acknowledged, do NOT save partial response
+            yield {"type": "cancel_acknowledged"}
+            return
+
+        # Emit final text for completed turns only
         if full_response:
             yield {"type": "assistant_text_final", "text": full_response}
             # Save assistant response to conversation history
@@ -321,9 +339,13 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
                     {"role": "assistant", "content": full_response}
                 )
 
-        # Clean up turn
-        self._active_turns.pop(turn_handle, None)
         yield {"type": "turn_completed"}
+
+    def _rollback_user_message(self, session_handle: str) -> None:
+        """Remove the last user message from history on turn failure."""
+        messages = self._sessions.get(session_handle, [])
+        if messages and messages[-1].get("role") == "user":
+            messages.pop()
 
     async def cancel_turn(
         self,
