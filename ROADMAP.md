@@ -189,7 +189,46 @@ Three major improvements to the setup page:
 **Effort:** 2-3 days
 **Ship when:** All backend types auto-detect and configure without user knowing any env vars or ports
 
-#### `0.1.8` — Contributor onboarding and launch prep
+#### `0.1.8` — Clean conversation view
+
+**Priority:** High — transforms the spike from a debug tool into a product.
+
+The current voice page is a developer dashboard with status grids, raw logs, frame counters, and debug buttons. After going through a polished setup wizard, users land on a page that looks like a test harness. This release makes it look and feel like a voice assistant.
+
+Implementation:
+- [ ] Rename page title from "Qantara Transport Spike" to "Qantara"
+- [ ] Default view: clean conversation transcript (chat-style)
+  - Show "You: ..." for user speech (from transcript results)
+  - Show "Qantara: ..." for assistant responses (from assistant text)
+  - Auto-scroll to latest message
+  - Timestamp on each message (subtle)
+- [ ] Avatar + state indicator at the top (existing — keep as-is)
+- [ ] Hide debug panel by default behind a toggle button (🐛 Debug)
+  - Status grid (socket, mic, playback, VAD, endpoint, RMS, frames, etc.)
+  - Raw WebSocket log
+  - Debug buttons (Request Tone, Mock Turn, Transcribe Recent Audio)
+  - All existing debug functionality preserved — just hidden
+- [ ] Hide developer controls by default behind a toggle button (⚙ Settings)
+  - TTS Voice selector
+  - Avatar preset selector
+  - Playback Style selector
+  - Speech Speed slider
+  - Audio Mode selector
+- [ ] Clean bottom bar showing:
+  - Active backend name (e.g., "Ollama · gemma4:e4b" or "OpenClaw · spectra")
+  - Mute button
+  - Settings gear
+  - Debug toggle
+  - Link to change backend (/setup)
+- [ ] Remove developer-only text ("Thin browser client for the M0 transport spike...")
+- [ ] Mic is always-on after connect — no manual submit needed
+- [ ] Mobile-responsive layout (conversation view stacks cleanly on small screens)
+
+**Files:** `client/transport-spike/index.html`
+**Effort:** 1-2 days
+**Ship when:** Opening the voice page feels like a product, not a test tool. Debug is one click away for developers.
+
+#### `0.1.9` — Contributor onboarding and launch prep
 
 - [ ] Add GitHub topics for discoverability
 - [ ] Add `CONTRIBUTING.md` referencing AGENTS.md
@@ -335,7 +374,8 @@ Optional MCP server exposing voice capabilities as tools. Any MCP-compatible age
                🔄 Avatar overhaul (PR #5 — in review)
 0.1.6          ⬜ OpenAI-compatible adapter  ← NEXT
 0.1.7          ⬜ Enhanced setup page (all backends dummy-proof)
-0.1.8          ⬜ Contributor onboarding + demo video
+0.1.8          ⬜ Clean conversation view (product UI, not debug tool)
+0.1.9          ⬜ Contributor onboarding + demo video
 0.2.0          ⬜ Phase 1 complete → PUBLIC LAUNCH
 0.2.1          ⬜ MCP voice server (control-plane)
 0.2.2          ⬜ Vosk STT
