@@ -452,6 +452,46 @@ async def api_configure_handler(request: web.Request) -> web.Response:
     })
 
 
+async def api_test_url_handler(request: web.Request) -> web.Response:
+    """POST /api/test-url — server-side proxy to test an OpenAI-compatible URL.
+
+    Bypasses browser CORS restrictions by probing from the gateway.
+    Body: {"url": "http://..."}
+    Returns: {"ok": true, "models": [...]} or {"ok": false, "error": "..."}
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "invalid JSON"}, status=400)
+
+    raw_url = (body.get("url") or "").strip().rstrip("/")
+    if not raw_url:
+        return web.json_response({"ok": False, "error": "missing url"}, status=400)
+
+    if not raw_url.startswith(("http://", "https://")):
+        raw_url = "http://" + raw_url
+
+    # Strip /v1 suffix if present
+    base = raw_url
+    if base.endswith("/v1"):
+        base = base[:-3]
+
+    # Try /v1/models, then /models
+    timeout = _aiohttp.ClientTimeout(total=5)
+    for prefix in ("/v1", ""):
+        try:
+            async with _aiohttp.ClientSession(timeout=timeout) as cs:
+                async with cs.get(f"{base}{prefix}/models") as resp:
+                    if resp.status < 400:
+                        data = await resp.json()
+                        models = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+                        return web.json_response({"ok": True, "models": models, "url": base})
+        except Exception:
+            continue
+
+    return web.json_response({"ok": False, "error": f"Cannot reach {base}. Is the server running?"})
+
+
 async def refresh_adapter_health(session: Session | None = None) -> None:
     global LAST_ADAPTER_HEALTH
     try:
@@ -1229,6 +1269,7 @@ def create_app() -> web.Application:
     app.router.add_get("/api/backends", api_backends_handler)
     app.router.add_get("/api/status", api_status_handler)
     app.router.add_post("/api/configure", api_configure_handler)
+    app.router.add_post("/api/test-url", api_test_url_handler)
     app.router.add_get("/setup", setup_handler)
     app.router.add_static("/setup", CLIENT_SETUP_DIR, show_index=True)
     app.router.add_get("/spike", spike_handler)

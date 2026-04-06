@@ -578,14 +578,20 @@
       var modelArea = document.getElementById("openai-model-area");
       if (el) { el.textContent = "Testing\u2026"; el.className = "test-result"; }
       if (modelArea) modelArea.innerHTML = "";
-      // Normalize
-      url = url.replace(/\/+$/, "");
-      if (!/^https?:\/\//.test(url)) url = "http://" + url;
-      var testUrl = url.replace(/\/v1$/, "") + "/v1/models";
-      fetch(testUrl, { signal: AbortSignal.timeout(5000) })
+
+      // Use server-side proxy to avoid CORS issues
+      fetch("/api/test-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url }),
+      })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-          var models = (data.data || []).map(function (m) { return m.id; });
+          if (!data.ok) {
+            if (el) { el.textContent = "\u2717 " + (data.error || "Failed"); el.className = "test-result fail"; }
+            return;
+          }
+          var models = data.models || [];
           if (el) {
             el.textContent = "\u2713 Connected \u2014 " + models.length + " model" + (models.length !== 1 ? "s" : "") + " found";
             el.className = "test-result ok";
@@ -614,7 +620,7 @@
         })
         .catch(function () {
           if (el) {
-            el.textContent = "\u2717 Cannot reach server. Is it running?";
+            el.textContent = "\u2717 Cannot reach gateway.";
             el.className = "test-result fail";
           }
         });
@@ -624,19 +630,27 @@
       if (!url) return;
       var el = document.getElementById("test-result");
       if (el) { el.textContent = "Testing\u2026"; el.className = "test-result"; }
-      url = url.replace(/\/+$/, "");
-      if (!/^https?:\/\//.test(url)) url = "http://" + url;
-      fetch(url + "/health", { signal: AbortSignal.timeout(5000) })
+      // Use server-side proxy to avoid CORS
+      fetch("/api/test-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url }),
+      })
         .then(function (r) { return r.json(); })
         .then(function (data) {
           if (el) {
-            el.textContent = "\u2713 Connected \u2014 " + (data.detail || data.status || "healthy");
-            el.className = "test-result ok";
+            if (data.ok) {
+              el.textContent = "\u2713 Connected \u2014 " + (data.models || []).length + " model(s)";
+              el.className = "test-result ok";
+            } else {
+              el.textContent = "\u2717 " + (data.error || "Failed");
+              el.className = "test-result fail";
+            }
           }
         })
         .catch(function () {
           if (el) {
-            el.textContent = "\u2717 Cannot reach server. Is it running?";
+            el.textContent = "\u2717 Cannot reach gateway.";
             el.className = "test-result fail";
           }
         });
