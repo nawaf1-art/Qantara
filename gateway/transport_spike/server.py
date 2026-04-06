@@ -315,10 +315,11 @@ async def api_backends_handler(_request: web.Request) -> web.Response:
     oai: dict[str, Any] = {
         "type": "openai_compatible",
         "name": "OpenAI-Compatible",
-        "available": openai_result["available"],
+        "available": True,  # Always selectable — user can enter any URL
     }
     if openai_result["available"]:
         oai["servers"] = openai_result.get("servers", [])
+        oai["auto_detected"] = True
     backends.append(oai)
 
     # Custom URL (always available)
