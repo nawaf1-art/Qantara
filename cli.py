@@ -184,7 +184,7 @@ def _apply_config_defaults(args: argparse.Namespace) -> None:
 def _classify_backend(backend: str) -> tuple[str, str]:
     """Return (backend_type, url) from the --backend value.
 
-    backend_type is one of: mock, ollama, openclaw, custom.
+    backend_type is one of: mock, ollama, openclaw, openai_compatible, custom.
     url is the backend URL (empty for mock, ollama, openclaw unless overridden).
     """
     value = backend.strip()
@@ -196,8 +196,11 @@ def _classify_backend(backend: str) -> tuple[str, str]:
         return "ollama", ""
     if lower == "openclaw":
         return "openclaw", ""
+    if lower in ("openai", "openai_compatible", "openai-compatible"):
+        return "openai_compatible", ""
     if lower.startswith("http://") or lower.startswith("https://"):
-        return "custom", value.rstrip("/")
+        # HTTP URLs → OpenAI-compatible adapter (most common use case)
+        return "openai_compatible", value.rstrip("/")
 
     # Unrecognised — treat as literal and let the user know
     print(f"[qantara] warning: unrecognised backend '{value}', treating as custom URL", flush=True)

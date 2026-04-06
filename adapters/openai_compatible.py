@@ -97,6 +97,8 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
         self._active_turns: dict[str, bool] = {}
         # Track turn -> session mapping for rollback on failure
         self._turn_sessions: dict[str, str] = {}
+        # Active response objects for aborting HTTP connections on cancel
+        self._active_responses: dict[str, aiohttp.ClientResponse] = {}
         # Detected /v1 prefix (auto-probed on first use)
         self._api_prefix: str | None = None
 
@@ -235,10 +237,14 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
                     json=payload,
                     headers=self._headers(),
                 ) as resp:
+                    # Store response for cancellation
+                    self._active_responses[turn_handle] = resp
+
                     if resp.status >= 400:
                         body = await resp.text()
                         error_msg = _normalize_error(body)
                         self._rollback_user_message(session_handle)
+                        self._active_responses.pop(turn_handle, None)
                         yield {"type": "turn_failed", "message": error_msg}
                         return
 
@@ -322,6 +328,7 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
             return
 
         # Check if the turn was cancelled during streaming
+        self._active_responses.pop(turn_handle, None)
         was_cancelled = not self._active_turns.get(turn_handle, False)
         self._active_turns.pop(turn_handle, None)
 
@@ -355,6 +362,10 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
     ) -> dict[str, Any]:
         # Signal the streaming loop to stop
         self._active_turns[turn_handle] = False
+        # Close the HTTP response to abort the in-flight stream immediately
+        resp = self._active_responses.pop(turn_handle, None)
+        if resp is not None:
+            resp.close()
         return {"status": "acknowledged"}
 
     async def check_health(self) -> AdapterHealth:
