@@ -176,7 +176,7 @@ def _ollama_base_url() -> str:
 
 
 async def _probe_ollama() -> dict[str, Any]:
-    """Probe Ollama for available models."""
+    """Probe Ollama for available models with size info."""
     url = f"{_ollama_base_url()}/api/tags"
     try:
         timeout = _aiohttp.ClientTimeout(total=3)
@@ -185,36 +185,115 @@ async def _probe_ollama() -> dict[str, Any]:
                 if resp.status != 200:
                     return {"available": False}
                 data = await resp.json()
-                models = [m.get("name", "") for m in data.get("models", []) if m.get("name")]
+                models = []
+                for m in data.get("models", []):
+                    name = m.get("name", "")
+                    if not name:
+                        continue
+                    size_bytes = m.get("size", 0)
+                    size_gb = round(size_bytes / (1024 ** 3), 1) if size_bytes else None
+                    family = m.get("details", {}).get("family", "")
+                    param_size = m.get("details", {}).get("parameter_size", "")
+                    models.append({
+                        "name": name,
+                        "size_gb": size_gb,
+                        "family": family,
+                        "param_size": param_size,
+                    })
                 return {"available": True, "models": models}
     except Exception:
         return {"available": False}
 
 
 async def _probe_openclaw() -> dict[str, Any]:
-    """Conservative probe for OpenClaw on known port. Returns only reachability."""
-    if _managed_bridge_proc is not None and _managed_bridge_type != "openclaw":
-        return {"available": False}
-    url = f"http://localhost:{MANAGED_BRIDGE_PORT}/health"
+    """Probe OpenClaw: check installation, gateway health, and list agents."""
+    import shutil
+    result: dict[str, Any] = {"available": False, "installed": False, "gateway_running": False, "agents": []}
+
+    openclaw_bin = os.environ.get("QANTARA_OPENCLAW_BIN", "openclaw")
+    if not shutil.which(openclaw_bin):
+        return result
+    result["installed"] = True
+
+    # Check gateway health
     try:
-        timeout = _aiohttp.ClientTimeout(total=3)
+        proc = await asyncio.create_subprocess_exec(
+            openclaw_bin, "health", "--json",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+        health = json.loads(stdout.decode("utf-8", errors="replace"))
+        if health.get("ok"):
+            result["gateway_running"] = True
+        else:
+            return result
+    except Exception:
+        return result
+
+    # List agents
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            openclaw_bin, "agents", "list", "--json",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+        agents_data = json.loads(stdout.decode("utf-8", errors="replace"))
+        if isinstance(agents_data, list):
+            for a in agents_data:
+                agent_id = a.get("id", a.get("name", ""))
+                if agent_id:
+                    result["agents"].append({
+                        "id": agent_id,
+                        "name": a.get("identityName", agent_id),
+                        "default": a.get("isDefault", False),
+                    })
+    except Exception:
+        pass
+
+    result["available"] = result["gateway_running"] and len(result["agents"]) > 0
+    return result
+
+
+async def _probe_openai_port(host: str, port: int) -> dict[str, Any] | None:
+    """Probe a single port for an OpenAI-compatible server."""
+    url = f"http://{host}:{port}/v1/models"
+    try:
+        timeout = _aiohttp.ClientTimeout(total=2)
         async with _aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url) as resp:
-                return {"available": resp.status < 500}
+                if resp.status >= 400:
+                    return None
+                data = await resp.json()
+                models = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+                if models:
+                    return {"port": port, "models": models, "url": f"http://{host}:{port}"}
     except Exception:
-        return {"available": False}
+        pass
+    return None
+
+
+async def _probe_openai_compatible() -> dict[str, Any]:
+    """Probe common ports for OpenAI-compatible servers (not Ollama)."""
+    ports = [8080, 8000, 1337, 1234]
+    tasks = [_probe_openai_port("127.0.0.1", p) for p in ports]
+    results = await asyncio.gather(*tasks)
+    servers = [r for r in results if r is not None]
+    if servers:
+        return {"available": True, "servers": servers}
+    return {"available": False}
 
 
 async def api_backends_handler(_request: web.Request) -> web.Response:
     """GET /api/backends — detect available backends."""
-    ollama_result, openclaw_result = await asyncio.gather(
-        _probe_ollama(), _probe_openclaw()
+    ollama_result, openclaw_result, openai_result = await asyncio.gather(
+        _probe_ollama(), _probe_openclaw(), _probe_openai_compatible()
     )
 
-    backends: list[dict[str, Any]] = [
-        {"type": "mock", "name": "Demo (mock)", "available": True},
-    ]
+    backends: list[dict[str, Any]] = []
 
+    # Ollama
     if ollama_result["available"]:
         backends.append({
             "type": "ollama",
@@ -225,12 +304,28 @@ async def api_backends_handler(_request: web.Request) -> web.Response:
     else:
         backends.append({"type": "ollama", "name": "Ollama", "available": False})
 
-    if openclaw_result["available"]:
-        backends.append({"type": "openclaw", "name": "OpenClaw", "available": True})
-    else:
-        backends.append({"type": "openclaw", "name": "OpenClaw", "available": False})
+    # OpenClaw
+    oc: dict[str, Any] = {"type": "openclaw", "name": "OpenClaw", "available": openclaw_result["available"]}
+    oc["installed"] = openclaw_result.get("installed", False)
+    oc["gateway_running"] = openclaw_result.get("gateway_running", False)
+    oc["agents"] = openclaw_result.get("agents", [])
+    backends.append(oc)
 
+    # OpenAI-compatible (auto-detected on common ports)
+    oai: dict[str, Any] = {
+        "type": "openai_compatible",
+        "name": "OpenAI-Compatible",
+        "available": openai_result["available"],
+    }
+    if openai_result["available"]:
+        oai["servers"] = openai_result.get("servers", [])
+    backends.append(oai)
+
+    # Custom URL (always available)
     backends.append({"type": "custom", "name": "Custom URL", "available": True})
+
+    # Demo/Mock (always available, last)
+    backends.append({"type": "mock", "name": "Demo", "available": True})
 
     return web.json_response({"backends": backends})
 
@@ -298,6 +393,13 @@ async def api_configure_handler(request: web.Request) -> web.Response:
         await _start_managed_bridge("openclaw", env_overrides=env_overrides)
         await _health_check_bridge(bridge_url)
         url = url or bridge_url
+    elif backend_type in ("openai_compatible", "openai"):
+        if not url:
+            return web.json_response(
+                {"error": "openai_compatible type requires 'url'"}, status=400
+            )
+        adapter_kind = "openai_compatible"
+        await _stop_managed_bridge()
     elif backend_type == "custom":
         if not url:
             return web.json_response(
@@ -314,6 +416,10 @@ async def api_configure_handler(request: web.Request) -> web.Response:
     new_config = AdapterConfig(kind=adapter_kind, name=backend_type)
     if adapter_kind == "session_gateway_http":
         new_config.options["base_url"] = url
+    elif adapter_kind == "openai_compatible":
+        new_config.options["base_url"] = url
+        if model:
+            new_config.options["model"] = model
 
     new_adapter = create_adapter(new_config)
     ADAPTER_CONFIG = new_config

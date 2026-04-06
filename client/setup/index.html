@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Qantara Setup</title>
+  <title>Qantara</title>
   <style>
     :root {
       --bg: #f4f1ea;
@@ -13,9 +13,10 @@
       --line: #d5c6b5;
       --accent: #0f766e;
       --accent-light: rgba(15, 118, 110, 0.10);
-      --warn: #a16207;
       --green: #15803d;
+      --amber: #a16207;
       --red: #b91c1c;
+      --grey: #9ca3af;
     }
 
     * { box-sizing: border-box; }
@@ -24,205 +25,161 @@
       margin: 0;
       font-family: Georgia, "Times New Roman", serif;
       color: var(--ink);
-      background:
-        radial-gradient(circle at top left, #fdf7ee 0, #f4f1ea 45%, #ebe3d5 100%);
+      background: radial-gradient(circle at top left, #fdf7ee 0, #f4f1ea 45%, #ebe3d5 100%);
       min-height: 100vh;
     }
 
     main {
-      max-width: 640px;
+      max-width: 620px;
       margin: 0 auto;
       padding: 48px 20px 64px;
     }
 
-    h1 {
-      margin: 0 0 6px;
-      font-size: 2.2rem;
-      font-weight: 600;
-    }
+    h1 { margin: 0 0 4px; font-size: 2.2rem; font-weight: 600; }
 
     .subtitle {
-      margin: 0 0 32px;
+      margin: 0 0 28px;
       color: var(--muted);
-      line-height: 1.5;
-      font-size: 1.05rem;
+      line-height: 1.55;
+      font-size: 1rem;
     }
 
     .panel {
       background: rgba(255, 250, 242, 0.92);
       border: 1px solid var(--line);
       border-radius: 18px;
-      padding: 24px;
-      box-shadow: 0 14px 40px rgba(31, 35, 40, 0.08);
+      padding: 22px;
+      box-shadow: 0 14px 40px rgba(31, 35, 40, 0.07);
     }
 
     .section-label {
       display: block;
-      font-size: 0.78rem;
+      font-size: 0.72rem;
       color: var(--muted);
       text-transform: uppercase;
-      letter-spacing: 0.07em;
-      margin-bottom: 12px;
+      letter-spacing: 0.08em;
+      margin-bottom: 10px;
     }
 
     /* Backend cards */
-    .backend-list {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      margin-bottom: 24px;
-    }
+    .backend-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
 
     .backend-card {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      padding: 14px 16px;
-      border: 1.5px solid var(--line);
-      border-radius: 14px;
-      cursor: pointer;
-      transition: border-color 0.15s, background 0.15s;
-      background: rgba(255, 255, 255, 0.5);
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 12px;
+      cursor: pointer; transition: all 0.15s; background: rgba(255,255,255,0.5);
     }
+    .backend-card:hover { border-color: var(--accent); background: var(--accent-light); }
+    .backend-card.selected { border-color: var(--accent); background: var(--accent-light); box-shadow: 0 0 0 1px var(--accent); }
+    .backend-card.unavailable { opacity: 0.55; cursor: default; }
+    .backend-card.unavailable:hover { border-color: var(--line); background: rgba(255,255,255,0.5); }
 
-    .backend-card:hover {
-      border-color: var(--accent);
-      background: var(--accent-light);
-    }
-
-    .backend-card.selected {
-      border-color: var(--accent);
-      background: var(--accent-light);
-      box-shadow: 0 0 0 1px var(--accent);
-    }
-
-    .backend-card.unavailable {
-      opacity: 0.5;
-      cursor: default;
-    }
-
-    .backend-card.unavailable:hover {
-      border-color: var(--line);
-      background: rgba(255, 255, 255, 0.5);
-    }
-
-    .backend-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-
+    .backend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
     .backend-dot.available { background: var(--green); }
-    .backend-dot.unavailable { background: var(--red); }
+    .backend-dot.unavailable { background: var(--grey); }
 
     .backend-info { flex: 1; min-width: 0; }
-
-    .backend-name {
-      font-weight: 600;
-      font-size: 1rem;
-    }
-
-    .backend-hint {
-      font-size: 0.82rem;
-      color: var(--muted);
-      margin-top: 2px;
-    }
+    .backend-name { font-weight: 600; font-size: 0.95rem; }
+    .backend-hint { font-size: 0.78rem; color: var(--muted); margin-top: 1px; }
 
     /* Config area */
-    .config-area {
-      margin-bottom: 24px;
-      min-height: 0;
-    }
-
+    .config-area { margin-bottom: 20px; min-height: 0; }
     .config-area:empty { display: none; }
-
-    .config-group {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
+    .config-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+    .config-group label { font-size: 0.78rem; color: var(--muted); }
+    .config-group select, .config-group input {
+      font-family: inherit; font-size: 0.92rem; padding: 9px 12px;
+      border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink); outline: none;
+    }
+    .config-group select:focus, .config-group input:focus {
+      border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light);
+    }
+    .config-note { font-size: 0.75rem; color: var(--muted); margin-top: 4px; font-style: italic; }
+    .config-recommended {
+      font-size: 0.72rem; color: var(--accent); font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.04em;
     }
 
-    .config-group label {
-      font-size: 0.82rem;
-      color: var(--muted);
+    /* Agent radio list */
+    .agent-list { display: flex; flex-direction: column; gap: 6px; }
+    .agent-option {
+      display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+      border: 1px solid var(--line); border-radius: 9px; cursor: pointer;
+      transition: all 0.12s; background: rgba(255,255,255,0.5);
     }
+    .agent-option:hover { border-color: var(--accent); background: var(--accent-light); }
+    .agent-option.selected { border-color: var(--accent); background: var(--accent-light); }
+    .agent-option input[type="radio"] { accent-color: var(--accent); margin: 0; }
+    .agent-name { font-weight: 600; font-size: 0.9rem; }
+    .agent-default { font-size: 0.7rem; color: var(--accent); margin-left: 4px; }
 
-    .config-group select,
-    .config-group input {
-      font-family: inherit;
-      font-size: 0.95rem;
-      padding: 10px 14px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      background: #fff;
-      color: var(--ink);
-      outline: none;
+    /* Test button */
+    .test-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+    .test-btn {
+      appearance: none; border: 1px solid var(--line); background: var(--panel);
+      color: var(--ink); border-radius: 999px; padding: 6px 14px; font: inherit;
+      font-size: 0.82rem; cursor: pointer; transition: all 0.12s;
     }
+    .test-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .test-result { font-size: 0.78rem; color: var(--muted); }
+    .test-result.ok { color: var(--green); }
+    .test-result.fail { color: var(--red); }
 
-    .config-group select:focus,
-    .config-group input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 2px var(--accent-light);
-    }
+    /* URL input row with test */
+    .url-row { display: flex; gap: 8px; }
+    .url-row input { flex: 1; }
+    .url-row .test-btn { flex-shrink: 0; align-self: flex-start; margin-top: 0; padding: 9px 14px; }
 
     /* Start button */
     .start-btn {
-      appearance: none;
-      display: block;
-      width: 100%;
-      padding: 14px;
-      font: inherit;
-      font-size: 1.1rem;
-      font-weight: 600;
-      color: #fff;
-      background: var(--accent);
-      border: none;
-      border-radius: 999px;
-      cursor: pointer;
-      transition: opacity 0.15s;
+      appearance: none; display: block; width: 100%; padding: 13px; font: inherit;
+      font-size: 1.05rem; font-weight: 600; color: #fff; background: var(--accent);
+      border: none; border-radius: 999px; cursor: pointer; transition: opacity 0.15s;
     }
-
     .start-btn:hover { opacity: 0.9; }
+    .start-btn:disabled { opacity: 0.35; cursor: default; }
 
-    .start-btn:disabled {
-      opacity: 0.4;
-      cursor: default;
-    }
-
-    /* Status message */
-    .status-msg {
-      text-align: center;
-      font-size: 0.88rem;
-      color: var(--muted);
-      margin-top: 12px;
-      min-height: 1.4em;
-    }
-
+    .status-msg { text-align: center; font-size: 0.82rem; color: var(--muted); margin-top: 10px; min-height: 1.2em; }
     .status-msg.error { color: var(--red); }
 
-    /* Loading state */
-    .loading {
-      text-align: center;
-      padding: 32px;
-      color: var(--muted);
+    /* Getting started panel */
+    .getting-started {
+      text-align: center; padding: 28px 16px; color: var(--muted); line-height: 1.6;
     }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 0.4; }
-      50% { opacity: 1; }
+    .getting-started h3 { color: var(--ink); font-size: 1.1rem; margin: 0 0 8px; }
+    .getting-started p { margin: 0 0 14px; font-size: 0.9rem; }
+    .getting-started .cmd-box {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(31,35,40,0.06); border: 1px solid var(--line);
+      border-radius: 8px; padding: 8px 14px; font-family: monospace; font-size: 0.88rem;
+      color: var(--ink); margin: 6px 0 14px;
     }
+    .getting-started .copy-btn {
+      appearance: none; border: none; background: none; cursor: pointer;
+      color: var(--accent); font-size: 0.78rem; padding: 2px 6px;
+    }
+    .getting-started .copy-btn:hover { text-decoration: underline; }
+    .scan-btn {
+      appearance: none; border: 1px solid var(--accent); background: transparent;
+      color: var(--accent); border-radius: 999px; padding: 8px 20px; font: inherit;
+      font-size: 0.88rem; cursor: pointer; margin: 6px 4px; transition: all 0.12s;
+    }
+    .scan-btn:hover { background: var(--accent); color: #fff; }
 
-    .loading-dots::after {
-      content: "...";
-      animation: pulse 1.2s infinite;
+    .loading { text-align: center; padding: 28px; color: var(--muted); }
+    @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+    .loading-dots::after { content: "..."; animation: pulse 1.2s infinite; }
+
+    @media (max-width: 480px) {
+      main { padding: 28px 14px 48px; }
+      .url-row { flex-direction: column; }
     }
   </style>
 </head>
 <body>
   <main>
     <h1>Qantara</h1>
-    <p class="subtitle">Choose a backend to start your voice conversation.</p>
+    <p class="subtitle">Talk to your AI agent by voice. Choose how your AI is running to get started.</p>
 
     <div class="panel">
       <span class="section-label">Available backends</span>
@@ -238,255 +195,535 @@
   </main>
 
   <script>
-    (function () {
-      "use strict";
+  (function () {
+    "use strict";
 
-      var backends = [];
-      var selectedType = null;
+    var backends = [];
+    var selectedType = null;
+    var selectedAgent = null;
+    var testResult = null;
+    var pollTimer = null;
 
-      var listEl = document.getElementById("backend-list");
-      var configEl = document.getElementById("config-area");
-      var startBtn = document.getElementById("start-btn");
-      var statusMsg = document.getElementById("status-msg");
+    var listEl = document.getElementById("backend-list");
+    var configEl = document.getElementById("config-area");
+    var startBtn = document.getElementById("start-btn");
+    var statusMsg = document.getElementById("status-msg");
 
-      // -- Load saved selection from localStorage --
-      var saved = null;
-      try {
-        saved = JSON.parse(localStorage.getItem("qantara_backend"));
-      } catch (_) { /* ignore */ }
+    // Recommended models for voice (fast, conversational)
+    var RECOMMENDED = ["gemma4:e4b", "llama3.2:3b", "llama3.1:8b", "qwen2.5:7b", "qwen2.5:3b", "mistral:latest", "gemma2:latest"];
 
-      // -- Fetch backends --
+    var saved = null;
+    try { saved = JSON.parse(localStorage.getItem("qantara_backend")); } catch (_) {}
+
+    fetchBackends();
+
+    function fetchBackends() {
       fetch("/api/backends")
         .then(function (r) { return r.json(); })
         .then(function (data) {
           backends = data.backends || [];
-          renderBackends();
-          // Restore saved selection if backend is still available
-          if (saved && saved.type) {
-            var match = backends.find(function (b) {
-              return b.type === saved.type && b.available;
-            });
-            if (match) {
-              selectBackend(saved.type);
-              restoreSavedConfig(saved);
+          var anyReal = backends.some(function (b) { return b.type !== "mock" && b.type !== "custom" && b.available; });
+
+          if (!anyReal) {
+            showGettingStarted();
+            startPolling();
+          } else {
+            stopPolling();
+            renderBackends();
+            if (saved && saved.type) {
+              var match = backends.find(function (b) { return b.type === saved.type && b.available; });
+              if (match) { selectBackend(saved.type); restoreSavedConfig(saved); }
             }
           }
         })
         .catch(function () {
-          listEl.innerHTML =
-            '<div class="loading" style="color:var(--red)">Could not reach gateway. Is the server running?</div>';
+          listEl.innerHTML = '<div class="loading" style="color:var(--red)">Cannot reach gateway. Is the server running?</div>';
         });
+    }
 
-      function renderBackends() {
-        listEl.innerHTML = "";
-        backends.forEach(function (b) {
-          var card = document.createElement("div");
-          card.className = "backend-card" + (b.available ? "" : " unavailable");
-          if (b.type === selectedType) card.className += " selected";
+    function startPolling() {
+      if (pollTimer) return;
+      pollTimer = setInterval(fetchBackends, 5000);
+    }
 
-          var dot = document.createElement("div");
-          dot.className = "backend-dot " + (b.available ? "available" : "unavailable");
+    function stopPolling() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
 
-          var info = document.createElement("div");
-          info.className = "backend-info";
+    function showGettingStarted() {
+      listEl.innerHTML = "";
+      var div = document.createElement("div");
+      div.className = "getting-started";
+      div.innerHTML =
+        '<h3>No AI backend detected</h3>' +
+        '<p>Qantara needs an AI backend to generate responses. The easiest way to start:</p>' +
+        '<p><strong>1.</strong> Install Ollama from <a href="https://ollama.com" target="_blank" style="color:var(--accent)">ollama.com</a></p>' +
+        '<p><strong>2.</strong> Download a model:</p>' +
+        '<div class="cmd-box"><code>ollama pull gemma4:e4b</code><button class="copy-btn" onclick="navigator.clipboard.writeText(\'ollama pull gemma4:e4b\')">Copy</button></div>' +
+        '<p><strong>3.</strong> Come back \u2014 Qantara detects it automatically.</p>' +
+        '<div><button class="scan-btn" onclick="location.reload()">Scan Again</button></div>' +
+        '<p style="margin-top:18px;font-size:0.82rem">Already running something? ' +
+        '<a href="#" style="color:var(--accent)" onclick="showManualSetup();return false">Configure manually \u2192</a></p>';
+      listEl.appendChild(div);
+      // Also show mock option
+      configEl.innerHTML = "";
+      startBtn.disabled = true;
+    }
 
-          var name = document.createElement("div");
-          name.className = "backend-name";
-          name.textContent = b.name;
+    window.showManualSetup = function () {
+      stopPolling();
+      // Add custom + mock as available and render
+      if (!backends.find(function (b) { return b.type === "custom"; })) {
+        backends.push({ type: "custom", name: "Custom URL", available: true });
+      }
+      if (!backends.find(function (b) { return b.type === "mock"; })) {
+        backends.push({ type: "mock", name: "Demo", available: true });
+      }
+      renderBackends();
+    };
 
-          var hint = document.createElement("div");
-          hint.className = "backend-hint";
-          hint.textContent = backendHint(b);
+    function renderBackends() {
+      listEl.innerHTML = "";
+      backends.forEach(function (b) {
+        var card = document.createElement("div");
+        card.className = "backend-card" + (b.available ? "" : " unavailable");
+        if (b.type === selectedType) card.className += " selected";
 
-          info.appendChild(name);
-          info.appendChild(hint);
-          card.appendChild(dot);
-          card.appendChild(info);
+        var dot = document.createElement("div");
+        dot.className = "backend-dot " + (b.available ? "available" : "unavailable");
 
-          if (b.available) {
-            card.addEventListener("click", function () { selectBackend(b.type); });
+        var info = document.createElement("div");
+        info.className = "backend-info";
+
+        var name = document.createElement("div");
+        name.className = "backend-name";
+        name.textContent = b.name;
+
+        var hint = document.createElement("div");
+        hint.className = "backend-hint";
+        hint.textContent = backendHint(b);
+
+        info.appendChild(name);
+        info.appendChild(hint);
+        card.appendChild(dot);
+        card.appendChild(info);
+
+        if (b.available) {
+          card.addEventListener("click", function () { selectBackend(b.type); });
+        }
+        listEl.appendChild(card);
+      });
+    }
+
+    function backendHint(b) {
+      if (b.type === "mock") return "No setup needed \u2014 test the voice interface";
+      if (b.type === "custom") return "Point to any backend URL";
+      if (!b.available) {
+        if (b.type === "openclaw") {
+          if (!b.installed) return "Not installed";
+          if (!b.gateway_running) return "Gateway not running";
+          return "No agents found";
+        }
+        return "Not detected on this machine";
+      }
+      if (b.type === "ollama") {
+        var models = b.models || [];
+        return models.length + " model" + (models.length !== 1 ? "s" : "") + " available";
+      }
+      if (b.type === "openclaw") {
+        var agents = b.agents || [];
+        return agents.length + " agent" + (agents.length !== 1 ? "s" : "") + " available";
+      }
+      if (b.type === "openai_compatible") {
+        var servers = b.servers || [];
+        if (servers.length === 1) return "Detected on port " + servers[0].port;
+        return servers.length + " server" + (servers.length !== 1 ? "s" : "") + " detected";
+      }
+      return "";
+    }
+
+    function selectBackend(type) {
+      selectedType = type;
+      selectedAgent = null;
+      testResult = null;
+      renderBackends();
+      renderConfig();
+      startBtn.disabled = !isConfigValid();
+      statusMsg.textContent = "";
+      statusMsg.className = "status-msg";
+    }
+
+    function renderConfig() {
+      configEl.innerHTML = "";
+      var b = backends.find(function (x) { return x.type === selectedType; });
+      if (!b) return;
+
+      switch (b.type) {
+        case "ollama": renderOllamaConfig(b); break;
+        case "openclaw": renderOpenClawConfig(b); break;
+        case "openai_compatible": renderOpenAIConfig(b); break;
+        case "custom": renderCustomConfig(); break;
+      }
+    }
+
+    function renderOllamaConfig(b) {
+      var models = b.models || [];
+      if (models.length === 0) {
+        var noModels = document.createElement("div");
+        noModels.className = "config-group";
+        noModels.innerHTML =
+          '<label>No models installed in Ollama</label>' +
+          '<div class="cmd-box" style="margin:6px 0"><code>ollama pull gemma4:e4b</code>' +
+          '<button class="copy-btn" onclick="navigator.clipboard.writeText(\'ollama pull gemma4:e4b\')">Copy</button></div>';
+        configEl.appendChild(noModels);
+        return;
+      }
+
+      // Sort: recommended first, then alphabetical
+      var sorted = models.slice().sort(function (a, b) {
+        var aRec = RECOMMENDED.indexOf(a.name) >= 0 ? 0 : 1;
+        var bRec = RECOMMENDED.indexOf(b.name) >= 0 ? 0 : 1;
+        if (aRec !== bRec) return aRec - bRec;
+        return a.name.localeCompare(b.name);
+      });
+
+      var group = makeGroup("Model");
+
+      // Search filter for large lists
+      if (models.length > 8) {
+        var search = document.createElement("input");
+        search.type = "text";
+        search.placeholder = "Search " + models.length + " models\u2026";
+        search.style.marginBottom = "6px";
+        search.addEventListener("input", function () {
+          var q = search.value.toLowerCase();
+          var opts = sel.options;
+          for (var i = 0; i < opts.length; i++) {
+            opts[i].style.display = opts[i].value.toLowerCase().indexOf(q) >= 0 ? "" : "none";
           }
-
-          listEl.appendChild(card);
         });
+        group.appendChild(search);
       }
 
-      function backendHint(b) {
-        if (!b.available) return "Not detected";
-        switch (b.type) {
-          case "mock": return "No backend needed \u2014 for testing";
-          case "ollama":
-            var n = (b.models || []).length;
-            return n + " model" + (n !== 1 ? "s" : "") + " available";
-          case "openclaw": return "Agent bridge detected";
-          case "custom": return "Point to any backend URL";
-          default: return "";
-        }
-      }
+      var sel = document.createElement("select");
+      sel.id = "cfg-model";
+      sel.size = Math.min(8, models.length);
+      sel.style.height = "auto";
 
-      function selectBackend(type) {
-        selectedType = type;
-        renderBackends();
-        renderConfig();
-        startBtn.disabled = !isConfigValid();
-        statusMsg.textContent = "";
-        statusMsg.className = "status-msg";
-      }
-
-      function renderConfig() {
-        configEl.innerHTML = "";
-        var b = backends.find(function (x) { return x.type === selectedType; });
-        if (!b) return;
-
-        switch (b.type) {
-          case "ollama":
-            var models = b.models || [];
-            if (models.length === 0) {
-              configEl.innerHTML = '<div class="config-group"><label>No models found in Ollama</label></div>';
-              return;
-            }
-            var group = makeGroup("Model");
-            var sel = document.createElement("select");
-            sel.id = "cfg-model";
-            models.forEach(function (m) {
-              var opt = document.createElement("option");
-              opt.value = m;
-              opt.textContent = m;
-              sel.appendChild(opt);
-            });
-            sel.addEventListener("change", function () {
-              startBtn.disabled = !isConfigValid();
-            });
-            group.appendChild(sel);
-            configEl.appendChild(group);
-            break;
-
-          case "openclaw":
-            var grp = makeGroup("Agent ID");
-            var inp = document.createElement("input");
-            inp.type = "text";
-            inp.id = "cfg-agent";
-            inp.placeholder = "e.g. spectra";
-            inp.addEventListener("input", function () {
-              startBtn.disabled = !isConfigValid();
-            });
-            grp.appendChild(inp);
-            configEl.appendChild(grp);
-            break;
-
-          case "custom":
-            var grp2 = makeGroup("Backend URL");
-            var inp2 = document.createElement("input");
-            inp2.type = "url";
-            inp2.id = "cfg-url";
-            inp2.placeholder = "http://localhost:8080";
-            inp2.addEventListener("input", function () {
-              startBtn.disabled = !isConfigValid();
-            });
-            grp2.appendChild(inp2);
-            configEl.appendChild(grp2);
-            break;
-
-          // mock: no config needed
-        }
-      }
-
-      function makeGroup(labelText) {
-        var g = document.createElement("div");
-        g.className = "config-group";
-        var lbl = document.createElement("label");
-        lbl.textContent = labelText;
-        g.appendChild(lbl);
-        return g;
-      }
-
-      function restoreSavedConfig(s) {
-        // Defer so DOM elements are rendered
-        setTimeout(function () {
-          if (s.type === "ollama" && s.model) {
-            var sel = document.getElementById("cfg-model");
-            if (sel) sel.value = s.model;
-          } else if (s.type === "openclaw" && s.agent) {
-            var inp = document.getElementById("cfg-agent");
-            if (inp) inp.value = s.agent;
-          } else if (s.type === "custom" && s.url) {
-            var inp2 = document.getElementById("cfg-url");
-            if (inp2) inp2.value = s.url;
+      var hasRecommended = false;
+      sorted.forEach(function (m) {
+        var opt = document.createElement("option");
+        opt.value = m.name;
+        var label = m.name;
+        if (m.size_gb) label += "  (" + m.size_gb + " GB)";
+        if (RECOMMENDED.indexOf(m.name) >= 0) {
+          if (!hasRecommended) {
+            var optgroup = document.createElement("optgroup");
+            optgroup.label = "\u2605 Recommended for voice";
+            sel.appendChild(optgroup);
+            hasRecommended = true;
           }
+          label = "\u2605 " + label;
+        }
+        opt.textContent = label;
+        sel.appendChild(opt);
+      });
+
+      sel.addEventListener("change", function () { startBtn.disabled = !isConfigValid(); });
+      group.appendChild(sel);
+
+      var note = document.createElement("div");
+      note.className = "config-note";
+      note.textContent = "Smaller models (3\u20137B) respond faster for voice conversations.";
+      group.appendChild(note);
+
+      configEl.appendChild(group);
+    }
+
+    function renderOpenClawConfig(b) {
+      var agents = b.agents || [];
+
+      if (!b.installed) {
+        configEl.innerHTML =
+          '<div class="config-group"><label>OpenClaw is not installed</label>' +
+          '<div class="cmd-box"><code>npm install -g openclaw</code>' +
+          '<button class="copy-btn" onclick="navigator.clipboard.writeText(\'npm install -g openclaw\')">Copy</button></div></div>';
+        return;
+      }
+      if (!b.gateway_running) {
+        configEl.innerHTML =
+          '<div class="config-group"><label>OpenClaw gateway is not running</label>' +
+          '<div class="cmd-box"><code>openclaw gateway run</code>' +
+          '<button class="copy-btn" onclick="navigator.clipboard.writeText(\'openclaw gateway run\')">Copy</button></div></div>';
+        return;
+      }
+      if (agents.length === 0) {
+        configEl.innerHTML = '<div class="config-group"><label>No agents found in OpenClaw</label></div>';
+        return;
+      }
+
+      var group = makeGroup("Select an agent");
+      var list = document.createElement("div");
+      list.className = "agent-list";
+
+      agents.forEach(function (a) {
+        var opt = document.createElement("div");
+        opt.className = "agent-option" + (selectedAgent === a.id ? " selected" : "");
+
+        var radio = document.createElement("input");
+        radio.type = "radio";
+        radio.name = "agent";
+        radio.value = a.id;
+        radio.checked = selectedAgent === a.id;
+
+        var label = document.createElement("span");
+        label.className = "agent-name";
+        label.textContent = a.name || a.id;
+
+        opt.appendChild(radio);
+        opt.appendChild(label);
+
+        if (a.default) {
+          var badge = document.createElement("span");
+          badge.className = "agent-default";
+          badge.textContent = "(default)";
+          opt.appendChild(badge);
+        }
+
+        opt.addEventListener("click", function () {
+          selectedAgent = a.id;
+          renderConfig();
           startBtn.disabled = !isConfigValid();
-        }, 0);
-      }
+        });
 
-      function isConfigValid() {
-        if (!selectedType) return false;
-        switch (selectedType) {
-          case "mock": return true;
-          case "ollama":
-            var sel = document.getElementById("cfg-model");
-            return sel && sel.value.length > 0;
-          case "openclaw":
-            var inp = document.getElementById("cfg-agent");
-            return inp && inp.value.trim().length > 0;
-          case "custom":
-            var inp2 = document.getElementById("cfg-url");
-            return inp2 && inp2.value.trim().length > 0;
-          default: return false;
-        }
-      }
+        list.appendChild(opt);
+      });
 
-      function gatherPayload() {
-        var payload = { type: selectedType };
-        switch (selectedType) {
-          case "ollama":
-            var sel = document.getElementById("cfg-model");
-            if (sel) payload.model = sel.value;
-            break;
-          case "openclaw":
-            var inp = document.getElementById("cfg-agent");
-            if (inp) payload.agent = inp.value.trim();
-            break;
-          case "custom":
-            var inp2 = document.getElementById("cfg-url");
-            if (inp2) payload.url = inp2.value.trim();
-            break;
-        }
-        return payload;
-      }
+      group.appendChild(list);
+      configEl.appendChild(group);
+    }
 
-      // -- Start Talking --
-      startBtn.addEventListener("click", function () {
-        if (!isConfigValid()) return;
+    function renderOpenAIConfig(b) {
+      var servers = b.servers || [];
 
-        var payload = gatherPayload();
-        startBtn.disabled = true;
-        statusMsg.textContent = "Configuring backend\u2026";
-        statusMsg.className = "status-msg";
+      var group = makeGroup("Server URL");
+      var note = document.createElement("div");
+      note.className = "config-note";
+      note.style.marginBottom = "8px";
+      note.style.fontStyle = "normal";
+      note.textContent = "llama.cpp, vLLM, LiteLLM, Jan, LM Studio, or any OpenAI-compatible server";
 
-        fetch("/api/configure", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+      var row = document.createElement("div");
+      row.className = "url-row";
+
+      var inp = document.createElement("input");
+      inp.type = "url";
+      inp.id = "cfg-openai-url";
+      inp.placeholder = "http://localhost:8080";
+      if (servers.length > 0) inp.value = servers[0].url;
+      inp.addEventListener("input", function () { startBtn.disabled = !isConfigValid(); });
+
+      var testBtn = document.createElement("button");
+      testBtn.className = "test-btn";
+      testBtn.textContent = "Test";
+      testBtn.addEventListener("click", function () { testOpenAI(inp.value.trim()); });
+
+      row.appendChild(inp);
+      row.appendChild(testBtn);
+
+      group.appendChild(note);
+      group.appendChild(row);
+
+      var resultEl = document.createElement("div");
+      resultEl.id = "test-result";
+      resultEl.className = "test-result";
+      group.appendChild(resultEl);
+
+      configEl.appendChild(group);
+    }
+
+    function renderCustomConfig() {
+      var group = makeGroup("Backend URL");
+      var note = document.createElement("div");
+      note.className = "config-note";
+      note.style.marginBottom = "8px";
+      note.style.fontStyle = "normal";
+      note.textContent = "Any server implementing the Qantara session contract";
+
+      var row = document.createElement("div");
+      row.className = "url-row";
+
+      var inp = document.createElement("input");
+      inp.type = "url";
+      inp.id = "cfg-url";
+      inp.placeholder = "http://localhost:19120";
+      inp.addEventListener("input", function () { startBtn.disabled = !isConfigValid(); });
+
+      var testBtn = document.createElement("button");
+      testBtn.className = "test-btn";
+      testBtn.textContent = "Test";
+      testBtn.addEventListener("click", function () { testCustom(inp.value.trim()); });
+
+      row.appendChild(inp);
+      row.appendChild(testBtn);
+
+      group.appendChild(note);
+      group.appendChild(row);
+
+      var resultEl = document.createElement("div");
+      resultEl.id = "test-result";
+      resultEl.className = "test-result";
+      group.appendChild(resultEl);
+
+      configEl.appendChild(group);
+    }
+
+    function testOpenAI(url) {
+      if (!url) return;
+      var el = document.getElementById("test-result");
+      if (el) { el.textContent = "Testing\u2026"; el.className = "test-result"; }
+      // Normalize
+      url = url.replace(/\/+$/, "");
+      if (!/^https?:\/\//.test(url)) url = "http://" + url;
+      var testUrl = url.replace(/\/v1$/, "") + "/v1/models";
+      fetch(testUrl, { signal: AbortSignal.timeout(5000) })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          var models = (data.data || []).map(function (m) { return m.id; });
+          if (el) {
+            el.textContent = "\u2713 Connected \u2014 " + models.length + " model" + (models.length !== 1 ? "s" : "") + " found";
+            el.className = "test-result ok";
+          }
         })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            if (data.error) {
-              statusMsg.textContent = data.error;
-              statusMsg.className = "status-msg error";
-              startBtn.disabled = false;
-              return;
-            }
-            // Persist selection
-            localStorage.setItem("qantara_backend", JSON.stringify(payload));
-            // Redirect to voice UI
-            window.location.href = "/spike";
-          })
-          .catch(function (err) {
-            statusMsg.textContent = "Failed to configure: " + err.message;
+        .catch(function () {
+          if (el) {
+            el.textContent = "\u2717 Cannot reach server. Is it running?";
+            el.className = "test-result fail";
+          }
+        });
+    }
+
+    function testCustom(url) {
+      if (!url) return;
+      var el = document.getElementById("test-result");
+      if (el) { el.textContent = "Testing\u2026"; el.className = "test-result"; }
+      url = url.replace(/\/+$/, "");
+      if (!/^https?:\/\//.test(url)) url = "http://" + url;
+      fetch(url + "/health", { signal: AbortSignal.timeout(5000) })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (el) {
+            el.textContent = "\u2713 Connected \u2014 " + (data.detail || data.status || "healthy");
+            el.className = "test-result ok";
+          }
+        })
+        .catch(function () {
+          if (el) {
+            el.textContent = "\u2717 Cannot reach server. Is it running?";
+            el.className = "test-result fail";
+          }
+        });
+    }
+
+    function makeGroup(labelText) {
+      var g = document.createElement("div");
+      g.className = "config-group";
+      var lbl = document.createElement("label");
+      lbl.textContent = labelText;
+      g.appendChild(lbl);
+      return g;
+    }
+
+    function restoreSavedConfig(s) {
+      setTimeout(function () {
+        if (s.type === "ollama" && s.model) {
+          var sel = document.getElementById("cfg-model");
+          if (sel) sel.value = s.model;
+        } else if (s.type === "openclaw" && s.agent) {
+          selectedAgent = s.agent;
+          renderConfig();
+        } else if (s.type === "openai_compatible" && s.url) {
+          var inp = document.getElementById("cfg-openai-url");
+          if (inp) inp.value = s.url;
+        } else if (s.type === "custom" && s.url) {
+          var inp2 = document.getElementById("cfg-url");
+          if (inp2) inp2.value = s.url;
+        }
+        startBtn.disabled = !isConfigValid();
+      }, 0);
+    }
+
+    function isConfigValid() {
+      if (!selectedType) return false;
+      switch (selectedType) {
+        case "mock": return true;
+        case "ollama":
+          var sel = document.getElementById("cfg-model");
+          return sel && sel.value.length > 0;
+        case "openclaw":
+          return !!selectedAgent;
+        case "openai_compatible":
+          var inp = document.getElementById("cfg-openai-url");
+          return inp && inp.value.trim().length > 0;
+        case "custom":
+          var inp2 = document.getElementById("cfg-url");
+          return inp2 && inp2.value.trim().length > 0;
+        default: return false;
+      }
+    }
+
+    function gatherPayload() {
+      var payload = { type: selectedType };
+      switch (selectedType) {
+        case "ollama":
+          var sel = document.getElementById("cfg-model");
+          if (sel) payload.model = sel.value;
+          break;
+        case "openclaw":
+          payload.agent = selectedAgent;
+          break;
+        case "openai_compatible":
+          var inp = document.getElementById("cfg-openai-url");
+          if (inp) payload.url = inp.value.trim();
+          break;
+        case "custom":
+          var inp2 = document.getElementById("cfg-url");
+          if (inp2) payload.url = inp2.value.trim();
+          break;
+      }
+      return payload;
+    }
+
+    startBtn.addEventListener("click", function () {
+      if (!isConfigValid()) return;
+      var payload = gatherPayload();
+      startBtn.disabled = true;
+      statusMsg.textContent = "Configuring\u2026";
+      statusMsg.className = "status-msg";
+
+      fetch("/api/configure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.error) {
+            statusMsg.textContent = data.error;
             statusMsg.className = "status-msg error";
             startBtn.disabled = false;
-          });
-      });
-    })();
+            return;
+          }
+          localStorage.setItem("qantara_backend", JSON.stringify(payload));
+          window.location.href = "/spike";
+        })
+        .catch(function (err) {
+          statusMsg.textContent = "Failed: " + err.message;
+          statusMsg.className = "status-msg error";
+          startBtn.disabled = false;
+        });
+    });
+  })();
   </script>
 </body>
 </html>
