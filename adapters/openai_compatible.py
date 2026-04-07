@@ -21,11 +21,7 @@ from adapters.base import AdapterConfig, AdapterHealth, RuntimeAdapter
 
 # Voice-optimized system prompt: short responses, conversational, no markdown.
 DEFAULT_SYSTEM_PROMPT = (
-    "You are a helpful voice assistant having a real-time spoken conversation. "
-    "Keep every response to 1-2 sentences. Use natural, conversational language "
-    "with contractions. Never use markdown, bullet points, lists, or formatting. "
-    "Never use emojis. If unclear, ask a brief clarifying question. "
-    "Start with natural acknowledgments when appropriate."
+    "You are a voice assistant. Keep replies short and conversational. No markdown or formatting."
 )
 
 # Max conversation turns to keep (system prompt + last N exchanges).
