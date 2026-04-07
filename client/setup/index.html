@@ -375,6 +375,7 @@
       return "";
     }
 
+    window._qantaraSelectBackend = selectBackend;
     function selectBackend(type) {
       selectedType = type;
       selectedAgent = null;
@@ -941,16 +942,20 @@
         card.appendChild(modelList);
       }
 
-      // Click to use
+      // Click to use — auto-select OpenAI-Compatible and fill URL
       card.addEventListener("click", function () {
-        // Fill the OpenAI-Compatible URL field and switch to it
-        var urlInput = document.getElementById("cfg-openai-url");
-        if (urlInput) {
-          urlInput.value = b.url;
-          urlInput.dispatchEvent(new Event("input"));
-        }
-        // Auto-test the connection
-        if (typeof testOpenAI === "function") testOpenAI(b.url);
+        // First, select the openai_compatible backend type
+        var selectFn = window._qantaraSelectBackend;
+        if (selectFn) selectFn("openai_compatible");
+        // Wait for DOM to render, then fill URL and test
+        setTimeout(function () {
+          var urlInput = document.getElementById("cfg-openai-url");
+          if (urlInput) {
+            urlInput.value = b.url;
+            urlInput.dispatchEvent(new Event("input"));
+          }
+          if (typeof window.testOpenAI === "function") window.testOpenAI(b.url);
+        }, 100);
       });
 
       resultsEl.appendChild(card);

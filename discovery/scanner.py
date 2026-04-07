@@ -273,11 +273,6 @@ async def scan_lan(progress_callback=None) -> list[DiscoveredBackend]:
         async def probe_one(host: str, port: int) -> None:
             nonlocal completed
             async with semaphore:
-                # Skip localhost — already handled by existing /api/backends
-                if host == local_ip:
-                    completed += 1
-                    return
-
                 if await tcp_probe(host, port):
                     backend = await fingerprint_host(session, host, port, local_ip)
                     if backend:
