@@ -1253,6 +1253,33 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
     return ws
 
 
+async def api_discovery_scan_handler(request: web.Request) -> web.StreamResponse:
+    """GET /api/discovery/scan — SSE stream of LAN scan results."""
+    from discovery.scanner import scan_lan, serialize_backend
+
+    response = web.StreamResponse(
+        status=200,
+        headers={
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
+    await response.prepare(request)
+
+    async def send_event(event_type: str, data: dict) -> None:
+        payload = json.dumps(data).encode("utf-8")
+        await response.write(b"event: " + event_type.encode() + b"\ndata: " + payload + b"\n\n")
+
+    try:
+        await scan_lan(progress_callback=send_event)
+    except Exception as exc:
+        await send_event("error", {"message": str(exc)})
+
+    await response.write_eof()
+    return response
+
+
 async def index_handler(_request: web.Request) -> web.StreamResponse:
     raise web.HTTPFound("/setup/index.html")
 
@@ -1273,6 +1300,7 @@ def create_app() -> web.Application:
     app.router.add_get("/api/status", api_status_handler)
     app.router.add_post("/api/configure", api_configure_handler)
     app.router.add_post("/api/test-url", api_test_url_handler)
+    app.router.add_get("/api/discovery/scan", api_discovery_scan_handler)
     app.router.add_get("/setup", setup_handler)
     app.router.add_static("/setup", CLIENT_SETUP_DIR, show_index=True)
     app.router.add_get("/spike", spike_handler)
