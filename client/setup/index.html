@@ -165,6 +165,33 @@
       font-size: 0.88rem; cursor: pointer; margin: 6px 4px; transition: all 0.12s;
     }
     .scan-btn:hover { background: var(--accent); color: #fff; }
+    .scan-btn:disabled { opacity: 0.4; cursor: default; }
+
+    /* LAN discovery section */
+    .lan-section { margin-bottom: 20px; }
+    .lan-section h3 { font-size: 0.95rem; margin: 0 0 8px; }
+    .lan-progress { font-size: 0.78rem; color: var(--muted); margin: 6px 0; }
+    .lan-progress-bar { height: 4px; background: rgba(0,0,0,0.06); border-radius: 2px; overflow: hidden; margin: 4px 0 8px; }
+    .lan-progress-fill { height: 100%; background: var(--accent); transition: width 0.3s; width: 0%; }
+    .lan-results { display: flex; flex-direction: column; gap: 8px; }
+
+    .lan-card {
+      padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 12px;
+      background: rgba(255,255,255,0.5); cursor: pointer; transition: all 0.12s;
+    }
+    .lan-card:hover { border-color: var(--accent); background: var(--accent-light); }
+    .lan-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .lan-card-type { font-weight: 600; font-size: 0.9rem; }
+    .lan-card-url { font-size: 0.78rem; color: var(--muted); }
+    .lan-card-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 0.72rem; margin-top: 4px; }
+    .lan-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 2px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 500;
+    }
+    .lan-badge.good { background: rgba(21,128,61,0.1); color: var(--green); }
+    .lan-badge.warn { background: rgba(161,98,7,0.1); color: var(--amber); }
+    .lan-badge.bad { background: rgba(185,28,28,0.1); color: var(--red); }
+    .lan-badge.neutral { background: rgba(0,0,0,0.04); color: var(--muted); }
 
     .loading { text-align: center; padding: 28px; color: var(--muted); }
     @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
@@ -192,6 +219,20 @@
 
       <button id="start-btn" class="start-btn" disabled>Start Talking</button>
       <div id="status-msg" class="status-msg"></div>
+    </div>
+
+    <!-- LAN Discovery Section -->
+    <div class="panel lan-section" style="margin-top: 14px;">
+      <span class="section-label">Network Discovery</span>
+      <p style="font-size:0.82rem;color:var(--muted);margin:0 0 10px;">
+        Scan your local network for AI servers. Only private IP ranges are scanned.
+      </p>
+      <button class="scan-btn" id="scan-lan-btn">Scan Network</button>
+      <div id="scan-progress" class="lan-progress" style="display:none;"></div>
+      <div id="scan-progress-bar" class="lan-progress-bar" style="display:none;">
+        <div id="scan-progress-fill" class="lan-progress-fill"></div>
+      </div>
+      <div id="lan-results" class="lan-results"></div>
     </div>
   </main>
 
@@ -334,6 +375,7 @@
       return "";
     }
 
+    window._qantaraSelectBackend = selectBackend;
     function selectBackend(type) {
       selectedType = type;
       selectedAgent = null;
@@ -582,7 +624,7 @@
       configEl.appendChild(group);
     }
 
-    function testOpenAI(url) {
+    window.testOpenAI = function testOpenAI(url) {
       if (!url) return;
       var el = document.getElementById("test-result");
       var modelArea = document.getElementById("openai-model-area");
@@ -768,6 +810,163 @@
           startBtn.disabled = false;
         });
     });
+  })();
+
+  // ===== LAN DISCOVERY =====
+  (function () {
+    var scanBtn = document.getElementById("scan-lan-btn");
+    var progressEl = document.getElementById("scan-progress");
+    var progressBar = document.getElementById("scan-progress-bar");
+    var progressFill = document.getElementById("scan-progress-fill");
+    var resultsEl = document.getElementById("lan-results");
+
+    scanBtn.addEventListener("click", function () {
+      scanBtn.disabled = true;
+      scanBtn.textContent = "Scanning\u2026";
+      progressEl.style.display = "";
+      progressBar.style.display = "";
+      progressFill.style.width = "0%";
+      resultsEl.innerHTML = "";
+
+      var es = new EventSource("/api/discovery/scan");
+
+      es.addEventListener("progress", function (e) {
+        var d = JSON.parse(e.data);
+        if (d.percent != null) {
+          progressFill.style.width = d.percent + "%";
+          progressEl.textContent = "Scanning\u2026 " + d.percent + "% (" + (d.found || 0) + " found)";
+        } else if (d.subnet) {
+          progressEl.textContent = "Scanning " + d.subnet + " (" + d.total_probes + " probes)\u2026";
+        }
+      });
+
+      es.addEventListener("found", function (e) {
+        var b = JSON.parse(e.data);
+        renderLanCard(b);
+      });
+
+      es.addEventListener("done", function (e) {
+        var d = JSON.parse(e.data);
+        progressEl.textContent = "Scan complete. Found " + d.count + " backend" + (d.count !== 1 ? "s" : "") + " on your network.";
+        progressBar.style.display = "none";
+        scanBtn.disabled = false;
+        scanBtn.textContent = "Scan Again";
+        if (d.count === 0) {
+          resultsEl.innerHTML = '<div style="font-size:0.82rem;color:var(--muted);padding:8px 0;">No AI backends found on your local network. Make sure servers are listening on 0.0.0.0 (not just localhost).</div>';
+        }
+        es.close();
+      });
+
+      es.addEventListener("error", function (e) {
+        try {
+          var d = JSON.parse(e.data);
+          progressEl.textContent = "Scan failed: " + (d.message || "unknown error");
+        } catch (_) {
+          progressEl.textContent = "Scan connection lost.";
+        }
+        progressBar.style.display = "none";
+        scanBtn.disabled = false;
+        scanBtn.textContent = "Scan Network";
+        es.close();
+      });
+    });
+
+    function renderLanCard(b) {
+      var card = document.createElement("div");
+      card.className = "lan-card";
+
+      var header = document.createElement("div");
+      header.className = "lan-card-header";
+
+      var type = document.createElement("span");
+      type.className = "lan-card-type";
+      type.textContent = b.server_type;
+
+      var url = document.createElement("span");
+      url.className = "lan-card-url";
+      url.textContent = b.url + (b.is_localhost ? " (this machine)" : "");
+
+      header.appendChild(type);
+      header.appendChild(url);
+      card.appendChild(header);
+
+      // Metadata badges with color indicators
+      var meta = document.createElement("div");
+      meta.className = "lan-card-meta";
+
+      // Health
+      meta.appendChild(makeBadge(
+        b.health === "healthy" ? "\u25CF Healthy" : "\u25CF " + b.health,
+        b.health === "healthy" ? "good" : "bad"
+      ));
+
+      // Latency
+      var latencyClass = b.latency_ms < 50 ? "good" : b.latency_ms < 200 ? "warn" : "bad";
+      meta.appendChild(makeBadge(Math.round(b.latency_ms) + "ms", latencyClass));
+
+      // Models
+      if (b.models && b.models.length > 0) {
+        meta.appendChild(makeBadge(b.models.length + " model" + (b.models.length !== 1 ? "s" : ""), "neutral"));
+      }
+
+      // GPU info
+      if (b.gpu_info) {
+        meta.appendChild(makeBadge("\u26A1 " + b.gpu_info, "good"));
+      }
+
+      // Model loaded
+      if (b.model_loaded) {
+        meta.appendChild(makeBadge("\u25B6 " + b.model_loaded, "good"));
+      }
+
+      // Version
+      if (b.version) {
+        meta.appendChild(makeBadge("v" + b.version, "neutral"));
+      }
+
+      card.appendChild(meta);
+
+      // Model list
+      if (b.models && b.models.length > 0) {
+        var modelList = document.createElement("div");
+        modelList.style.fontSize = "0.72rem";
+        modelList.style.color = "var(--muted)";
+        modelList.style.marginTop = "6px";
+        var names = b.models.slice(0, 5).map(function (m) {
+          var label = m.name;
+          if (m.size_gb) label += " (" + m.size_gb + "GB)";
+          return label;
+        });
+        if (b.models.length > 5) names.push("+" + (b.models.length - 5) + " more");
+        modelList.textContent = names.join(" \u00b7 ");
+        card.appendChild(modelList);
+      }
+
+      // Click to use — auto-select OpenAI-Compatible and fill URL
+      card.addEventListener("click", function () {
+        // First, select the openai_compatible backend type
+        var selectFn = window._qantaraSelectBackend;
+        if (selectFn) selectFn("openai_compatible");
+        // Wait for DOM to render, then fill URL and test
+        setTimeout(function () {
+          var urlInput = document.getElementById("cfg-openai-url");
+          if (urlInput) {
+            urlInput.value = b.url;
+            urlInput.dispatchEvent(new Event("input"));
+          }
+          if (typeof window.testOpenAI === "function") window.testOpenAI(b.url);
+        }, 100);
+      });
+
+      resultsEl.appendChild(card);
+    }
+
+    function makeBadge(text, type) {
+      var el = document.createElement("span");
+      el.className = "lan-badge " + type;
+      el.textContent = text;
+      return el;
+    }
   })();
   </script>
 </body>

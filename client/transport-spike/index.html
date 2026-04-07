@@ -472,11 +472,15 @@
     /* Stats bar */
     .voice-stats {
       position: absolute; bottom: 88px; left: 50%; transform: translateX(-50%);
-      display: flex; align-items: center; gap: 16px;
-      font-size: 0.72rem; color: rgba(152,152,176,0.7); letter-spacing: 0.02em;
+      display: flex; align-items: center; gap: 12px;
+      font-size: 0.7rem; color: rgba(152,152,176,0.7); letter-spacing: 0.02em;
       font-family: 'DM Sans', monospace;
     }
     .voice-stats span { white-space: nowrap; }
+    .voice-stats .stat-good { color: rgba(80,208,176,0.9); }
+    .voice-stats .stat-warn { color: rgba(240,180,60,0.9); }
+    .voice-stats .stat-bad { color: rgba(240,96,96,0.9); }
+    .voice-stats .stat-sep { color: rgba(152,152,176,0.3); }
 
     /* Controls */
     .voice-controls {
@@ -769,7 +773,14 @@
     <div class="voice-captions" id="vcCaptions"></div>
 
     <div class="voice-stats" id="vcStats">
-      <span id="vcStatLatency"></span>
+      <span id="vcStatTTFT" title="Time to first token from backend"></span>
+      <span class="stat-sep">·</span>
+      <span id="vcStatTokS" title="Token generation speed"></span>
+      <span class="stat-sep">·</span>
+      <span id="vcStatTTS" title="Text-to-speech latency"></span>
+      <span class="stat-sep">·</span>
+      <span id="vcStatTotal" title="Total round-trip (speech end → first audio)"></span>
+      <span class="stat-sep">│</span>
       <span id="vcStatBackend"></span>
     </div>
 
@@ -2219,17 +2230,69 @@
         lastAssistant = "";
       }
 
-      // Update stats
-      var firstAudio = document.getElementById("firstAudioMs");
-      if (firstAudio && firstAudio.textContent !== "-") {
-        vcStatLatency.textContent = firstAudio.textContent;
+      // Update rich stats with health indicators
+      var vcStatTTFT = document.getElementById("vcStatTTFT");
+      var vcStatTokS = document.getElementById("vcStatTokS");
+      var vcStatTTS = document.getElementById("vcStatTTS");
+      var vcStatTotal = document.getElementById("vcStatTotal");
+      var vcStatBackend = document.getElementById("vcStatBackend");
+
+      // First audio (TTS latency)
+      var firstAudioEl = document.getElementById("firstAudioMs");
+      if (firstAudioEl && firstAudioEl.textContent !== "-") {
+        var ttsMs = parseFloat(firstAudioEl.textContent);
+        if (!isNaN(ttsMs)) {
+          vcStatTTS.textContent = "TTS " + Math.round(ttsMs) + "ms";
+          vcStatTTS.className = ttsMs < 800 ? "stat-good" : ttsMs < 1500 ? "stat-warn" : "stat-bad";
+        }
       }
+
+      // Calculate approximate TTFT and tok/s from assistant deltas
+      var assistantEl = document.getElementById("assistantText");
+      var assistantText = assistantEl ? assistantEl.textContent : "";
+      if (assistantText && !window._vcLastAssistantLen) window._vcLastAssistantLen = 0;
+      if (assistantText.length > window._vcLastAssistantLen) {
+        var now = Date.now();
+        if (!window._vcFirstDeltaAt && assistantText.length > 0) {
+          window._vcFirstDeltaAt = now;
+        }
+        // Estimate tokens (~4 chars per token)
+        var tokens = Math.round(assistantText.length / 4);
+        var elapsed = (now - (window._vcFirstDeltaAt || now)) / 1000;
+        if (elapsed > 0.3 && tokens > 2) {
+          var tokS = Math.round(tokens / elapsed);
+          vcStatTokS.textContent = tokS + " tok/s";
+          vcStatTokS.className = tokS > 20 ? "stat-good" : tokS > 8 ? "stat-warn" : "stat-bad";
+        }
+        window._vcLastAssistantLen = assistantText.length;
+      }
+      // Reset on new turn
+      var turnStateEl = document.getElementById("avatarStateText");
+      var turnState = turnStateEl ? turnStateEl.textContent.toLowerCase() : "";
+      if (turnState === "idle" && window._vcFirstDeltaAt) {
+        window._vcFirstDeltaAt = null;
+        window._vcLastAssistantLen = 0;
+      }
+
+      // Total round-trip (approximate: from last speech submit to first audio)
+      if (firstAudioEl && firstAudioEl.textContent !== "-") {
+        var totalMs = parseFloat(firstAudioEl.textContent);
+        // Add estimated STT time (~500ms average)
+        totalMs += 500;
+        vcStatTotal.textContent = "\u2211 " + (totalMs / 1000).toFixed(1) + "s";
+        vcStatTotal.className = totalMs < 2000 ? "stat-good" : totalMs < 3500 ? "stat-warn" : "stat-bad";
+      }
+
+      // Backend info
       var saved = null;
       try { saved = JSON.parse(localStorage.getItem("qantara_backend")); } catch (_) {}
       if (saved) {
         var label = saved.type || "";
         if (saved.model) label += " \u00b7 " + saved.model;
         else if (saved.agent) label += " \u00b7 " + saved.agent;
+        if (saved.url) {
+          try { var u = new URL(saved.url); label += " \u00b7 " + u.hostname; } catch (_) {}
+        }
         vcStatBackend.textContent = label;
       }
     }, 200);
