@@ -608,23 +608,25 @@
           }
           // Show model selector if multiple models
           if (models.length > 0 && modelArea) {
+            var grp = document.createElement("div");
+            grp.className = "config-group";
+            grp.style.marginTop = "10px";
+            var lbl = document.createElement("label");
+            lbl.textContent = "Model";
+            grp.appendChild(lbl);
             var sel = document.createElement("select");
             sel.id = "cfg-openai-model";
-            sel.style.marginTop = "6px";
-            models.forEach(function (m) {
+            // Filter out embedding/reranker models — show chat models first
+            var chatModels = models.filter(function (m) { return m.indexOf("embed") === -1 && m.indexOf("rerank") === -1; });
+            var otherModels = models.filter(function (m) { return m.indexOf("embed") >= 0 || m.indexOf("rerank") >= 0; });
+            chatModels.concat(otherModels).forEach(function (m) {
               var opt = document.createElement("option");
               opt.value = m;
               opt.textContent = m;
               sel.appendChild(opt);
             });
-            var lbl = document.createElement("label");
-            lbl.textContent = "Model";
-            lbl.style.fontSize = "0.78rem";
-            lbl.style.color = "var(--muted)";
-            lbl.style.display = "block";
-            lbl.style.marginTop = "10px";
-            modelArea.appendChild(lbl);
-            modelArea.appendChild(sel);
+            grp.appendChild(sel);
+            modelArea.appendChild(grp);
           }
           startBtn.disabled = !isConfigValid();
         })
