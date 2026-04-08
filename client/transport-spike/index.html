@@ -2180,7 +2180,7 @@
     requestAnimationFrame(vcAnimateAvatar);
 
     // Show voice mode by default, auto-connect
-    var useVoiceMode = true;
+    var useVoiceMode = false; // Disabled — single-screen mode, no overlay
     if (useVoiceMode) {
       voiceMode.classList.remove("hidden");
       document.body.classList.add("voice-active");
