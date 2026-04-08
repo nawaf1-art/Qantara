@@ -347,6 +347,37 @@ async def api_status_handler(_request: web.Request) -> web.Response:
     })
 
 
+async def _unload_previous_model() -> None:
+    """Try to unload the currently loaded model from the previous backend."""
+    prev_type = _current_config.get("type", "")
+    prev_url = _current_config.get("url", "")
+    prev_model = _current_config.get("model", "")
+
+    if not prev_url or not prev_model:
+        return
+
+    timeout = _aiohttp.ClientTimeout(total=5)
+    try:
+        async with _aiohttp.ClientSession(timeout=timeout) as session:
+            if prev_type == "ollama":
+                # Ollama: set keep_alive to 0 to unload
+                await session.post(
+                    f"{prev_url}/api/generate",
+                    json={"model": prev_model, "keep_alive": 0},
+                )
+            elif prev_type in ("openai_compatible", "openai"):
+                # Try LM Studio unload API
+                base = prev_url.rstrip("/")
+                if base.endswith("/v1"):
+                    base = base[:-3]
+                await session.post(
+                    f"{base}/api/v0/models/unload",
+                    json={"model": prev_model},
+                )
+    except Exception:
+        pass  # Best effort — don't fail the configure if unload fails
+
+
 async def api_configure_handler(request: web.Request) -> web.Response:
     """POST /api/configure — switch backend adapter in-process.
 
@@ -357,6 +388,9 @@ async def api_configure_handler(request: web.Request) -> web.Response:
       {"type":"mock"}
     """
     global ADAPTER, ADAPTER_CONFIG, _current_config
+
+    # Unload previous model before switching
+    await _unload_previous_model()
 
     try:
         body = await request.json()
