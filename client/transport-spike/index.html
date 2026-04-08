@@ -420,38 +420,93 @@
     }
     .voice-mode.hidden { display: none; }
 
-    /* Orb */
-    .voice-orb-wrap {
-      position: relative; width: 160px; height: 160px; margin-bottom: 40px;
+    /* Voice Avatar (replaces orb) */
+    .voice-avatar-wrap {
+      position: relative; width: 220px; height: 220px; margin-bottom: 24px;
+      display: flex; align-items: center; justify-content: center;
     }
-    .voice-orb {
-      width: 160px; height: 160px; border-radius: 50%;
-      background: radial-gradient(circle at 40% 35%, rgba(157,143,245,0.85) 0%, rgba(124,106,240,0.6) 35%, rgba(80,208,176,0.3) 65%, rgba(80,208,176,0.08) 100%);
-      box-shadow: 0 0 60px rgba(124,106,240,0.18), 0 0 120px rgba(124,106,240,0.08);
-      transition: transform 0.15s ease-out, box-shadow 0.3s ease;
+    /* State ring behind avatar */
+    .voice-avatar-wrap::before {
+      content: ""; position: absolute; inset: -10px; border-radius: 50%;
+      border: 3px solid var(--vc-ring, rgba(124,106,240,0.3));
+      opacity: 0; transition: all 0.4s ease;
     }
-    .voice-orb.idle { animation: orbIdle 4s ease-in-out infinite; }
-    .voice-orb.listening {
-      background: radial-gradient(circle at 40% 35%, rgba(80,220,190,0.85) 0%, rgba(80,208,176,0.6) 35%, rgba(124,106,240,0.3) 65%, rgba(124,106,240,0.08) 100%);
-      animation: orbListen 1.5s ease-in-out infinite;
+    /* Glow behind avatar */
+    .voice-avatar-wrap::after {
+      content: ""; position: absolute; inset: -16px; border-radius: 50%;
+      background: radial-gradient(circle, var(--vc-glow, rgba(124,106,240,0.12)), transparent 65%);
+      opacity: 0.4; transition: all 0.4s ease;
     }
-    .voice-orb.thinking {
-      background: radial-gradient(circle at 50% 50%, rgba(157,143,245,0.9) 0%, rgba(124,106,240,0.7) 40%, rgba(90,60,200,0.4) 70%, rgba(60,30,160,0.15) 100%);
-      animation: orbThink 2s ease-in-out infinite;
-    }
-    .voice-orb.speaking { animation: none; }
+    .voice-avatar-wrap.idle::after { animation: vcBreatheGlow 4s ease-in-out infinite; }
+    .voice-avatar-wrap.listening::before { opacity: 0.6; animation: vcRingPulse 1.5s ease-in-out infinite; }
+    .voice-avatar-wrap.listening::after { opacity: 0.8; }
+    .voice-avatar-wrap.thinking::before { opacity: 0.4; border-style: dashed; animation: vcThinkSpin 3s linear infinite; }
+    .voice-avatar-wrap.thinking::after { opacity: 0.6; animation: vcThinkGlow 2s ease-in-out infinite; }
+    .voice-avatar-wrap.speaking::before { opacity: 0.8; border-width: 4px; animation: vcSpeakRing 0.8s ease-in-out infinite; }
+    .voice-avatar-wrap.speaking::after { opacity: 1; }
 
-    @keyframes orbIdle {
-      0%,100% { transform: scale(1); box-shadow: 0 0 60px rgba(124,106,240,0.18), 0 0 120px rgba(124,106,240,0.08); }
-      50% { transform: scale(1.04); box-shadow: 0 0 80px rgba(124,106,240,0.22), 0 0 160px rgba(124,106,240,0.1); }
+    .voice-avatar-svg {
+      width: 200px; height: 200px; filter: drop-shadow(0 8px 24px rgba(0,0,0,0.3));
+      position: relative; z-index: 1;
     }
-    @keyframes orbListen {
-      0%,100% { transform: scale(1); box-shadow: 0 0 60px rgba(80,208,176,0.25); }
-      50% { transform: scale(1.08); box-shadow: 0 0 90px rgba(80,208,176,0.35); }
+
+    @keyframes vcBreatheGlow { 0%,100% { opacity: 0.3; } 50% { opacity: 0.6; } }
+    @keyframes vcRingPulse { 0%,100% { transform: scale(1); opacity: 0.4; } 50% { transform: scale(1.06); opacity: 0.7; } }
+    @keyframes vcThinkSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    @keyframes vcThinkGlow { 0%,100% { opacity: 0.4; } 50% { opacity: 0.7; } }
+    @keyframes vcSpeakRing { 0%,100% { transform: scale(1); opacity: 0.6; } 50% { transform: scale(1.08); opacity: 0.9; } }
+
+    /* Health strip */
+    .voice-health {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 8px 18px; border-radius: 999px; font-size: 0.78rem; font-weight: 500;
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+      color: rgba(200,200,220,0.7); margin-bottom: 12px; transition: all 0.3s;
     }
-    @keyframes orbThink {
-      0%,100% { transform: scale(0.93); }
-      50% { transform: scale(0.97); }
+    .voice-health .h-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; transition: background 0.3s; }
+    .voice-health .h-dot.good { background: #50d0b0; }
+    .voice-health .h-dot.warn { background: #f0b43c; }
+    .voice-health .h-dot.bad { background: #f06060; }
+    .voice-health.warn { border-color: rgba(240,180,60,0.2); }
+    .voice-health.bad { border-color: rgba(240,96,96,0.2); }
+
+    /* Metrics overlay */
+    .voice-metrics-overlay {
+      position: fixed; inset: 0; z-index: 960;
+      background: rgba(8,8,16,0.92); backdrop-filter: blur(12px);
+      display: none; flex-direction: column; align-items: center; justify-content: center;
+      font-family: 'DM Sans', system-ui, sans-serif; color: #f0f0f5;
+    }
+    .voice-metrics-overlay.visible { display: flex; }
+    .vm-back {
+      position: absolute; top: 16px; left: 16px;
+      appearance: none; border: none; background: rgba(255,255,255,0.06);
+      color: rgba(200,200,220,0.7); border-radius: 999px; padding: 8px 16px;
+      font: inherit; font-size: 0.82rem; cursor: pointer;
+    }
+    .vm-back:hover { background: rgba(255,255,255,0.1); color: #f0f0f5; }
+    .vm-title { font-size: 1rem; font-weight: 600; margin-bottom: 20px; }
+    .vm-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+      width: 90%; max-width: 520px;
+    }
+    .vm-card {
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px; padding: 16px; border-left: 4px solid rgba(255,255,255,0.08);
+      transition: border-color 0.3s;
+    }
+    .vm-card.good { border-left-color: #50d0b0; }
+    .vm-card.warn { border-left-color: #f0b43c; }
+    .vm-card.bad { border-left-color: #f06060; }
+    .vm-card-label { font-size: 0.7rem; color: rgba(152,152,176,0.6); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .vm-card-value { font-size: 1.6rem; font-weight: 600; line-height: 1.1; }
+    .vm-card-hint { font-size: 0.68rem; color: rgba(152,152,176,0.5); margin-top: 4px; }
+    .vm-legend { margin-top: 20px; font-size: 0.72rem; color: rgba(152,152,176,0.5); }
+
+    @media (max-width: 480px) {
+      .vm-grid { grid-template-columns: repeat(2, 1fr); }
+      .voice-avatar-wrap { width: 160px; height: 160px; }
+      .voice-avatar-svg { width: 140px; height: 140px; }
     }
 
     /* Captions */
@@ -766,8 +821,27 @@
       <span id="vcStatusText">Qantara</span>
     </div>
 
-    <div class="voice-orb-wrap">
-      <div class="voice-orb idle" id="vcOrb"></div>
+    <div class="voice-avatar-wrap idle" id="vcAvatarWrap">
+      <svg class="voice-avatar-svg" id="vcAvatarSvg" viewBox="0 0 200 220" aria-label="Voice Avatar">
+        <rect id="vc-neck" x="88" y="168" width="24" height="20" rx="6" fill="#f9edd9"/>
+        <ellipse id="vc-face" cx="100" cy="110" rx="52" ry="60" fill="#f9edd9" stroke="#c4a882" stroke-width="1.5"/>
+        <ellipse cx="47" cy="112" rx="6" ry="10" fill="#f9edd9" stroke="#c4a882" stroke-width="1" id="vc-ear-l"/>
+        <ellipse cx="153" cy="112" rx="6" ry="10" fill="#f9edd9" stroke="#c4a882" stroke-width="1" id="vc-ear-r"/>
+        <path id="vc-hair" d="M48 100C48 55 70 28 100 28C130 28 152 55 152 100C152 96 150 80 145 68C138 54 122 40 100 40C78 40 62 54 55 68C50 80 48 96 48 100Z M55 100C55 98 56 86 62 74C68 62 80 52 100 52C120 52 132 62 138 74C144 86 145 98 145 100Z" fill="#705c48" fill-rule="evenodd"/>
+        <ellipse id="vc-eye-l" cx="80" cy="108" rx="6" ry="8" fill="#2d2d2d"/>
+        <ellipse id="vc-eye-r" cx="120" cy="108" rx="6" ry="8" fill="#2d2d2d"/>
+        <ellipse cx="82" cy="106" rx="2" ry="2.5" fill="#fff" opacity="0.8"/>
+        <ellipse cx="122" cy="106" rx="2" ry="2.5" fill="#fff" opacity="0.8"/>
+        <path id="vc-brow-l" d="M68 95C74 91 80 90 88 92" fill="none" stroke="#705c48" stroke-width="2.2" stroke-linecap="round"/>
+        <path id="vc-brow-r" d="M112 92C120 90 126 91 132 95" fill="none" stroke="#705c48" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M97 120C99 124 101 124 103 120" fill="none" stroke="#c4a882" stroke-width="1.2" stroke-linecap="round"/>
+        <path id="vc-mouth" d="M80 138 Q100 142 120 138" fill="#c47070" stroke="#c47070" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <div class="voice-health" id="vcHealth">
+      <span class="h-dot good" id="vcHealthDot"></span>
+      <span id="vcHealthText">Connecting\u2026</span>
     </div>
 
     <div class="voice-captions" id="vcCaptions"></div>
@@ -794,10 +868,28 @@
       <button class="vc-btn vc-end" id="vcEnd" aria-label="Disconnect">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.88.37 1.73.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
       </button>
+      <button class="vc-btn vc-secondary" id="vcMetrics" aria-label="Performance metrics">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v18h18"/><path d="M7 17l4-8 4 4 6-8"/></svg>
+      </button>
       <button class="vc-btn vc-secondary" id="vcDebug" aria-label="Debug panel">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2a4 4 0 0 0-4 4v1H6a2 2 0 0 0-2 2v1h16V9a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"/><path d="M4 13h16v4a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z"/><line x1="9" y1="17" x2="9" y2="17"/><line x1="15" y1="17" x2="15" y2="17"/></svg>
       </button>
     </div>
+  </div>
+
+  <!-- Metrics Overlay -->
+  <div id="vcMetricsOverlay" class="voice-metrics-overlay">
+    <button class="vm-back" id="vcMetricsBack">&larr; Back to conversation</button>
+    <div class="vm-title">Performance Diagnostics</div>
+    <div class="vm-grid">
+      <div class="vm-card" id="vmHeard"><div class="vm-card-label">Heard</div><div class="vm-card-value" id="vmHeardVal">&mdash;</div><div class="vm-card-hint">Speech-to-text</div></div>
+      <div class="vm-card" id="vmTTFT"><div class="vm-card-label">First Response</div><div class="vm-card-value" id="vmTTFTVal">&mdash;</div><div class="vm-card-hint">Time to first token</div></div>
+      <div class="vm-card" id="vmSpeed"><div class="vm-card-label">Speed</div><div class="vm-card-value" id="vmSpeedVal">&mdash;</div><div class="vm-card-hint">Tokens per second</div></div>
+      <div class="vm-card" id="vmAudio"><div class="vm-card-label">First Audio</div><div class="vm-card-value" id="vmAudioVal">&mdash;</div><div class="vm-card-hint">TTS latency</div></div>
+      <div class="vm-card" id="vmTrip"><div class="vm-card-label">Round Trip</div><div class="vm-card-value" id="vmTripVal">&mdash;</div><div class="vm-card-hint">End-to-end</div></div>
+      <div class="vm-card" id="vmBackend"><div class="vm-card-label">Backend</div><div class="vm-card-value" id="vmBackendVal">&mdash;</div><div class="vm-card-hint">Health status</div></div>
+    </div>
+    <div class="vm-legend">🟢 Good &nbsp; 🟡 Moderate &nbsp; 🔴 Slow</div>
   </div>
 
   <!-- Settings overlay -->
@@ -2030,13 +2122,62 @@
   // ===== VOICE MODE CONTROLLER =====
   (function () {
     var voiceMode = document.getElementById("voiceMode");
-    var vcOrb = document.getElementById("vcOrb");
+    var vcAvatarWrap = document.getElementById("vcAvatarWrap");
     var vcCaptions = document.getElementById("vcCaptions");
     var vcStatusDot = document.getElementById("vcStatusDot");
     var vcStatusText = document.getElementById("vcStatusText");
-    var vcStatLatency = document.getElementById("vcStatLatency");
-    var vcStatBackend = document.getElementById("vcStatBackend");
+    var vcHealth = document.getElementById("vcHealth");
+    var vcHealthDot = document.getElementById("vcHealthDot");
+    var vcHealthText = document.getElementById("vcHealthText");
     var vcMic = document.getElementById("vcMic");
+    var vcMouth = document.getElementById("vc-mouth");
+    var vcEyeL = document.getElementById("vc-eye-l");
+    var vcEyeR = document.getElementById("vc-eye-r");
+
+    // Voice avatar mouth animation (same bezier lerp as debug avatar)
+    var VC_MOUTH_CLOSED_Y = { sy: 138, cy: 142, ey: 138 };
+    var VC_MOUTH_OPEN_Y   = { sy: 134, cy: 162, ey: 134 };
+    function vcSetMouth(t) {
+      t = Math.max(0, Math.min(1, t));
+      var sy = VC_MOUTH_CLOSED_Y.sy + (VC_MOUTH_OPEN_Y.sy - VC_MOUTH_CLOSED_Y.sy) * t;
+      var cy = VC_MOUTH_CLOSED_Y.cy + (VC_MOUTH_OPEN_Y.cy - VC_MOUTH_CLOSED_Y.cy) * t;
+      var ey = VC_MOUTH_CLOSED_Y.ey + (VC_MOUTH_OPEN_Y.ey - VC_MOUTH_CLOSED_Y.ey) * t;
+      if (vcMouth) vcMouth.setAttribute("d", "M80 " + sy.toFixed(1) + " Q100 " + cy.toFixed(1) + " 120 " + ey.toFixed(1));
+    }
+
+    // Voice avatar blink
+    var vcBlinkPhase = -1, vcBlinkStart = 0;
+    function vcScheduleBlink() {
+      setTimeout(function () {
+        vcBlinkPhase = 0; vcBlinkStart = performance.now();
+        if (Math.random() < 0.2) setTimeout(function () { vcBlinkPhase = 0; vcBlinkStart = performance.now(); }, 250);
+        vcScheduleBlink();
+      }, 2500 + Math.random() * 4000);
+    }
+    vcScheduleBlink();
+
+    // Voice avatar breathing + blink loop
+    var vcBreathStart = performance.now();
+    function vcAnimateAvatar() {
+      requestAnimationFrame(vcAnimateAvatar);
+      var now = performance.now();
+      // Blink
+      if (vcBlinkPhase >= 0) {
+        var elapsed = now - vcBlinkStart;
+        var ry = elapsed < 75 ? 8 * (1 - elapsed / 75) : elapsed < 150 ? 8 * ((elapsed - 75) / 75) : 8;
+        ry = Math.max(0.5, ry);
+        if (vcEyeL) vcEyeL.setAttribute("ry", ry.toFixed(1));
+        if (vcEyeR) vcEyeR.setAttribute("ry", ry.toFixed(1));
+        if (elapsed >= 150) vcBlinkPhase = -1;
+      }
+      // Breathing
+      var svgEl = document.getElementById("vcAvatarSvg");
+      if (svgEl) {
+        var t = ((now - vcBreathStart) % 5000) / 5000;
+        svgEl.style.transform = "translateY(" + (Math.sin(t * Math.PI * 2) * 3).toFixed(1) + "px)";
+      }
+    }
+    requestAnimationFrame(vcAnimateAvatar);
 
     // Show voice mode by default, auto-connect
     var useVoiceMode = true;
@@ -2112,6 +2253,14 @@
     });
 
     // Debug
+    // Metrics overlay toggle
+    document.getElementById("vcMetrics").addEventListener("click", function () {
+      document.getElementById("vcMetricsOverlay").classList.add("visible");
+    });
+    document.getElementById("vcMetricsBack").addEventListener("click", function () {
+      document.getElementById("vcMetricsOverlay").classList.remove("visible");
+    });
+
     document.getElementById("vcDebug").addEventListener("click", function () {
       voiceMode.classList.add("hidden");
       document.body.classList.remove("voice-active");
@@ -2171,7 +2320,7 @@
 
       if (state !== lastOrbState) {
         lastOrbState = state;
-        vcOrb.className = "voice-orb " + state;
+        vcAvatarWrap.className = "voice-avatar-wrap " + state;
         vcStatusDot.className = "voice-status-dot " + state;
 
         // Mic button state
@@ -2180,15 +2329,16 @@
         vcMic.className = "vc-btn vc-mic" + (isMicOn ? " active" : " muted");
       }
 
-      // Drive orb scale from amplitude meter
+      // Drive mouth from amplitude meter
       var meterFill = document.getElementById("avatarMeterFill");
       if (meterFill && state === "speaking") {
         var width = parseFloat(meterFill.style.width) || 0;
-        var scale = 1 + (width / 100) * 0.15;
-        vcOrb.style.transform = "scale(" + scale.toFixed(3) + ")";
-        var glow = 0.18 + (width / 100) * 0.25;
-        vcOrb.style.boxShadow = "0 0 " + (60 + width * 0.8) + "px rgba(240,240,245," + glow.toFixed(2) + "), 0 0 " + (120 + width) + "px rgba(124,106,240,0.15)";
+        vcSetMouth(width / 100);
+      } else {
+        vcSetMouth(0);
       }
+
+      // Old orb scale code removed — mouth animation replaces it
     }, 50);
 
     // Capture transcript and assistant text for captions
@@ -2294,6 +2444,68 @@
           try { var u = new URL(saved.url); label += " \u00b7 " + u.hostname; } catch (_) {}
         }
         vcStatBackend.textContent = label;
+        // Update metrics overlay backend card
+        var vmBV = document.getElementById("vmBackendVal");
+        if (vmBV) vmBV.textContent = saved.type || "—";
+        var vmB = document.getElementById("vmBackend");
+        if (vmB) vmB.className = "vm-card good";
+      }
+
+      // === HEALTH STRIP UPDATE ===
+      var worstLevel = "good";
+      var worstMetric = "";
+
+      // Get TTS ms for health
+      var ttsVal = parseFloat((document.getElementById("firstAudioMs") || {}).textContent);
+      if (!isNaN(ttsVal)) {
+        var ttsLevel = ttsVal < 800 ? "good" : ttsVal < 1500 ? "warn" : "bad";
+        if (ttsLevel === "bad" || (ttsLevel === "warn" && worstLevel === "good")) {
+          worstLevel = ttsLevel; worstMetric = "First Audio " + Math.round(ttsVal) + "ms";
+        }
+        // Metrics card
+        var vmAV = document.getElementById("vmAudioVal");
+        if (vmAV) vmAV.textContent = Math.round(ttsVal) + "ms";
+        var vmA = document.getElementById("vmAudio");
+        if (vmA) vmA.className = "vm-card " + ttsLevel;
+      }
+
+      // Total round trip
+      if (!isNaN(ttsVal)) {
+        var totalMs = ttsVal + 500;
+        var totalLevel = totalMs < 2000 ? "good" : totalMs < 3500 ? "warn" : "bad";
+        if (totalLevel === "bad" || (totalLevel === "warn" && worstLevel === "good")) {
+          worstLevel = totalLevel; worstMetric = "Round Trip " + (totalMs / 1000).toFixed(1) + "s";
+        }
+        var vmTV = document.getElementById("vmTripVal");
+        if (vmTV) vmTV.textContent = (totalMs / 1000).toFixed(1) + "s";
+        var vmT = document.getElementById("vmTrip");
+        if (vmT) vmT.className = "vm-card " + totalLevel;
+      }
+
+      // Tok/s from existing calculation
+      var tokSEl = document.getElementById("vcStatTokS");
+      if (tokSEl && tokSEl.textContent) {
+        var tokSVal = parseInt(tokSEl.textContent);
+        if (!isNaN(tokSVal)) {
+          var tokLevel = tokSVal > 20 ? "good" : tokSVal > 8 ? "warn" : "bad";
+          var vmSV = document.getElementById("vmSpeedVal");
+          if (vmSV) vmSV.textContent = tokSVal + " tok/s";
+          var vmS = document.getElementById("vmSpeed");
+          if (vmS) vmS.className = "vm-card " + tokLevel;
+        }
+      }
+
+      // Update health strip
+      if (vcHealthDot) vcHealthDot.className = "h-dot " + worstLevel;
+      if (vcHealth) vcHealth.className = "voice-health " + (worstLevel !== "good" ? worstLevel : "");
+
+      var backendLabel = "";
+      try { var s2 = JSON.parse(localStorage.getItem("qantara_backend")); backendLabel = (s2 && s2.type) || ""; if (s2 && s2.model) backendLabel += " \u00b7 " + s2.model; } catch (_) {}
+
+      if (worstLevel === "good") {
+        vcHealthText.textContent = "Voice ready" + (!isNaN(ttsVal) ? " \u00b7 " + ((ttsVal + 500) / 1000).toFixed(1) + "s round trip" : "") + (backendLabel ? " \u00b7 " + backendLabel : "");
+      } else {
+        vcHealthText.textContent = (worstLevel === "warn" ? "Moderate" : "Slow") + " \u00b7 " + worstMetric + (backendLabel ? " \u00b7 " + backendLabel : "");
       }
     }, 200);
 
