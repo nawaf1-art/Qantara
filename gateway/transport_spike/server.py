@@ -144,8 +144,8 @@ async def _start_managed_bridge(bridge_type: str, env_overrides: dict[str, str] 
     _managed_bridge_proc = await asyncio.create_subprocess_exec(
         sys.executable, script,
         env=env,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
     )
     _managed_bridge_type = bridge_type
 
@@ -489,10 +489,36 @@ async def api_configure_handler(request: web.Request) -> web.Response:
     })
 
 
+def _is_safe_url(url: str) -> bool:
+    """Check that a URL resolves to a private/localhost IP. Blocks SSRF."""
+    import ipaddress as _ipa
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname or ""
+        if host in ("localhost", "127.0.0.1", "::1"):
+            return True
+        addr = _ipa.ip_address(host)
+        return addr.is_private or addr.is_loopback
+    except (ValueError, TypeError):
+        # Hostname that isn't an IP — resolve it
+        import socket as _sock
+        try:
+            resolved = _sock.getaddrinfo(host, None, _sock.AF_UNSPEC, _sock.SOCK_STREAM)
+            for _, _, _, _, sockaddr in resolved:
+                addr = _ipa.ip_address(sockaddr[0])
+                if not (addr.is_private or addr.is_loopback):
+                    return False
+            return len(resolved) > 0
+        except (_sock.gaierror, ValueError):
+            return False
+
+
 async def api_test_url_handler(request: web.Request) -> web.Response:
     """POST /api/test-url — server-side proxy to test an OpenAI-compatible URL.
 
     Bypasses browser CORS restrictions by probing from the gateway.
+    Only allows private/localhost URLs to prevent SSRF.
     Body: {"url": "http://..."}
     Returns: {"ok": true, "models": [...]} or {"ok": false, "error": "..."}
     """
@@ -507,6 +533,10 @@ async def api_test_url_handler(request: web.Request) -> web.Response:
 
     if not raw_url.startswith(("http://", "https://")):
         raw_url = "http://" + raw_url
+
+    # SSRF protection: only allow private/localhost URLs
+    if not _is_safe_url(raw_url):
+        return web.json_response({"ok": False, "error": "Only private network URLs are allowed"}, status=403)
 
     # Strip /v1 suffix if present
     base = raw_url
@@ -591,13 +621,8 @@ async def safe_send_bytes(session: Session, payload: bytes) -> bool:
 
 
 def encode_pcm_frame(samples: list[int]) -> bytes:
-    payload = bytearray(1 + len(samples) * 2)
-    payload[0] = PCM_KIND
-    offset = 1
-    for sample in samples:
-        payload[offset:offset + 2] = int(sample).to_bytes(2, "little", signed=True)
-        offset += 2
-    return bytes(payload)
+    import struct
+    return struct.pack(f"<B{len(samples)}h", PCM_KIND, *samples)
 
 
 def normalize_tts_text(text: str) -> str:
@@ -1104,7 +1129,11 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
     try:
       async for msg in ws:
         if msg.type == WSMsgType.TEXT:
-            payload = json.loads(msg.data)
+            try:
+                payload = json.loads(msg.data)
+            except (json.JSONDecodeError, ValueError):
+                await session.emit("recoverable_error", "gateway", {"component": "websocket", "message": "malformed JSON"})
+                continue
             message_type = payload.get("type")
 
             if message_type == "session_init":

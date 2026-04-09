@@ -323,10 +323,11 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
             }
             return
 
-        # Check if the turn was cancelled during streaming
+        # Clean up turn tracking
         self._active_responses.pop(turn_handle, None)
         was_cancelled = not self._active_turns.get(turn_handle, False)
         self._active_turns.pop(turn_handle, None)
+        self._turn_sessions.pop(turn_handle, None)
 
         if was_cancelled:
             # Cancelled turn: emit cancel_acknowledged, do NOT save partial response
