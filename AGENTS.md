@@ -125,7 +125,7 @@ QANTARA_ADAPTER=session_gateway_http QANTARA_BACKEND_BASE_URL=http://127.0.0.1:1
 
 ## Current State
 
-Version: `0.2.6-dev.1` — launch hardening.
+Version: `0.2.6` — first public release.
 
 Working today:
 - Browser mic capture → WebSocket → gateway → STT (faster-whisper) → adapter → backend → TTS → browser playback

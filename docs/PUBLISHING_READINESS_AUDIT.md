@@ -4,24 +4,20 @@ Date: 2026-04-24
 
 ## Verdict
 
-Qantara is almost ready to publish, but not until clean-machine validation, CI, and GitHub repository setup are complete.
+Qantara is ready for the first public GitHub release. The clean public branch is published, old private-history tags were removed from the public remote, cross-OS CI is green, and the LAN voice demo has been manually validated.
 
-Current readiness score after the clean public branch step: **88 / 100**.
+Current readiness score after the public release step: **94 / 100**.
 
-## Blockers
+## Remaining Risks
 
-1. **Publish the clean branch, not private `main`**
-   - The `public-main` orphan branch is intended for GitHub publication.
-   - Do not push the private `main` branch to a public repository because it keeps the old private development history.
+1. **Clean-machine validation**
+   - Docker and native install instructions should still be run on a machine or VM that has not accumulated local models, certs, and Python caches before a broad announcement.
 
-2. **Clean-machine validation**
-   - Docker and native install instructions need one final run on a machine or VM that has not accumulated local models, certs, and Python caches.
+2. **Project-growth setup**
+   - Good-first issues and optional demo media can be added after the first tag.
 
-3. **Cross-OS CI/public release validation**
-   - CI should pass on Linux, macOS, and Windows after the public-ready cleanup.
-
-4. **GitHub repository settings**
-   - Set description, topics, Issues, and private vulnerability reporting after publication.
+3. **Packaging**
+   - PyPI distribution is not ready; users should install via Docker or the documented native path.
 
 ## Non-Blocking Improvements
 
@@ -59,7 +55,7 @@ Current readiness score after the clean public branch step: **88 / 100**.
 
 ## Installability Assessment
 
-Status: **Good, with clean-machine validation still required**.
+Status: **Good, with clean-machine validation still recommended before broad announcement**.
 
 Strengths:
 

@@ -4,7 +4,7 @@
 
 Qantara lets you talk to AI agents by voice through your browser. It handles microphone capture, speech recognition, turn-taking, interruption, text-to-speech, and the live connection to the agent backend — all running on your local network with no cloud dependency for speech processing.
 
-> Version `0.2.6-dev.1` — Pre-launch. Multi-device mesh + Wyoming + expressive voice + multilingual assistant + live translator all shipped; public launch at 0.2.6 once CI, benchmarks, and release prep land.
+> Version `0.2.6` — First public release. Multi-device mesh + Wyoming + expressive voice + multilingual assistant + live translator are included in the public launch.
 
 
 ## Why Qantara
@@ -241,7 +241,7 @@ qantara/
 | 0.2.2 | ✅ Done | [Tier 1] Multi-device mesh + Wyoming (Home Assistant) + mobile UX pass |
 | 0.2.4 | ✅ Done | Multilingual assistant + directional + live conversation translator (EN/AR/ES/FR/JA) |
 | 0.2.5 | ✅ Done | Chatterbox TTS (expressive voice) |
-| 0.2.6 | Planned | **Public launch** |
+| 0.2.6 | ✅ Released | **Public launch** |
 | 0.2.7 | Planned | MCP voice client + server |
 | 0.3.2 | Planned | Speech-native adapter (OpenAI Realtime, Gemini Live, MiniCPM-o) |
 | 0.3.4 | Planned | Identity-aware sessions (voice fingerprinting) |
@@ -252,7 +252,7 @@ See [ROADMAP.md](ROADMAP.md) for full details.
 
 ## Contributing
 
-Qantara is in pre-launch. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to file issues, propose features, and submit patches. Early contributions are welcome.
+Qantara is a pre-1.0 public project. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to file issues, propose features, and submit patches. Early contributions are welcome.
 
 Agents and automated tooling — see [AGENTS.md](AGENTS.md) for coding conventions and patterns.
 

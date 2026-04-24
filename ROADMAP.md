@@ -1,6 +1,6 @@
 # Roadmap
 
-Current version: `0.2.6-dev.1` (post-0.2.4 translation, pre-launch)
+Current version: `0.2.6` (first public release)
 
 This roadmap is the single source of truth for what to build and in what order. It is designed to be read by humans, Claude Code, and Codex alike.
 
@@ -447,7 +447,7 @@ Basic EN↔AR translation shipped in 0.2.5. This item extends it:
 0.2.2          ✅ [Tier 1] Multi-device mesh + Wyoming-compatible (HA) + mobile UX
 0.2.4          ✅ Multilingual assistant + directional + live conversation translator (EN/AR/ES/FR/JA)
 0.2.5          ✅ Chatterbox TTS (expressive voice)
-0.2.6          ⬜ PUBLIC LAUNCH — announce + benchmarks + community kick-off  ← CURRENT
+0.2.6          ✅ PUBLIC LAUNCH — first public GitHub release
 0.2.7          ⬜ MCP client + server (postponed from 0.2.1)
 0.2.8          ⬜ Agent protocol v1 + tool-call formalization
 0.2.9          ⬜ pip install qantara

@@ -1,4 +1,4 @@
-# Draft Release Notes: v0.2.6
+# Release Notes: v0.2.6
 
 Qantara is a local-first real-time voice gateway for AI agents. It turns a browser on your LAN into a full-duplex voice interface with local STT, local TTS, interruption handling, and backend adapters for local LLM engines.
 
@@ -48,7 +48,7 @@ Measured on Linux 6.17 / Python 3.12 with `scripts/bench_launch.py --arabic`:
 | Piper English TTS synthesis (`lessac`) | 1533 ms | 1541 ms |
 | Piper Arabic TTS synthesis (`ar_JO-kareem-medium`) | 1801 ms | 1832 ms |
 
-Backend response time depends on the selected local model and hardware.
+Backend response time depends on the selected local model and hardware. CI validation passed on Linux, macOS, and Windows with Python 3.11 and 3.12 before this tag.
 
 ## Known Limitations
 
@@ -58,7 +58,6 @@ Backend response time depends on the selected local model and hardware.
 - Docker path does not include host-only OpenClaw CLI integration.
 - Public internet exposure is not supported; use loopback or trusted LAN.
 - PyPI packaging is not finalized; use Docker or the documented native install path.
-- Cross-OS benchmark validation must be completed before tagging the release.
 
 ## Security
 

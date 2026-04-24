@@ -119,10 +119,10 @@ git push <public-remote> public-main:main
 
 4. Publish GitHub issues from `docs/PUBLISHING_READINESS_AUDIT.md`.
 
-5. Tag `v0.2.6` only after `docs/RELEASE_CHECKLIST.md` is satisfied.
+5. `v0.2.6` is the first public release tag.
 
 ## Current Readiness
 
-Status: almost ready, not yet publish-now.
+Status: public release tagged.
 
-Score: 86 / 100.
+Score: 94 / 100.

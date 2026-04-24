@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+No changes yet.
+
+## [0.2.6] - 2026-04-24
+
 ### Added
 - Arabic Piper voice routing for `ar_JO-kareem-medium`, including a 1.3x Arabic baseline rate.
 - Transient Qantara voice-turn context prompts for OpenAI-compatible, Ollama bridge, and OpenClaw bridge backends.
@@ -21,7 +25,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Setup's no-backend state now ignores the manual OpenAI-compatible card unless a server is auto-detected.
 - Public launch docs now treat demo media as optional and use benchmark refresh as the required evidence path.
 - Removed tracked private-development notes from the public docs surface and sanitized local examples.
-- README and launch docs now reflect the `0.2.6-dev.1` pre-launch state.
+- README and launch docs now reflect the `0.2.6` first public release state.
 
 ### Fixed
 - Arabic-script transcripts override short-utterance language fallback, so brief Arabic turns stay Arabic.
@@ -29,8 +33,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - `/api/configure` now validates request body and URL safety before unloading the previously configured model.
 - `/api/translation_mode` now honors `QANTARA_AUTH_TOKEN`.
 - Gateway HTTP tests no longer depend on port `19120`, avoiding collisions with a live bridge.
+- Public CI tests no longer depend on local Piper voice files or OS-specific closed-port timing.
+- Speaker-mode barge-in now uses a stricter active-turn gate to reduce false interruption from TTS leaking into the microphone.
 
-## [0.2.4] - 2026-04-20
+## 0.2.4 - 2026-04-20
 
 ### Added
 - Multilingual assistant — Whisper swapped to `small` (multilingual), auto language detection per turn, same-language reply.
@@ -46,7 +52,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - `STTProvider.transcribe` now returns `STTResult(text, language, language_probability)`; callers updated. Backward-compatible: `str(result)` returns the text.
 - Default Whisper model changed from `base.en` to `small` (~460MB). Override via `QANTARA_WHISPER_MODEL`.
 
-## [0.2.5] - 2026-04-20
+## 0.2.5 - 2026-04-20
 
 ### Added
 - Chatterbox TTS provider (expressive neural voice, optional dep under `.[chatterbox]` extra).
@@ -55,7 +61,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Setup-page TTS engine picker; voice-mode "Voice Feeling" slider that auto-hides when the active voice does not support expressiveness.
 - `chatterbox_warm` voice registered in `identity/voice-registry/voices.json`.
 
-## [0.2.2] - 2026-04-20
+## 0.2.2 - 2026-04-20
 
 ### Added
 - **Multi-device mesh on `_qantara._tcp.local.`** — peer discovery via mDNS, RMS-based single-responder election (~150ms window, lexicographic tie-break), role-aware routing (`full`/`mic-only`/`speaker-only`). Controlled via `QANTARA_MESH_ROLE`. Implementation split across `gateway/mesh/{protocol,peer_registry,election,transport,discovery,controller,wyoming_bridge}.py`. Session-level integration: `Session.mesh_should_respond` + `maybe_run_election_and_claim` + `turn_deferred_to_peer` event gate turn submit on election outcome.
@@ -87,7 +93,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Added visible microphone-permission guidance in the browser client and removed the Google Fonts dependency.
 - **Backend switch in `/api/configure`** now actually applies to returning sessions. Previously `register_session()` pinned the binding from a stale per-client snapshot, so switching backend from the setup page had no effect on the next `/spike` reconnect. Snapshot now carries voice prefs only; binding always follows the current default.
 
-## [0.1.9-pre] — 2026-04-18 — Pre-launch polish
+## 0.1.9-pre — 2026-04-18 — Pre-launch polish
 
 ### Added
 - `SECURITY.md` with a disclosure policy pointing at GitHub's private vulnerability reporting flow.
@@ -117,8 +123,5 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - 39 lint issues surfaced by ruff: unused imports, deprecated typing imports, missing `raise … from`, unused variables, import ordering.
 - Version references aligned on `0.1.9-pre` across `VERSION`, `AGENTS.md`, `README.md`, and `ROADMAP.md`.
 
-[Unreleased]: https://github.com/nawaf1-art/Qantara/compare/v0.2.4...HEAD
-[0.2.4]: https://github.com/nawaf1-art/Qantara/compare/v0.2.5...v0.2.4
-[0.2.5]: https://github.com/nawaf1-art/Qantara/compare/v0.2.2...v0.2.5
-[0.2.2]: https://github.com/nawaf1-art/Qantara/compare/v0.1.9-pre...v0.2.2
-[0.1.9-pre]: https://github.com/nawaf1-art/Qantara/releases/tag/v0.1.9-pre
+[Unreleased]: https://github.com/nawaf1-art/Qantara/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/nawaf1-art/Qantara/releases/tag/v0.2.6
