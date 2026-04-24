@@ -37,7 +37,7 @@ Use this before making the repository public and before tagging `v0.2.6`.
 Recommended description:
 
 ```text
-Local-first real-time voice gateway for AI agents: browser mic, STT, barge-in, TTS, and local backend adapters.
+Local-first real-time voice gateway for Ollama and other local LLMs, including local AI agents: browser speech, STT, barge-in, TTS.
 ```
 
 Recommended topics:
@@ -50,7 +50,7 @@ Before publishing:
 
 - [ ] Set repository description
 - [ ] Set topics
-- [ ] Add a social preview image if available. Suggested content: Qantara wordmark, "Local-first voice gateway for AI agents", browser mic -> gateway -> local backend diagram.
+- [ ] Add a social preview image if available. Suggested content: Qantara wordmark, "Local voice for Ollama and local LLMs", browser mic -> gateway -> local backend diagram.
 - [ ] Enable Issues
 - [ ] Enable Discussions only if you intend to monitor them
 - [ ] Enable private vulnerability reporting after repository is public

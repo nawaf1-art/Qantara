@@ -104,7 +104,7 @@ Present:
 Recommended repo description:
 
 ```text
-Local-first real-time voice gateway for AI agents: browser mic, STT, barge-in, TTS, and local backend adapters.
+Local-first real-time voice gateway for Ollama and other local LLMs, including local AI agents: browser speech, STT, barge-in, TTS.
 ```
 
 Recommended topics:

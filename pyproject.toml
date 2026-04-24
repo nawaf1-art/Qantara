@@ -1,12 +1,12 @@
 [project]
 name = "qantara"
 version = "0.2.6"
-description = "Local-first voice gateway"
+description = "Local-first voice gateway for Ollama, local LLMs, and local AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Qantara maintainers" }]
-keywords = ["voice-ai", "local-first", "speech-to-text", "text-to-speech", "ollama", "websocket"]
+keywords = ["voice-ai", "local-first", "local-llm", "ai-agents", "speech-to-text", "text-to-speech", "ollama", "websocket"]
 
 [project.urls]
 Homepage = "https://github.com/nawaf1-art/Qantara"

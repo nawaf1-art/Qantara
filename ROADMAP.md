@@ -143,13 +143,13 @@ Supported backends at this milestone:
 
 ## Phase 2: "Plug Into Anything"
 
-**Goal:** Qantara becomes the standard voice layer for AI agents. Any backend, any STT, any TTS. MCP support.
+**Goal:** Qantara becomes the standard voice layer for local LLMs and AI agents. Any backend, any STT, any TTS. MCP support.
 
 **Full version target:** `0.3.0`
 
 Prioritization iterated twice on 2026-04-19. Post-competitive-research, MCP was briefly Tier 1 at 0.2.1. On implementation-scoping it was deferred post-launch (user call: "not worth it now") after the adapter design question surfaced tradeoffs between a simple agent-style MCP client and a richer LLM+toolbox composition pattern. MCP client + server bundled at 0.2.7 for a proper post-launch landing. **Public launch target remains `0.2.6`.** The launch narrative:
 
-> *"Local voice for AI agents — Ollama, any OpenAI-compatible server, and an optional OpenClaw bridge. Multi-device mesh + Home Assistant (Wyoming). Interruption-safe barge-in (which livekit-agents and pipecat still get wrong). Live translation. Voice-as-API for any local app."*
+> *"Local voice for Ollama, local LLMs, and local AI agents — any OpenAI-compatible server, plus an optional OpenClaw bridge. Multi-device mesh + Home Assistant (Wyoming). Interruption-safe barge-in (which livekit-agents and pipecat still get wrong). Live translation. Voice-as-API for any local app."*
 
 Still category-of-one vs the monolith competitors (ShayneP/local-voice-ai, KokoDOS, sherpa-voice-assistant). MCP agent compatibility lands ~2-3 weeks post-launch.
 

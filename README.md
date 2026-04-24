@@ -1,8 +1,8 @@
 # Qantara
 
-**Local-first, real-time voice gateway for AI agents.**
+**Local-first, real-time voice gateway for Ollama, local LLMs, and local AI agents.**
 
-Qantara lets you talk to AI agents by voice through your browser. It handles microphone capture, speech recognition, turn-taking, interruption, text-to-speech, and the live connection to the agent backend — all running on your local network with no cloud dependency for speech processing.
+Qantara lets you talk by voice to Ollama, local LLM servers, and local AI agents through your browser. It handles microphone capture, speech recognition, turn-taking, interruption, text-to-speech, and the live connection to whichever local backend you choose — all running on your local network with no cloud dependency for speech processing.
 
 > Version `0.2.6` — First public release. Multi-device mesh + Wyoming + expressive voice + multilingual assistant + live translator are included in the public launch.
 
@@ -14,9 +14,9 @@ Most voice interfaces are push-to-talk wrappers. Qantara is built for **full-dup
 - **Always listening** — continuous microphone input, even while the assistant is speaking
 - **Barge-in** — interrupt the assistant mid-sentence, naturally
 - **Local-first** — STT and TTS run on your machine, not in the cloud
-- **Backend-agnostic** — works with Ollama, llama.cpp, vLLM, LM Studio, any OpenAI-compatible server, and an optional OpenClaw bridge
+- **Backend-agnostic** — works with Ollama, llama.cpp, vLLM, LM Studio, Jan, LiteLLM, any OpenAI-compatible local server, and optional local agent bridges such as OpenClaw
 
-Qantara is a voice *channel*, not a replacement for the AI runtime behind it.
+Qantara is a voice *channel*, not a replacement for the local LLM or agent runtime behind it.
 
 ### Your voice stays on your machines
 
@@ -31,7 +31,7 @@ Two other shapes of project exist in this space:
 - **Speech-native models** (OpenAI Realtime, Gemini Live, MiniCPM-o, Moshi) — these *are* the model; audio in, audio out, no separate STT/TTS. They replace the brain, not the transport. Qantara can host them as a backend via their text or (in `0.3.x`) audio interfaces.
 - **Heavy frameworks** (Pipecat, LiveKit Agents) — vendor-agnostic orchestration with dozens of provider integrations and WebRTC infrastructure. Powerful, but many days to wire up.
 
-Qantara's niche is the middle: **a real full-duplex voice stack you can read, run, and ship in an afternoon**. One `docker compose up`, no cloud accounts, no build step.
+Qantara's niche is the middle: **a real full-duplex voice stack for local LLMs and agents that you can read, run, and ship in an afternoon**. One `docker compose up`, no cloud accounts, no build step.
 
 ### How Qantara compares
 

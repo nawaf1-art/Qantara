@@ -4,9 +4,9 @@ This file is for AI coding agents (Claude Code, Codex, Cursor, etc.) working on 
 
 ## What Qantara Is
 
-Qantara is a local-first, real-time voice gateway that plugs into any AI agent backend. It handles microphone capture, speech-to-text, turn-taking, barge-in, text-to-speech, and audio playback — all through the browser over a local network.
+Qantara is a local-first, real-time voice gateway that plugs into Ollama, local LLM runtimes, and local AI agent backends. It handles microphone capture, speech-to-text, turn-taking, barge-in, text-to-speech, and audio playback — all through the browser over a local network.
 
-It is a voice *layer*, not an agent framework. The AI agent (Ollama, OpenClaw, LangChain, etc.) lives behind a clean adapter boundary.
+It is a voice *layer*, not an agent framework. Ollama, OpenClaw, LangChain, or another local runtime lives behind a clean adapter boundary.
 
 ## Project Structure
 
