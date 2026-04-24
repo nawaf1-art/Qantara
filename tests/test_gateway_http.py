@@ -354,9 +354,11 @@ class GatewayHTTPTests(unittest.IsolatedAsyncioTestCase):
         from gateway.transport_spike import http_api
 
         http_api._test_url_call_log.clear()
-        last_status = 200
-        for _ in range(http_api._TEST_URL_RATE_LIMIT_MAX_CALLS + 2):
-            resp = await self.client.post("/api/test-url", json={"url": "http://127.0.0.1:1"})
-            last_status = resp.status
-        self.assertEqual(last_status, 429)
-        http_api._test_url_call_log.clear()
+        try:
+            last_status = 200
+            for _ in range(http_api._TEST_URL_RATE_LIMIT_MAX_CALLS + 2):
+                resp = await self.client.post("/api/test-url", json={})
+                last_status = resp.status
+            self.assertEqual(last_status, 429)
+        finally:
+            http_api._test_url_call_log.clear()
