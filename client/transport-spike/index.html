@@ -1000,11 +1000,12 @@
     const VAD_STOP_RMS = 0.006;
     const VAD_START_FRAMES = 4;
     const VAD_STOP_FRAMES = 7;
-    // Higher threshold for barge-in during active playback so TTS
-    // leaking into the mic doesn't self-trigger. Scaled down with
-    // VAD_START_RMS so the ratio stays roughly the same.
-    const PLAYBACK_BARGE_IN_START_RMS = 0.04;
-    const PLAYBACK_BARGE_IN_START_FRAMES = 6;
+    // Higher threshold for speaker-mode barge-in so TTS leaking into the mic
+    // doesn't self-trigger. Normal speech start still uses the lower VAD gate;
+    // this stricter gate applies only while an assistant turn is active or
+    // during the short post-playback cooldown.
+    const SPEAKERS_BARGE_IN_START_RMS = 0.06;
+    const SPEAKERS_BARGE_IN_START_FRAMES = 8;
     const ENDPOINT_SILENCE_MS = 1200;
     const AUTO_SUBMIT_COOLDOWN_MS = 1400;
     const POST_PLAYBACK_SUBMIT_COOLDOWN_MS = 900;
@@ -1402,12 +1403,16 @@
       updateText("weakSpeechSkips", value);
     }
 
-    function getPlaybackStartRms() {
-      return audioMode === "speakers" ? PLAYBACK_BARGE_IN_START_RMS : VAD_START_RMS;
+    function isBargeInGuardActive() {
+      return playbackActive || backendTurnActive || performance.now() < playbackCooldownUntil;
     }
 
-    function getPlaybackStartFrames() {
-      return audioMode === "speakers" ? PLAYBACK_BARGE_IN_START_FRAMES : VAD_START_FRAMES;
+    function getActiveStartRms() {
+      return audioMode === "speakers" && isBargeInGuardActive() ? SPEAKERS_BARGE_IN_START_RMS : VAD_START_RMS;
+    }
+
+    function getActiveStartFrames() {
+      return audioMode === "speakers" && isBargeInGuardActive() ? SPEAKERS_BARGE_IN_START_FRAMES : VAD_START_FRAMES;
     }
 
     function getPostPlaybackCooldownMs() {
@@ -1805,8 +1810,8 @@
         }
         rms = Math.sqrt(rms / input.length);
         setVadRms(rms);
-        const activeStartRms = playbackActive ? getPlaybackStartRms() : VAD_START_RMS;
-        const activeStartFrames = playbackActive ? getPlaybackStartFrames() : VAD_START_FRAMES;
+        const activeStartRms = getActiveStartRms();
+        const activeStartFrames = getActiveStartFrames();
         if (vadSpeech) {
           if (rms > VAD_STOP_RMS) {
             silenceCandidateFrames = 0;
