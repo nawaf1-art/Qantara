@@ -1,0 +1,1396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Qantara</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --panel: #fffaf2;
+      --ink: #1f2328;
+      --muted: #636b74;
+      --line: #d5c6b5;
+      --accent: #0f766e;
+      --accent-light: rgba(15, 118, 110, 0.10);
+      --green: #15803d;
+      --amber: #a16207;
+      --red: #b91c1c;
+      --grey: #9ca3af;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background: radial-gradient(circle at top left, #fdf7ee 0, #f4f1ea 45%, #ebe3d5 100%);
+      min-height: 100vh;
+      min-height: 100dvh;
+    }
+
+    main {
+      max-width: 620px;
+      margin: 0 auto;
+      padding: 48px 20px 64px;
+      padding-left: max(20px, env(safe-area-inset-left));
+      padding-right: max(20px, env(safe-area-inset-right));
+      padding-bottom: max(64px, env(safe-area-inset-bottom));
+    }
+
+    /* Mobile hardening (0.2.2 polish):
+       - touch-action: manipulation removes the 300ms tap delay on iOS Safari
+       - inputs get 16px font-size floor so iOS doesn't auto-zoom on focus
+    */
+    button, [role="button"], .scan-btn, .start-btn, .test-btn, .copy-btn,
+    .backend-card, .agent-option {
+      touch-action: manipulation;
+    }
+    input, textarea, select { font-size: max(16px, 0.92rem); }
+
+    h1 { margin: 0 0 4px; font-size: 2.2rem; font-weight: 600; }
+
+    .subtitle {
+      margin: 0 0 28px;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 1rem;
+    }
+
+    .panel {
+      background: rgba(255, 250, 242, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow: 0 14px 40px rgba(31, 35, 40, 0.07);
+    }
+
+    .section-label {
+      display: block;
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 10px;
+    }
+
+    /* Backend cards */
+    .backend-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+
+    .backend-card {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 12px;
+      cursor: pointer; transition: all 0.15s; background: rgba(255,255,255,0.5);
+    }
+    .backend-card:hover { border-color: var(--accent); background: var(--accent-light); }
+    .backend-card.selected { border-color: var(--accent); background: var(--accent-light); box-shadow: 0 0 0 1px var(--accent); }
+    .backend-card.unavailable { opacity: 0.55; cursor: default; }
+    .backend-card.unavailable:hover { border-color: var(--line); background: rgba(255,255,255,0.5); }
+
+    .backend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .backend-dot.available { background: var(--green); }
+    .backend-dot.unavailable { background: var(--grey); }
+
+    .backend-info { flex: 1; min-width: 0; }
+    .backend-name { font-weight: 600; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .backend-hint { font-size: 0.78rem; color: var(--muted); margin-top: 1px; }
+    .backend-badge {
+      display: inline-flex; align-items: center; min-height: 18px;
+      padding: 2px 6px; border-radius: 999px; border: 1px solid var(--line);
+      color: var(--muted); font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0;
+      background: rgba(255,255,255,0.7);
+    }
+
+    /* Config area */
+    .config-area { margin-bottom: 20px; min-height: 0; }
+    .config-area:empty { display: none; }
+    .config-group { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+    .config-group label { font-size: 0.78rem; color: var(--muted); }
+    .config-group select, .config-group input {
+      font-family: inherit; font-size: 0.92rem; padding: 9px 12px;
+      border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink); outline: none;
+    }
+    .config-group select:focus, .config-group input:focus {
+      border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light);
+    }
+    .config-note { font-size: 0.75rem; color: var(--muted); margin-top: 4px; font-style: italic; }
+    .config-recommended {
+      font-size: 0.72rem; color: var(--accent); font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+
+    /* Agent radio list */
+    .agent-list { display: flex; flex-direction: column; gap: 6px; }
+    .agent-option {
+      display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+      border: 1px solid var(--line); border-radius: 9px; cursor: pointer;
+      transition: all 0.12s; background: rgba(255,255,255,0.5);
+    }
+    .agent-option:hover { border-color: var(--accent); background: var(--accent-light); }
+    .agent-option.selected { border-color: var(--accent); background: var(--accent-light); }
+    .agent-option input[type="radio"] { accent-color: var(--accent); margin: 0; }
+    .agent-name { font-weight: 600; font-size: 0.9rem; }
+    .agent-default { font-size: 0.7rem; color: var(--accent); margin-left: 4px; }
+
+    /* Test button */
+    .test-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+    .test-btn {
+      appearance: none; border: 1px solid var(--line); background: var(--panel);
+      color: var(--ink); border-radius: 999px; padding: 6px 14px; font: inherit;
+      font-size: 0.82rem; cursor: pointer; transition: all 0.12s;
+    }
+    .test-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .test-result { font-size: 0.78rem; color: var(--muted); }
+    .test-result.ok { color: var(--green); }
+    .test-result.fail { color: var(--red); }
+
+    /* URL input row with test */
+    .url-row { display: flex; gap: 8px; }
+    .url-row input { flex: 1; }
+    .url-row .test-btn { flex-shrink: 0; align-self: flex-start; margin-top: 0; padding: 9px 14px; }
+
+    /* Start button */
+    .start-btn {
+      appearance: none; display: block; width: 100%; padding: 13px; font: inherit;
+      font-size: 1.05rem; font-weight: 600; color: #fff; background: var(--accent);
+      border: none; border-radius: 999px; cursor: pointer; transition: opacity 0.15s;
+    }
+    .start-btn:hover { opacity: 0.9; }
+    .start-btn:disabled { opacity: 0.35; cursor: default; }
+
+    .status-msg { text-align: center; font-size: 0.82rem; color: var(--muted); margin-top: 10px; min-height: 1.2em; }
+    .status-msg.error { color: var(--red); }
+
+    /* Getting started panel */
+    .getting-started {
+      text-align: center; padding: 28px 16px; color: var(--muted); line-height: 1.6;
+    }
+    .getting-started h3 { color: var(--ink); font-size: 1.1rem; margin: 0 0 8px; }
+    .getting-started p { margin: 0 0 14px; font-size: 0.9rem; }
+    .getting-started .cmd-box {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(31,35,40,0.06); border: 1px solid var(--line);
+      border-radius: 8px; padding: 8px 14px; font-family: monospace; font-size: 0.88rem;
+      color: var(--ink); margin: 6px 0 14px;
+    }
+    .getting-started .copy-btn {
+      appearance: none; border: none; background: none; cursor: pointer;
+      color: var(--accent); font-size: 0.78rem; padding: 2px 6px;
+    }
+    .getting-started .copy-btn:hover { text-decoration: underline; }
+    .scan-btn {
+      appearance: none; border: 1px solid var(--accent); background: transparent;
+      color: var(--accent); border-radius: 999px; padding: 8px 20px; font: inherit;
+      font-size: 0.88rem; cursor: pointer; margin: 6px 4px; transition: all 0.12s;
+    }
+    .scan-btn:hover { background: var(--accent); color: #fff; }
+    .scan-btn:disabled { opacity: 0.4; cursor: default; }
+
+    /* LAN discovery section */
+    .lan-section { margin-bottom: 20px; }
+    .lan-section h3 { font-size: 0.95rem; margin: 0 0 8px; }
+    .lan-progress { font-size: 0.78rem; color: var(--muted); margin: 6px 0; }
+    .lan-progress-bar { height: 4px; background: rgba(0,0,0,0.06); border-radius: 2px; overflow: hidden; margin: 4px 0 8px; }
+    .lan-progress-fill { height: 100%; background: var(--accent); transition: width 0.3s; width: 0%; }
+    .lan-results { display: flex; flex-direction: column; gap: 8px; }
+
+    .lan-card {
+      padding: 12px 14px; border: 1.5px solid var(--line); border-radius: 12px;
+      background: rgba(255,255,255,0.5); cursor: pointer; transition: all 0.12s;
+    }
+    .lan-card:hover { border-color: var(--accent); background: var(--accent-light); }
+    .lan-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .lan-card-type { font-weight: 600; font-size: 0.9rem; }
+    .lan-card-url { font-size: 0.78rem; color: var(--muted); }
+    .lan-card-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 0.72rem; margin-top: 4px; }
+    .lan-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 2px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 500;
+    }
+    .lan-badge.good { background: rgba(21,128,61,0.1); color: var(--green); }
+    .lan-badge.warn { background: rgba(161,98,7,0.1); color: var(--amber); }
+    .lan-badge.bad { background: rgba(185,28,28,0.1); color: var(--red); }
+    .lan-badge.neutral { background: rgba(0,0,0,0.04); color: var(--muted); }
+
+    .loading { text-align: center; padding: 28px; color: var(--muted); }
+    @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+    .loading-dots::after { content: "..."; animation: pulse 1.2s infinite; }
+
+    .probe-progress {
+      padding: 22px 14px 18px;
+      border-radius: 10px;
+      background: rgba(0,0,0,0.02);
+      border: 1px dashed rgba(0,0,0,0.08);
+    }
+    .probe-progress-label { font-size: 0.78rem; color: var(--muted); margin-bottom: 10px; }
+    .probe-progress-bar {
+      height: 6px; background: rgba(0,0,0,0.06); border-radius: 999px; overflow: hidden;
+      margin-bottom: 14px;
+    }
+    .probe-progress-fill {
+      height: 100%; width: 0%; background: var(--accent, #6366f1);
+      transition: width 350ms ease-out; border-radius: 999px;
+    }
+    .probe-list { display: flex; flex-direction: column; gap: 6px; }
+    .probe-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 10px; border-radius: 6px; font-size: 0.82rem;
+      background: rgba(0,0,0,0.02);
+    }
+    .probe-row.pending { color: var(--muted); }
+    .probe-row.pending .probe-status { animation: pulse 1.2s infinite; font-size: 0.72rem; }
+    .probe-row.done-ok { color: var(--green, #166534); }
+    .probe-row.done-ok .probe-status { font-weight: 600; }
+    .probe-row.done-miss { color: var(--muted); }
+    .probe-row.done-miss .probe-status { font-size: 0.72rem; }
+    .probe-row.done-error { color: var(--amber, #a16207); }
+    .probe-row.done-error .probe-status { font-size: 0.72rem; }
+
+    @media (max-width: 480px) {
+      main { padding: 28px 14px 48px; }
+      .url-row { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Qantara</h1>
+    <p class="subtitle">Talk to your AI agent by voice. Choose how your AI is running to get started.</p>
+
+    <div class="panel">
+      <div id="getting-started-area"></div>
+      <span class="section-label">Available backends</span>
+      <div id="backend-list" class="backend-list">
+        <div class="probe-progress" id="probe-progress">
+          <div class="probe-progress-label" id="probe-progress-label">Detecting backends…</div>
+          <div class="probe-progress-bar"><div class="probe-progress-fill" id="probe-progress-fill"></div></div>
+          <div class="probe-list" id="probe-list"></div>
+        </div>
+      </div>
+
+      <div id="config-area" class="config-area"></div>
+
+      <button id="start-btn" class="start-btn" disabled>Start Talking</button>
+      <div id="status-msg" class="status-msg"></div>
+    </div>
+
+    <!-- Warmup overlay (shown between /api/configure and the redirect to /spike) -->
+    <div id="warmup-overlay" style="display:none; position:fixed; inset:0; background:rgba(31,35,40,0.6); backdrop-filter:blur(6px); z-index:500; align-items:center; justify-content:center; padding:24px;">
+      <div style="background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:28px 24px; max-width:420px; width:100%; box-shadow:0 20px 60px rgba(31,35,40,0.25);">
+        <div style="text-align:center;">
+          <div style="display:inline-block; width:44px; height:44px; border:3px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:warmupSpin 0.9s linear infinite; margin-bottom:14px;"></div>
+          <h3 id="warmup-title" style="margin:0 0 6px; font-size:1.05rem;">Warming up the model…</h3>
+          <p id="warmup-body" style="margin:0; font-size:0.85rem; color:var(--muted); line-height:1.5;">First time usually takes 10-30 seconds while the model loads into memory. Subsequent turns are fast.</p>
+          <p id="warmup-elapsed" style="margin:10px 0 0; font-size:0.75rem; color:var(--muted); font-variant-numeric:tabular-nums;"></p>
+        </div>
+      </div>
+    </div>
+    <style>@keyframes warmupSpin { to { transform: rotate(360deg); } }</style>
+
+    <!-- LAN Discovery Section -->
+    <div class="panel lan-section" style="margin-top: 14px;">
+      <span class="section-label">Network Discovery</span>
+      <p style="font-size:0.82rem;color:var(--muted);margin:0 0 10px;">
+        Scan your local network for AI servers. Only private IP ranges are scanned.
+      </p>
+      <button class="scan-btn" id="scan-lan-btn">Scan Network</button>
+      <div id="scan-progress" class="lan-progress" style="display:none;"></div>
+      <div id="scan-progress-bar" class="lan-progress-bar" style="display:none;">
+        <div id="scan-progress-fill" class="lan-progress-fill"></div>
+      </div>
+      <div id="lan-results" class="lan-results"></div>
+    </div>
+
+    <div class="panel" style="margin-top: 14px;" id="mesh-panel" hidden>
+      <span class="section-label">Mesh peers</span>
+      <p style="font-size:0.82rem;color:var(--muted);margin:0 0 10px;">
+        Other Qantara nodes detected on your LAN. Nodes elect a single responder per utterance by audio RMS.
+      </p>
+      <div id="mesh-status" style="font-size: 0.78rem; color: var(--muted); margin-bottom: 8px;"></div>
+      <div id="mesh-peers-list" style="display: flex; flex-direction: column; gap: 6px;"></div>
+    </div>
+  </main>
+
+  <script>
+  (function () {
+    "use strict";
+
+    var backends = [];
+    var selectedType = null;
+    var selectedAgent = null;
+    var testResult = null;
+    var pollTimer = null;
+
+    var listEl = document.getElementById("backend-list");
+    var configEl = document.getElementById("config-area");
+    var startBtn = document.getElementById("start-btn");
+    var statusMsg = document.getElementById("status-msg");
+
+    // Recommended models for voice (fast, conversational)
+    var RECOMMENDED = ["gemma4:e4b", "llama3.2:3b", "llama3.1:8b", "qwen2.5:7b", "qwen2.5:3b", "mistral:latest", "gemma2:latest"];
+
+    var saved = null;
+    try { saved = JSON.parse(localStorage.getItem("qantara_backend")); } catch (_) {}
+
+    var currentProbeStream = null;
+    streamBackends();
+
+    function streamBackends() {
+      if (currentProbeStream) { try { currentProbeStream.close(); } catch (_) {} }
+      var es = new EventSource("/api/backends/stream");
+      currentProbeStream = es;
+      var probeRowsByType = {};
+      var totalProbes = 0;
+      var completedProbes = 0;
+
+      function updateProgress(label) {
+        var labelEl = document.getElementById("probe-progress-label");
+        var fillEl = document.getElementById("probe-progress-fill");
+        if (labelEl) labelEl.textContent = label;
+        if (fillEl && totalProbes > 0) {
+          fillEl.style.width = Math.round((completedProbes / totalProbes) * 100) + "%";
+        }
+      }
+
+      es.addEventListener("start", function (ev) {
+        var data = JSON.parse(ev.data);
+        totalProbes = data.total || 0;
+        completedProbes = 0;
+        probeRowsByType = {};
+        var listContainer = document.getElementById("probe-list");
+        if (listContainer) listContainer.innerHTML = "";
+        updateProgress("Detecting backends — 0 of " + totalProbes);
+      });
+
+      es.addEventListener("probe_started", function (ev) {
+        var data = JSON.parse(ev.data);
+        var listContainer = document.getElementById("probe-list");
+        if (!listContainer) return;
+        var row = document.createElement("div");
+        row.className = "probe-row pending";
+        row.innerHTML = '<span>' + data.name + '</span><span class="probe-status">checking…</span>';
+        listContainer.appendChild(row);
+        probeRowsByType[data.type] = row;
+      });
+
+      function probeStatusLabel(type, result) {
+        if (result && result.error) return "error";
+        var available = result && result.available;
+        if (available) return "✓";
+        // OpenAI-Compatible is always usable via manual URL entry even
+        // when no local auto-detect hit; don't say "not found".
+        if (type === "openai_compatible") return "manual config";
+        return "not found";
+      }
+
+      es.addEventListener("probe_completed", function (ev) {
+        var data = JSON.parse(ev.data);
+        completedProbes = data.completed || completedProbes + 1;
+        var row = probeRowsByType[data.type];
+        if (row) {
+          row.classList.remove("pending");
+          var label = probeStatusLabel(data.type, data.result);
+          var status = row.querySelector(".probe-status");
+          if (status) status.textContent = label;
+          if (data.result && data.result.error) {
+            row.classList.add("done-error");
+          } else if (data.type === "openai_compatible") {
+            // Always ok because a manual URL is always possible
+            row.classList.add("done-ok");
+          } else if (data.result && data.result.available) {
+            row.classList.add("done-ok");
+          } else {
+            row.classList.add("done-miss");
+          }
+        }
+        updateProgress("Detecting backends — " + completedProbes + " of " + totalProbes);
+      });
+
+      es.addEventListener("done", function (ev) {
+        var data = JSON.parse(ev.data);
+        es.close();
+        currentProbeStream = null;
+        handleBackendsPayload({ backends: data.backends || [] });
+      });
+
+      es.addEventListener("error", function () {
+        // SSE hit a transport error — close and fall back to the one-shot API
+        try { es.close(); } catch (_) {}
+        currentProbeStream = null;
+        fetchBackendsOneShot();
+      });
+    }
+
+    function fetchBackendsOneShot() {
+      fetch("/api/backends")
+        .then(function (r) { return r.json(); })
+        .then(handleBackendsPayload)
+        .catch(function () {
+          listEl.innerHTML = '<div class="loading" style="color:var(--red)">Cannot reach gateway. Is the server running?</div>';
+        });
+    }
+
+    function handleBackendsPayload(data) {
+      backends = data.backends || [];
+      var anyReal = backends.some(function (b) {
+        if (!b.available || b.type === "mock" || b.type === "custom") return false;
+        if (b.type === "openai_compatible" && !b.auto_detected) return false;
+        return true;
+      });
+
+      if (!anyReal) {
+        showGettingStarted();
+        startPolling();
+      } else {
+        document.getElementById("getting-started-area").innerHTML = "";
+        stopPolling();
+      }
+      renderBackends();
+      if (saved && saved.type) {
+        var match = backends.find(function (b) { return b.type === saved.type && b.available; });
+        if (match) { selectBackend(saved.type); restoreSavedConfig(saved); }
+      }
+    }
+
+    function fetchBackends() {
+      // Kept as the re-check path used by the polling loop (after a user
+      // installs a missing backend). Single-shot fetch is fine there since
+      // the user isn't actively watching for progress.
+      fetchBackendsOneShot();
+    }
+
+    function startPolling() {
+      if (pollTimer) return;
+      pollTimer = setInterval(fetchBackends, 5000);
+    }
+
+    function stopPolling() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    function showGettingStarted() {
+      var area = document.getElementById("getting-started-area");
+      area.innerHTML = "";
+      var div = document.createElement("div");
+      div.className = "getting-started";
+      div.style.marginBottom = "18px";
+      div.innerHTML =
+        '<h3>No AI backend detected</h3>' +
+        '<p>Qantara needs an AI backend to generate responses. The easiest way to start:</p>' +
+        '<p><strong>1.</strong> Install Ollama from <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">ollama.com</a></p>' +
+        '<p><strong>2.</strong> Download a model:</p>' +
+        '<div class="cmd-box"><code>ollama pull gemma4:e4b</code><button class="copy-btn" onclick="navigator.clipboard.writeText(\'ollama pull gemma4:e4b\')">Copy</button></div>' +
+        '<p><strong>3.</strong> Come back \u2014 Qantara detects it automatically.</p>' +
+        '<div><button class="scan-btn" onclick="location.reload()">Scan Again</button></div>';
+      area.appendChild(div);
+    }
+
+    function renderBackends() {
+      listEl.innerHTML = "";
+      backends.forEach(function (b) {
+        var card = document.createElement("div");
+        card.className = "backend-card" + (b.available ? "" : " unavailable");
+        if (b.type === selectedType) card.className += " selected";
+
+        var dot = document.createElement("div");
+        dot.className = "backend-dot " + (b.available ? "available" : "unavailable");
+
+        var info = document.createElement("div");
+        info.className = "backend-info";
+
+        var name = document.createElement("div");
+        name.className = "backend-name";
+        name.textContent = b.name;
+        if (b.advanced) {
+          var badge = document.createElement("span");
+          badge.className = "backend-badge";
+          badge.textContent = "Advanced";
+          name.appendChild(badge);
+        }
+
+        var hint = document.createElement("div");
+        hint.className = "backend-hint";
+        hint.textContent = backendHint(b);
+
+        info.appendChild(name);
+        info.appendChild(hint);
+        card.appendChild(dot);
+        card.appendChild(info);
+
+        if (b.available) {
+          card.addEventListener("click", function () { selectBackend(b.type); });
+        }
+        listEl.appendChild(card);
+      });
+    }
+
+    function backendHint(b) {
+      if (b.type === "mock") return "No setup needed \u2014 test the voice interface";
+      if (b.type === "custom") return "Point to any backend URL";
+      if (!b.available) {
+        if (b.type === "openclaw") {
+          if (!b.installed) return "Not installed";
+          if (!b.gateway_running) return "Gateway not running";
+          return "No agents found";
+        }
+        if (b.type === "ollama") return "Not detected \u2014 install from ollama.com";
+        return "Not detected on this machine";
+      }
+      if (b.type === "openai_compatible") {
+        // Check if Ollama is available — show as recommended path
+        var ollamaBackend = backends.find(function (x) { return x.type === "ollama" && x.available; });
+        if (ollamaBackend) return "\u2605 Recommended \u2014 fastest path via Ollama";
+        var servers = b.servers || [];
+        if (b.auto_detected && servers.length === 1) return "Detected on port " + servers[0].port;
+        if (b.auto_detected && servers.length > 1) return servers.length + " servers detected";
+        return "llama.cpp, vLLM, LiteLLM, Jan, LM Studio, Ollama";
+      }
+      if (b.type === "ollama") {
+        var models = b.models || [];
+        return models.length + " model" + (models.length !== 1 ? "s" : "") + " \u2014 uses bridge process";
+      }
+      if (b.type === "openclaw") {
+        var agents = b.agents || [];
+        if (agents.length === 0) return "Advanced optional bridge - gateway detected";
+        return "Advanced optional bridge - " + agents.length + " agent" + (agents.length !== 1 ? "s" : "") + " available";
+      }
+      return "";
+    }
+
+    window._qantaraSelectBackend = selectBackend;
+    function selectBackend(type) {
+      selectedType = type;
+      selectedAgent = null;
+      testResult = null;
+      renderBackends();
+      renderConfig();
+      startBtn.disabled = !isConfigValid();
+      statusMsg.textContent = "";
+      statusMsg.className = "status-msg";
+    }
+
+    function renderConfig() {
+      configEl.innerHTML = "";
+      var b = backends.find(function (x) { return x.type === selectedType; });
+      if (!b) return;
+
+      switch (b.type) {
+        case "ollama": renderOllamaConfig(b); break;
+        case "openclaw": renderOpenClawConfig(b); break;
+        case "openai_compatible": renderOpenAIConfig(b); break;
+        case "custom": renderCustomConfig(); break;
+      }
+      configEl.appendChild(renderTTSPicker());
+      configEl.appendChild(renderLanguagesCard());
+    }
+
+    function renderLanguagesCard() {
+      var LANGS = { en: "English", ar: "Arabic", es: "Spanish", fr: "French", ja: "Japanese" };
+      var group = makeGroup("Languages & Translation");
+
+      var primaryLabel = document.createElement("label");
+      primaryLabel.textContent = "Primary language (used for short/unclear utterances)";
+      primaryLabel.style.display = "block";
+      primaryLabel.style.marginTop = "6px";
+      var primarySelect = document.createElement("select");
+      primarySelect.id = "cfg-primary-lang";
+      Object.keys(LANGS).forEach(function (iso) {
+        var opt = document.createElement("option");
+        opt.value = iso;
+        opt.textContent = LANGS[iso];
+        primarySelect.appendChild(opt);
+      });
+      var savedPrimary = localStorage.getItem("qantara_primary_language") || "en";
+      primarySelect.value = savedPrimary;
+      group.appendChild(primaryLabel);
+      group.appendChild(primarySelect);
+
+      var directionalWrap = document.createElement("label");
+      directionalWrap.style.display = "block";
+      directionalWrap.style.marginTop = "10px";
+      var dirToggle = document.createElement("input");
+      dirToggle.type = "checkbox";
+      dirToggle.id = "cfg-directional-enabled";
+      dirToggle.checked = localStorage.getItem("qantara_directional_enabled") === "1";
+      directionalWrap.appendChild(dirToggle);
+      directionalWrap.appendChild(document.createTextNode(" Directional translator — reply in a fixed language"));
+      group.appendChild(directionalWrap);
+
+      var directionalPair = document.createElement("div");
+      directionalPair.id = "cfg-directional-pair";
+      directionalPair.style.marginLeft = "22px";
+      directionalPair.style.display = dirToggle.checked ? "block" : "none";
+      function buildLangOptions() {
+        return Object.keys(LANGS).map(function (iso) { return '<option value="' + iso + '">' + LANGS[iso] + '</option>'; }).join("");
+      }
+      directionalPair.innerHTML =
+        '<label style="margin-right:8px">From <select id="cfg-directional-source">' + buildLangOptions() + '</select></label>' +
+        '<label>To <select id="cfg-directional-target">' + buildLangOptions() + '</select></label>';
+      group.appendChild(directionalPair);
+      var savedSrc = localStorage.getItem("qantara_directional_source") || "en";
+      var savedTgt = localStorage.getItem("qantara_directional_target") || "ar";
+      setTimeout(function () {
+        var sEl = document.getElementById("cfg-directional-source");
+        var tEl = document.getElementById("cfg-directional-target");
+        if (sEl) sEl.value = savedSrc;
+        if (tEl) tEl.value = savedTgt;
+      }, 0);
+
+      dirToggle.addEventListener("change", function () {
+        directionalPair.style.display = dirToggle.checked ? "block" : "none";
+      });
+
+      var liveWrap = document.createElement("label");
+      liveWrap.style.display = "block";
+      liveWrap.style.marginTop = "10px";
+      var liveToggle = document.createElement("input");
+      liveToggle.type = "checkbox";
+      liveToggle.id = "cfg-live-enabled";
+      liveToggle.checked = localStorage.getItem("qantara_live_enabled") === "1";
+      liveWrap.appendChild(liveToggle);
+      liveWrap.appendChild(document.createTextNode(" Live conversation translator — opens /translate page"));
+      group.appendChild(liveWrap);
+
+      var compatBanner = document.createElement("div");
+      compatBanner.id = "cfg-lang-compat";
+      compatBanner.className = "backend-hint";
+      compatBanner.style.color = "#d49b00";
+      compatBanner.style.marginTop = "8px";
+      compatBanner.style.display = "none";
+      compatBanner.textContent = "\u26A0\uFE0F Your backend may not translate this language well. Consider a larger model or an OpenAI-compatible backend for best results.";
+      group.appendChild(compatBanner);
+
+      function checkBackendCompat() {
+        var tgt = document.getElementById("cfg-directional-target");
+        var tgtVal = tgt ? tgt.value : null;
+        var needsWarn = (tgtVal === "ar" || tgtVal === "ja") && (selectedType === "ollama" || selectedType === "openclaw");
+        compatBanner.style.display = (dirToggle.checked && needsWarn) ? "block" : "none";
+      }
+      dirToggle.addEventListener("change", checkBackendCompat);
+      setTimeout(function () {
+        var tgt = document.getElementById("cfg-directional-target");
+        if (tgt) tgt.addEventListener("change", checkBackendCompat);
+        checkBackendCompat();
+      }, 0);
+
+      return group;
+    }
+
+    function renderTTSPicker() {
+      var group = makeGroup("Voice engine");
+      var saved = localStorage.getItem("qantara_tts_engine") || "piper";
+      var options = [
+        { id: "piper", label: "Piper — fast, neutral (default)" },
+        { id: "kokoro", label: "Kokoro — balanced" },
+        { id: "chatterbox", label: "Chatterbox — expressive (requires extra install)" },
+      ];
+      options.forEach(function (opt) {
+        var row = document.createElement("label");
+        row.style.display = "block";
+        row.style.margin = "4px 0";
+        var radio = document.createElement("input");
+        radio.type = "radio";
+        radio.name = "tts";
+        radio.value = opt.id;
+        if (opt.id === saved) radio.checked = true;
+        row.appendChild(radio);
+        row.appendChild(document.createTextNode(" " + opt.label));
+        group.appendChild(row);
+      });
+      var hint = document.createElement("div");
+      hint.className = "backend-hint";
+      hint.style.marginTop = "6px";
+      hint.textContent = "Chatterbox needs: pip install -e \".[chatterbox]\" and a ~500MB model download. Voice change takes effect on next server restart.";
+      group.appendChild(hint);
+      return group;
+    }
+
+    function renderOllamaConfig(b) {
+      var models = b.models || [];
+      if (models.length === 0) {
+        var noModels = document.createElement("div");
+        noModels.className = "config-group";
+        noModels.innerHTML =
+          '<label>No models installed in Ollama</label>' +
+          '<div class="cmd-box" style="margin:6px 0"><code>ollama pull gemma4:e4b</code>' +
+          '<button class="copy-btn" onclick="navigator.clipboard.writeText(\'ollama pull gemma4:e4b\')">Copy</button></div>';
+        configEl.appendChild(noModels);
+        return;
+      }
+
+      // Sort: recommended first, then alphabetical
+      var sorted = models.slice().sort(function (a, b) {
+        var aRec = RECOMMENDED.indexOf(a.name) >= 0 ? 0 : 1;
+        var bRec = RECOMMENDED.indexOf(b.name) >= 0 ? 0 : 1;
+        if (aRec !== bRec) return aRec - bRec;
+        return a.name.localeCompare(b.name);
+      });
+
+      var group = makeGroup("Model");
+
+      // Search filter for large lists
+      if (models.length > 8) {
+        var search = document.createElement("input");
+        search.type = "text";
+        search.placeholder = "Search " + models.length + " models\u2026";
+        search.style.marginBottom = "6px";
+        search.addEventListener("input", function () {
+          var q = search.value.toLowerCase();
+          var opts = sel.options;
+          for (var i = 0; i < opts.length; i++) {
+            opts[i].style.display = opts[i].value.toLowerCase().indexOf(q) >= 0 ? "" : "none";
+          }
+        });
+        group.appendChild(search);
+      }
+
+      var sel = document.createElement("select");
+      sel.id = "cfg-model";
+      sel.size = Math.min(8, models.length);
+      sel.style.height = "auto";
+
+      var hasRecommended = false;
+      sorted.forEach(function (m) {
+        var opt = document.createElement("option");
+        opt.value = m.name;
+        var label = m.name;
+        if (m.size_gb) label += "  (" + m.size_gb + " GB)";
+        if (RECOMMENDED.indexOf(m.name) >= 0) {
+          if (!hasRecommended) {
+            var optgroup = document.createElement("optgroup");
+            optgroup.label = "\u2605 Recommended for voice";
+            sel.appendChild(optgroup);
+            hasRecommended = true;
+          }
+          label = "\u2605 " + label;
+        }
+        opt.textContent = label;
+        sel.appendChild(opt);
+      });
+
+      sel.addEventListener("change", function () { startBtn.disabled = !isConfigValid(); });
+      group.appendChild(sel);
+
+      var note = document.createElement("div");
+      note.className = "config-note";
+      note.textContent = "Smaller models (3\u20137B) respond faster for voice conversations.";
+      group.appendChild(note);
+
+      configEl.appendChild(group);
+    }
+
+    function renderOpenClawConfig(b) {
+      var agents = b.agents || [];
+      var note = document.createElement("div");
+      note.className = "config-note";
+      note.style.marginBottom = "10px";
+      note.style.fontStyle = "normal";
+      note.textContent = "Advanced optional bridge for an existing OpenClaw setup. Qantara stays the voice gateway; OpenClaw owns the agent runtime.";
+      configEl.appendChild(note);
+
+      if (!b.installed) {
+        configEl.insertAdjacentHTML("beforeend",
+          '<div class="config-group"><label>OpenClaw is not installed</label>' +
+          '<div class="cmd-box"><code>npm install -g openclaw</code>' +
+          '<button class="copy-btn" onclick="navigator.clipboard.writeText(\'npm install -g openclaw\')">Copy</button></div></div>');
+        return;
+      }
+      if (!b.gateway_running) {
+        configEl.insertAdjacentHTML("beforeend",
+          '<div class="config-group"><label>OpenClaw gateway is not running</label>' +
+          '<div class="cmd-box"><code>openclaw gateway run</code>' +
+          '<button class="copy-btn" onclick="navigator.clipboard.writeText(\'openclaw gateway run\')">Copy</button></div></div>');
+        return;
+      }
+      if (agents.length === 0) {
+        configEl.insertAdjacentHTML("beforeend", '<div class="config-group"><label>No agents found in OpenClaw</label></div>');
+        return;
+      }
+
+      var group = makeGroup("Select an agent");
+      var list = document.createElement("div");
+      list.className = "agent-list";
+
+      agents.forEach(function (a) {
+        var opt = document.createElement("div");
+        opt.className = "agent-option" + (selectedAgent === a.id ? " selected" : "");
+
+        var radio = document.createElement("input");
+        radio.type = "radio";
+        radio.name = "agent";
+        radio.value = a.id;
+        radio.checked = selectedAgent === a.id;
+
+        var label = document.createElement("span");
+        label.className = "agent-name";
+        label.textContent = a.name || a.id;
+
+        opt.appendChild(radio);
+        opt.appendChild(label);
+
+        if (a.default) {
+          var badge = document.createElement("span");
+          badge.className = "agent-default";
+          badge.textContent = "(default)";
+          opt.appendChild(badge);
+        }
+
+        opt.addEventListener("click", function () {
+          selectedAgent = a.id;
+          renderConfig();
+          startBtn.disabled = !isConfigValid();
+        });
+
+        list.appendChild(opt);
+      });
+
+      group.appendChild(list);
+      configEl.appendChild(group);
+    }
+
+    function renderOpenAIConfig(b) {
+      var servers = b.servers || [];
+
+      var group = makeGroup("Server URL");
+      var note = document.createElement("div");
+      note.className = "config-note";
+      note.style.marginBottom = "8px";
+      note.style.fontStyle = "normal";
+      note.textContent = "llama.cpp, vLLM, LiteLLM, Jan, LM Studio, or any OpenAI-compatible server";
+
+      var row = document.createElement("div");
+      row.className = "url-row";
+
+      var inp = document.createElement("input");
+      inp.type = "url";
+      inp.id = "cfg-openai-url";
+      inp.placeholder = "http://localhost:11434";
+      // Pre-fill: auto-detected server first, then Ollama URL if available
+      if (servers.length > 0) {
+        inp.value = servers[0].url;
+      } else if (b.ollama_url) {
+        inp.value = b.ollama_url;
+      }
+      inp.addEventListener("input", function () { startBtn.disabled = !isConfigValid(); });
+
+      var testBtn = document.createElement("button");
+      testBtn.className = "test-btn";
+      testBtn.textContent = "Test";
+      testBtn.addEventListener("click", function () { testOpenAI(inp.value.trim()); });
+
+      row.appendChild(inp);
+      row.appendChild(testBtn);
+
+      group.appendChild(note);
+      group.appendChild(row);
+
+      var resultEl = document.createElement("div");
+      resultEl.id = "test-result";
+      resultEl.className = "test-result";
+      group.appendChild(resultEl);
+
+      var modelArea = document.createElement("div");
+      modelArea.id = "openai-model-area";
+      group.appendChild(modelArea);
+
+      configEl.appendChild(group);
+
+      // If URL is pre-filled (auto-detected), fetch models immediately
+      if (inp.value) testOpenAI(inp.value);
+    }
+
+    function renderCustomConfig() {
+      var group = makeGroup("Backend URL");
+      var note = document.createElement("div");
+      note.className = "config-note";
+      note.style.marginBottom = "8px";
+      note.style.fontStyle = "normal";
+      note.textContent = "Any server implementing the Qantara session contract";
+
+      var row = document.createElement("div");
+      row.className = "url-row";
+
+      var inp = document.createElement("input");
+      inp.type = "url";
+      inp.id = "cfg-url";
+      inp.placeholder = "http://localhost:19120";
+      inp.addEventListener("input", function () { startBtn.disabled = !isConfigValid(); });
+
+      var testBtn = document.createElement("button");
+      testBtn.className = "test-btn";
+      testBtn.textContent = "Test";
+      testBtn.addEventListener("click", function () { testCustom(inp.value.trim()); });
+
+      row.appendChild(inp);
+      row.appendChild(testBtn);
+
+      group.appendChild(note);
+      group.appendChild(row);
+
+      var resultEl = document.createElement("div");
+      resultEl.id = "test-result";
+      resultEl.className = "test-result";
+      group.appendChild(resultEl);
+
+      configEl.appendChild(group);
+    }
+
+    window.testOpenAI = function testOpenAI(url) {
+      if (!url) return;
+      var el = document.getElementById("test-result");
+      var modelArea = document.getElementById("openai-model-area");
+      if (el) { el.textContent = "Testing\u2026"; el.className = "test-result"; }
+      if (modelArea) modelArea.innerHTML = "";
+
+      // Use server-side proxy to avoid CORS issues
+      fetch("/api/test-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.ok) {
+            if (el) { el.textContent = "\u2717 " + (data.error || "Failed"); el.className = "test-result fail"; }
+            return;
+          }
+          var models = data.models || [];
+          if (el) {
+            el.textContent = "\u2713 Connected \u2014 " + models.length + " model" + (models.length !== 1 ? "s" : "") + " found";
+            el.className = "test-result ok";
+          }
+          // Show model selector if multiple models
+          if (models.length > 0 && modelArea) {
+            var grp = document.createElement("div");
+            grp.className = "config-group";
+            grp.style.marginTop = "10px";
+            var lbl = document.createElement("label");
+            lbl.textContent = "Model";
+            grp.appendChild(lbl);
+            var sel = document.createElement("select");
+            sel.id = "cfg-openai-model";
+            // Filter out embedding/reranker models — show chat models first
+            var chatModels = models.filter(function (m) { return m.indexOf("embed") === -1 && m.indexOf("rerank") === -1; });
+            var otherModels = models.filter(function (m) { return m.indexOf("embed") >= 0 || m.indexOf("rerank") >= 0; });
+            chatModels.concat(otherModels).forEach(function (m) {
+              var opt = document.createElement("option");
+              opt.value = m;
+              opt.textContent = m;
+              sel.appendChild(opt);
+            });
+            grp.appendChild(sel);
+            modelArea.appendChild(grp);
+          }
+          startBtn.disabled = !isConfigValid();
+        })
+        .catch(function () {
+          if (el) {
+            el.textContent = "\u2717 Cannot reach gateway.";
+            el.className = "test-result fail";
+          }
+        });
+    }
+
+    function testCustom(url) {
+      if (!url) return;
+      var el = document.getElementById("test-result");
+      if (el) { el.textContent = "Testing\u2026"; el.className = "test-result"; }
+      // Use server-side proxy to avoid CORS
+      fetch("/api/test-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (el) {
+            if (data.ok) {
+              el.textContent = "\u2713 Connected \u2014 " + (data.models || []).length + " model(s)";
+              el.className = "test-result ok";
+            } else {
+              el.textContent = "\u2717 " + (data.error || "Failed");
+              el.className = "test-result fail";
+            }
+          }
+        })
+        .catch(function () {
+          if (el) {
+            el.textContent = "\u2717 Cannot reach gateway.";
+            el.className = "test-result fail";
+          }
+        });
+    }
+
+    function makeGroup(labelText) {
+      var g = document.createElement("div");
+      g.className = "config-group";
+      var lbl = document.createElement("label");
+      lbl.textContent = labelText;
+      g.appendChild(lbl);
+      return g;
+    }
+
+    function restoreSavedConfig(s) {
+      setTimeout(function () {
+        if (s.type === "ollama" && s.model) {
+          var sel = document.getElementById("cfg-model");
+          if (sel) sel.value = s.model;
+        } else if (s.type === "openclaw" && s.agent) {
+          selectedAgent = s.agent;
+          renderConfig();
+        } else if (s.type === "openai_compatible" && s.url) {
+          var inp = document.getElementById("cfg-openai-url");
+          if (inp) inp.value = s.url;
+        } else if (s.type === "custom" && s.url) {
+          var inp2 = document.getElementById("cfg-url");
+          if (inp2) inp2.value = s.url;
+        }
+        startBtn.disabled = !isConfigValid();
+      }, 0);
+    }
+
+    function isConfigValid() {
+      if (!selectedType) return false;
+      switch (selectedType) {
+        case "mock": return true;
+        case "ollama":
+          var sel = document.getElementById("cfg-model");
+          return sel && sel.value.length > 0;
+        case "openclaw":
+          return !!selectedAgent;
+        case "openai_compatible":
+          var inp = document.getElementById("cfg-openai-url");
+          return inp && inp.value.trim().length > 0;
+        case "custom":
+          var inp2 = document.getElementById("cfg-url");
+          return inp2 && inp2.value.trim().length > 0;
+        default: return false;
+      }
+    }
+
+    function gatherPayload() {
+      var payload = { type: selectedType };
+      switch (selectedType) {
+        case "ollama":
+          var sel = document.getElementById("cfg-model");
+          if (sel) payload.model = sel.value;
+          break;
+        case "openclaw":
+          payload.agent = selectedAgent;
+          break;
+        case "openai_compatible":
+          var inp = document.getElementById("cfg-openai-url");
+          if (inp) payload.url = inp.value.trim();
+          var modelSel = document.getElementById("cfg-openai-model");
+          if (modelSel && modelSel.value) payload.model = modelSel.value;
+          break;
+        case "custom":
+          var inp2 = document.getElementById("cfg-url");
+          if (inp2) payload.url = inp2.value.trim();
+          break;
+      }
+      var selectedTTS = document.querySelector('input[name="tts"]:checked');
+      if (selectedTTS) {
+        payload.tts_engine = selectedTTS.value;
+        localStorage.setItem("qantara_tts_engine", selectedTTS.value);
+      }
+      var primaryLangEl = document.getElementById("cfg-primary-lang");
+      if (primaryLangEl) {
+        payload.primary_language = primaryLangEl.value;
+        localStorage.setItem("qantara_primary_language", primaryLangEl.value);
+      }
+      var dirToggleEl = document.getElementById("cfg-directional-enabled");
+      var liveToggleEl = document.getElementById("cfg-live-enabled");
+      if (dirToggleEl && dirToggleEl.checked) {
+        var srcEl = document.getElementById("cfg-directional-source");
+        var tgtEl = document.getElementById("cfg-directional-target");
+        payload.translation_mode = "directional";
+        payload.translation_source = srcEl ? srcEl.value : null;
+        payload.translation_target = tgtEl ? tgtEl.value : null;
+        localStorage.setItem("qantara_directional_enabled", "1");
+        if (srcEl) localStorage.setItem("qantara_directional_source", srcEl.value);
+        if (tgtEl) localStorage.setItem("qantara_directional_target", tgtEl.value);
+      } else {
+        payload.translation_mode = "assistant";
+        localStorage.setItem("qantara_directional_enabled", "0");
+      }
+      if (liveToggleEl) {
+        payload.live_translator_enabled = liveToggleEl.checked;
+        localStorage.setItem("qantara_live_enabled", liveToggleEl.checked ? "1" : "0");
+      }
+      return payload;
+    }
+
+    function showWarmupOverlay(modelLabel) {
+      var overlay = document.getElementById("warmup-overlay");
+      if (!overlay) return null;
+      var title = document.getElementById("warmup-title");
+      var body = document.getElementById("warmup-body");
+      var elapsedEl = document.getElementById("warmup-elapsed");
+      if (title) title.textContent = modelLabel
+        ? "Warming up " + modelLabel + "\u2026"
+        : "Warming up the model\u2026";
+      if (body) body.textContent = "First time usually takes 10-30 seconds while the model loads into memory. Subsequent turns are fast.";
+      overlay.style.display = "flex";
+      var started = performance.now();
+      var tick = setInterval(function () {
+        var s = Math.round((performance.now() - started) / 1000);
+        if (elapsedEl) elapsedEl.textContent = s + "s elapsed";
+        if (s > 20 && body) {
+          body.textContent = "Still loading \u2014 large models can take up to a minute. Hang tight.";
+        }
+      }, 1000);
+      return function stop() {
+        clearInterval(tick);
+        overlay.style.display = "none";
+      };
+    }
+
+    startBtn.addEventListener("click", function () {
+      if (!isConfigValid()) return;
+      var payload = gatherPayload();
+      startBtn.disabled = true;
+      statusMsg.textContent = "Configuring\u2026";
+      statusMsg.className = "status-msg";
+
+      fetch("/api/configure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.error) {
+            statusMsg.textContent = data.error;
+            statusMsg.className = "status-msg error";
+            startBtn.disabled = false;
+            return;
+          }
+          localStorage.setItem("qantara_backend", JSON.stringify(payload));
+          // Warmup step — preload the model so the first voice turn is
+          // fast. Backends without a model (mock) or without a preload
+          // primitive (openclaw, custom bridges) short-circuit quickly.
+          var needsWarmup = payload.type === "ollama" || payload.type === "openai_compatible";
+          if (!needsWarmup) {
+            window.location.href = "/spike";
+            return;
+          }
+          var stopOverlay = showWarmupOverlay(payload.model || payload.type);
+          statusMsg.textContent = "";
+          fetch("/api/warmup", { method: "POST" })
+            .then(function (r) { return r.json(); })
+            .catch(function () { return { warmed: false, error: "request failed" }; })
+            .then(function (result) {
+              if (stopOverlay) stopOverlay();
+              // Always proceed — even if warmup failed, the first voice
+              // turn will still work, just slower. Don't block the user.
+              window.location.href = "/spike";
+            });
+        })
+        .catch(function (err) {
+          statusMsg.textContent = "Failed: " + err.message;
+          statusMsg.className = "status-msg error";
+          startBtn.disabled = false;
+        });
+    });
+  })();
+
+  // ===== LAN DISCOVERY =====
+  (function () {
+    var scanBtn = document.getElementById("scan-lan-btn");
+    var progressEl = document.getElementById("scan-progress");
+    var progressBar = document.getElementById("scan-progress-bar");
+    var progressFill = document.getElementById("scan-progress-fill");
+    var resultsEl = document.getElementById("lan-results");
+
+    scanBtn.addEventListener("click", function () {
+      scanBtn.disabled = true;
+      scanBtn.textContent = "Scanning\u2026";
+      progressEl.style.display = "";
+      progressBar.style.display = "";
+      progressFill.style.width = "0%";
+      resultsEl.innerHTML = "";
+
+      var es = new EventSource("/api/discovery/scan");
+
+      es.addEventListener("progress", function (e) {
+        var d = JSON.parse(e.data);
+        if (d.percent != null) {
+          progressFill.style.width = d.percent + "%";
+          progressEl.textContent = "Scanning\u2026 " + d.percent + "% (" + (d.found || 0) + " found)";
+        } else if (d.subnet) {
+          progressEl.textContent = "Scanning " + d.subnet + " (" + d.total_probes + " probes)\u2026";
+        }
+      });
+
+      es.addEventListener("found", function (e) {
+        var b = JSON.parse(e.data);
+        renderLanCard(b);
+      });
+
+      es.addEventListener("done", function (e) {
+        var d = JSON.parse(e.data);
+        progressEl.textContent = "Scan complete. Found " + d.count + " backend" + (d.count !== 1 ? "s" : "") + " on your network.";
+        progressBar.style.display = "none";
+        scanBtn.disabled = false;
+        scanBtn.textContent = "Scan Again";
+        if (d.count === 0) {
+          resultsEl.innerHTML = '<div style="font-size:0.82rem;color:var(--muted);padding:8px 0;">No AI backends found on your local network. Make sure servers are listening on 0.0.0.0 (not just localhost).</div>';
+        }
+        es.close();
+      });
+
+      es.addEventListener("error", function (e) {
+        try {
+          var d = JSON.parse(e.data);
+          progressEl.textContent = "Scan failed: " + (d.message || "unknown error");
+        } catch (_) {
+          progressEl.textContent = "Scan connection lost.";
+        }
+        progressBar.style.display = "none";
+        scanBtn.disabled = false;
+        scanBtn.textContent = "Scan Network";
+        es.close();
+      });
+    });
+
+    function renderLanCard(b) {
+      var card = document.createElement("div");
+      card.className = "lan-card";
+
+      var header = document.createElement("div");
+      header.className = "lan-card-header";
+
+      var type = document.createElement("span");
+      type.className = "lan-card-type";
+      type.textContent = b.server_type;
+
+      var url = document.createElement("span");
+      url.className = "lan-card-url";
+      url.textContent = b.url + (b.is_localhost ? " (this machine)" : "");
+
+      header.appendChild(type);
+      header.appendChild(url);
+      card.appendChild(header);
+
+      // Metadata badges with color indicators
+      var meta = document.createElement("div");
+      meta.className = "lan-card-meta";
+
+      // Health
+      meta.appendChild(makeBadge(
+        b.health === "healthy" ? "\u25CF Healthy" : "\u25CF " + b.health,
+        b.health === "healthy" ? "good" : "bad"
+      ));
+
+      // Latency
+      var latencyClass = b.latency_ms < 50 ? "good" : b.latency_ms < 200 ? "warn" : "bad";
+      meta.appendChild(makeBadge(Math.round(b.latency_ms) + "ms", latencyClass));
+
+      // Models
+      if (b.models && b.models.length > 0) {
+        meta.appendChild(makeBadge(b.models.length + " model" + (b.models.length !== 1 ? "s" : ""), "neutral"));
+      }
+
+      // GPU info
+      if (b.gpu_info) {
+        meta.appendChild(makeBadge("\u26A1 " + b.gpu_info, "good"));
+      }
+
+      // Model loaded
+      if (b.model_loaded) {
+        meta.appendChild(makeBadge("\u25B6 " + b.model_loaded, "good"));
+      }
+
+      // Version
+      if (b.version) {
+        meta.appendChild(makeBadge("v" + b.version, "neutral"));
+      }
+
+      card.appendChild(meta);
+
+      // Model list
+      if (b.models && b.models.length > 0) {
+        var modelList = document.createElement("div");
+        modelList.style.fontSize = "0.72rem";
+        modelList.style.color = "var(--muted)";
+        modelList.style.marginTop = "6px";
+        var names = b.models.slice(0, 5).map(function (m) {
+          var label = m.name;
+          if (m.size_gb) label += " (" + m.size_gb + "GB)";
+          return label;
+        });
+        if (b.models.length > 5) names.push("+" + (b.models.length - 5) + " more");
+        modelList.textContent = names.join(" \u00b7 ");
+        card.appendChild(modelList);
+      }
+
+      // Click to use — auto-select OpenAI-Compatible and fill URL
+      card.addEventListener("click", function () {
+        // First, select the openai_compatible backend type
+        var selectFn = window._qantaraSelectBackend;
+        if (selectFn) selectFn("openai_compatible");
+        // Wait for DOM to render, then fill URL and test
+        setTimeout(function () {
+          var urlInput = document.getElementById("cfg-openai-url");
+          if (urlInput) {
+            urlInput.value = b.url;
+            urlInput.dispatchEvent(new Event("input"));
+          }
+          if (typeof window.testOpenAI === "function") window.testOpenAI(b.url);
+        }, 100);
+      });
+
+      resultsEl.appendChild(card);
+    }
+
+    function makeBadge(text, type) {
+      var el = document.createElement("span");
+      el.className = "lan-badge " + type;
+      el.textContent = text;
+      return el;
+    }
+  })();
+
+  // ===== MESH PEERS =====
+  (function () {
+    function refreshMeshPanel() {
+      Promise.all([
+        fetch("/api/mesh/status").then(r => r.json()),
+        fetch("/api/mesh/peers").then(r => r.json()),
+      ])
+      .then(function ([status, peers]) {
+        var panel = document.getElementById("mesh-panel");
+        if (!status.enabled) {
+          panel.hidden = true;
+          return;
+        }
+        panel.hidden = false;
+        var statusEl = document.getElementById("mesh-status");
+        statusEl.textContent = "This node: " + status.node_id + " (" + status.role + ")";
+        var list = document.getElementById("mesh-peers-list");
+        list.innerHTML = "";
+        if (!peers.peers.length) {
+          var empty = document.createElement("div");
+          empty.style.cssText = "font-size:0.78rem;color:var(--muted);padding:4px 0;";
+          empty.textContent = "No peers detected yet.";
+          list.appendChild(empty);
+          return;
+        }
+        peers.peers.forEach(function (p) {
+          var row = document.createElement("div");
+          row.style.cssText = "display:flex;justify-content:space-between;padding:6px 10px;background:rgba(0,0,0,0.02);border-radius:6px;font-size:0.82rem;";
+          row.innerHTML = '<span>' + p.node_id + '</span><span style="color:var(--muted);">' + p.role + ' @ ' + p.host + ':' + p.port + '</span>';
+          list.appendChild(row);
+        });
+      })
+      .catch(function () { /* silent — mesh panel is optional */ });
+    }
+
+    refreshMeshPanel();
+    setInterval(refreshMeshPanel, 5000);
+  })();
+  </script>
+</body>
+</html>

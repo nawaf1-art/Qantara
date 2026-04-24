@@ -1,0 +1,56 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install ruff
+        run: pip install ruff
+      - name: Run ruff
+        run: ruff check .
+
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Install from the unlocked `.in` across the OS matrix — the
+          # hash-locked .txt is generated on Linux and its platform-specific
+          # wheels may not resolve identically on macOS/Windows. Lock is
+          # enforced in Docker image builds (ops/docker/requirements.txt).
+          pip install -r gateway/transport_spike/requirements.in
+
+      - name: Run unit tests
+        env:
+          # Tests use FakeSTT; no real Whisper model download should occur.
+          # Set a dummy model name to catch accidental real-model loads in
+          # CI (would fail fast rather than silently downloading 460MB).
+          QANTARA_WHISPER_MODEL: "tiny.en"
+        run: python -m unittest discover -s tests -v

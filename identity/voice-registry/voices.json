@@ -1,0 +1,133 @@
+{
+  "schema_version": "1.0",
+  "voices": [
+    {
+      "voice_id": "lessac",
+      "label": "Lessac",
+      "engine": "piper",
+      "locale": "en-US",
+      "model_path": "models/piper/en_US-lessac-medium.onnx",
+      "config_path": "models/piper/en_US-lessac-medium.onnx.json",
+      "preview_text": "Hello, I am Qantara.",
+      "base_sample_rate": 22050,
+      "defaults": {
+        "rate": 1.0,
+        "pitch": 0,
+        "tone": "neutral"
+      },
+      "allowed_transforms": ["rate"],
+      "license": "See Piper model license details for this voice.",
+      "commercial_notes": "Validate the exact packaged voice license before commercial distribution."
+    },
+    {
+      "voice_id": "amy",
+      "label": "Amy",
+      "engine": "piper",
+      "locale": "en-US",
+      "model_path": "models/piper/en_US-amy-medium.onnx",
+      "config_path": "models/piper/en_US-amy-medium.onnx.json",
+      "preview_text": "Hello, I am Qantara.",
+      "base_sample_rate": 22050,
+      "defaults": {
+        "rate": 1.0,
+        "pitch": 0,
+        "tone": "bright"
+      },
+      "allowed_transforms": ["rate"],
+      "license": "See Piper model license details for this voice.",
+      "commercial_notes": "Validate the exact packaged voice license before commercial distribution."
+    },
+    {
+      "voice_id": "af_heart",
+      "label": "Heart",
+      "engine": "kokoro",
+      "locale": "en-US",
+      "model_path": "hexgrad/Kokoro-82M",
+      "base_sample_rate": 24000,
+      "defaults": {
+        "rate": 1.0,
+        "pitch": 0,
+        "tone": "neutral"
+      },
+      "allowed_transforms": ["rate"],
+      "license": "See Kokoro model license details for this voice.",
+      "commercial_notes": "Validate the exact packaged voice license before commercial distribution."
+    },
+    {
+      "voice_id": "am_adam",
+      "label": "Adam",
+      "engine": "kokoro",
+      "locale": "en-US",
+      "model_path": "hexgrad/Kokoro-82M",
+      "base_sample_rate": 24000,
+      "defaults": {
+        "rate": 1.0,
+        "pitch": 0,
+        "tone": "neutral"
+      },
+      "allowed_transforms": ["rate"],
+      "license": "See Kokoro model license details for this voice.",
+      "commercial_notes": "Validate the exact packaged voice license before commercial distribution."
+    },
+    {
+      "voice_id": "ar_JO-kareem-medium",
+      "label": "Kareem (Arabic)",
+      "engine": "piper",
+      "locale": "ar-JO",
+      "model_path": "models/piper/ar_JO-kareem-medium.onnx",
+      "config_path": "models/piper/ar_JO-kareem-medium.onnx.json",
+      "preview_text": "مرحبا، أنا قنطرة.",
+      "base_sample_rate": 22050,
+      "defaults": { "rate": 1.3, "pitch": 0, "tone": "neutral" },
+      "allowed_transforms": ["rate"],
+      "license": "MIT; see rhasspy/piper-voices model card for this voice.",
+      "commercial_notes": "Validate the exact packaged voice license before commercial distribution."
+    },
+    {
+      "voice_id": "es_ES-davefx-medium",
+      "label": "DaveFX (Spanish)",
+      "engine": "piper",
+      "locale": "es-ES",
+      "model_path": "models/piper/es_ES-davefx-medium.onnx",
+      "config_path": "models/piper/es_ES-davefx-medium.onnx.json",
+      "preview_text": "Hola, soy Qantara.",
+      "base_sample_rate": 22050,
+      "defaults": { "rate": 1.0, "pitch": 0, "tone": "neutral" },
+      "allowed_transforms": ["rate"],
+      "license": "See Piper model license for this voice.",
+      "commercial_notes": "Validate the exact packaged voice license before commercial distribution."
+    },
+    {
+      "voice_id": "fr_FR-siwis-medium",
+      "label": "Siwis (French)",
+      "engine": "piper",
+      "locale": "fr-FR",
+      "model_path": "models/piper/fr_FR-siwis-medium.onnx",
+      "config_path": "models/piper/fr_FR-siwis-medium.onnx.json",
+      "preview_text": "Bonjour, je suis Qantara.",
+      "base_sample_rate": 22050,
+      "defaults": { "rate": 1.0, "pitch": 0, "tone": "neutral" },
+      "allowed_transforms": ["rate"],
+      "license": "See Piper model license for this voice.",
+      "commercial_notes": "Validate the exact packaged voice license before commercial distribution."
+    },
+    {
+      "voice_id": "chatterbox_warm",
+      "label": "Warm (Chatterbox)",
+      "engine": "chatterbox",
+      "locale": "en-US",
+      "model_path": null,
+      "preview_text": "Hello, I am Qantara.",
+      "base_sample_rate": 24000,
+      "defaults": {
+        "rate": 1.0,
+        "pitch": 0,
+        "tone": "warm",
+        "expressiveness": 0.5
+      },
+      "allowed_transforms": ["rate", "expressiveness"],
+      "license": "Chatterbox is MIT-licensed; verify voice prompts before commercial use.",
+      "commercial_notes": "Chatterbox model weights under MIT. Custom voice prompts carry their own license."
+    }
+  ]
+}

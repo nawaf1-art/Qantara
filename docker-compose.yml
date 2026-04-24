@@ -1,0 +1,79 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: qantara-ollama
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: qantara-ollama-pull
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    volumes:
+      - ollama-data:/root/.ollama
+    entrypoint: ["/bin/sh", "-lc", "ollama pull qwen2.5:3b"]
+    restart: "no"
+
+  qantara-backend:
+    image: qantara:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: qantara-backend
+    depends_on:
+      ollama-pull:
+        condition: service_completed_successfully
+    environment:
+      QANTARA_REAL_BACKEND_HOST: 0.0.0.0
+      QANTARA_REAL_BACKEND_PORT: 19120
+      QANTARA_OLLAMA_BASE_URL: http://ollama:11434
+      QANTARA_OLLAMA_MODEL: qwen2.5:3b
+    expose:
+      - "19120"
+    command: ["python", "gateway/ollama_session_backend/server.py"]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:19120/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  qantara-gateway:
+    image: qantara:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: qantara-gateway
+    depends_on:
+      qantara-backend:
+        condition: service_healthy
+    environment:
+      QANTARA_SPIKE_HOST: 0.0.0.0
+      QANTARA_SPIKE_PORT: 8765
+      QANTARA_ADAPTER: session_gateway_http
+      QANTARA_BACKEND_BASE_URL: http://qantara-backend:19120
+      QANTARA_STT_PROVIDER: faster_whisper
+      QANTARA_TTS_PROVIDER: kokoro
+      QANTARA_DEFAULT_SPEECH_RATE: 1.2
+      QANTARA_WHISPER_MODEL: base.en
+      QANTARA_OLLAMA_BASE_URL: http://ollama:11434
+      QANTARA_WHISPER_DEVICE: cpu
+      QANTARA_WHISPER_COMPUTE: int8
+      QANTARA_KOKORO_DEVICE: cpu
+      QANTARA_KOKORO_VOICE: af_heart
+    ports:
+      - "${QANTARA_DOCKER_BIND:-127.0.0.1}:${QANTARA_PORT:-8765}:8765"
+    command: ["python", "gateway/transport_spike/server.py"]
+
+volumes:
+  ollama-data:

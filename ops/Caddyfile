@@ -1,0 +1,10 @@
+# Qantara LAN HTTPS example
+#
+# Replace `qantara.local` with a hostname that resolves to your LAN machine,
+# or use a trusted internal domain you control.
+#
+# The Python gateway continues to run behind Caddy on an internal port.
+
+qantara.local {
+    reverse_proxy 127.0.0.1:8899
+}

@@ -1,0 +1,44 @@
+[project]
+name = "qantara"
+version = "0.2.6-dev.1"
+description = "Local-first voice gateway"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Qantara maintainers" }]
+keywords = ["voice-ai", "local-first", "speech-to-text", "text-to-speech", "ollama", "websocket"]
+
+[project.urls]
+Homepage = "https://github.com/nawaf1-art/Qantara"
+Repository = "https://github.com/nawaf1-art/Qantara"
+Issues = "https://github.com/nawaf1-art/Qantara/issues"
+
+[project.optional-dependencies]
+chatterbox = ["chatterbox-tts>=0.1.2"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = [
+    "__pycache__",
+    ".venv",
+    "client",
+    "identity/avatar-packs",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+]
+ignore = [
+    "E501",  # line-too-long — many descriptive log lines are long by design
+    "B008",  # function call in default argument — aiohttp patterns use this
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B", "E"]

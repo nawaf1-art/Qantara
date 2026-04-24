@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Qantara — Live Translator</title>
+<style>
+  :root { --pane-bg: #1a1a1a; --text: #eee; --accent: #4aa3ff; --muted: #666; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 0; background: #0e0e0e; color: var(--text);
+         font-family: system-ui, -apple-system, sans-serif;
+         height: 100vh; height: 100dvh; display: flex; flex-direction: column;
+         padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  header { padding: 8px 12px; display:flex; justify-content:space-between; align-items:center; background:#151515; }
+  header .title { font-weight:600; font-size:14px; letter-spacing:0.02em; }
+  header a { color: var(--accent); text-decoration:none; font-size:12px; }
+  .pane { flex: 1; padding: 12px 14px; overflow-y: auto; background: var(--pane-bg);
+          margin: 6px 8px; border-radius: 10px; min-height:0; }
+  .pane h2 { margin:0 0 8px 0; font-size: 12px; text-transform: uppercase;
+             opacity: 0.55; letter-spacing:0.08em; }
+  .turn { padding: 6px 8px; border-bottom: 1px solid #252525; font-size: 15px; line-height:1.35; }
+  .turn.original { opacity: 0.75; font-style: italic; }
+  .controls { padding: 14px 16px; display: flex; flex-direction: column; align-items: center;
+              gap: 10px; background:#131313; }
+  .direction { display: flex; gap: 10px; align-items: center; font-size: 13px; }
+  .direction button { background: none; color: var(--accent); border: 1px solid var(--accent);
+                      border-radius: 6px; padding: 4px 10px; cursor: pointer; touch-action: manipulation; }
+  .talk-button { width: 96px; height: 96px; border-radius: 50%; background: var(--accent);
+                 color: white; border: none; font-size: 34px; cursor: pointer; touch-action: manipulation;
+                 box-shadow: 0 4px 18px rgba(74,163,255,0.28); }
+  .talk-button:active, .talk-button.active { background: #2f7ec5; transform: scale(0.97); }
+  .status { font-size: 12px; opacity: 0.65; min-height:1.2em; }
+  .hint { text-align:center; font-size:12px; opacity:0.5; padding: 4px 12px 10px; }
+</style>
+</head>
+<body>
+  <header>
+    <span class="title">Qantara Live Translator</span>
+    <a href="/spike">assistant mode →</a>
+  </header>
+  <div class="pane" id="pane-left">
+    <h2 id="lang-left-label">English</h2>
+    <div id="turns-left"></div>
+  </div>
+  <div class="pane" id="pane-right">
+    <h2 id="lang-right-label">Japanese</h2>
+    <div id="turns-right"></div>
+  </div>
+  <div class="controls">
+    <div class="direction">
+      <span id="dir-from">EN</span>
+      →
+      <span id="dir-to">JA</span>
+      <button id="flip-dir" type="button">flip</button>
+    </div>
+    <button class="talk-button" id="talk-btn" type="button" aria-label="Hold to speak">&#x1F3A4;</button>
+    <div id="status" class="status">Hold the button to speak</div>
+  </div>
+  <div class="hint">Press and hold the mic while you speak. Release to translate. Flip the arrow to switch who's speaking.</div>
+
+  <script>
+    (function () {
+      var LANGS = { en: "English", ar: "Arabic", es: "Spanish", fr: "French", ja: "Japanese" };
+      var langLeft = localStorage.getItem("qantara_translate_left") || "en";
+      var langRight = localStorage.getItem("qantara_translate_right") || "ja";
+      var direction = { from: langLeft, to: langRight };
+      document.getElementById("lang-left-label").textContent = LANGS[langLeft] || langLeft;
+      document.getElementById("lang-right-label").textContent = LANGS[langRight] || langRight;
+      document.getElementById("dir-from").textContent = direction.from.toUpperCase();
+      document.getElementById("dir-to").textContent = direction.to.toUpperCase();
+
+      var clientSessionId = localStorage.getItem("qantara_translate_cid");
+      if (!clientSessionId) {
+        clientSessionId = (crypto.randomUUID && crypto.randomUUID()) || (Date.now() + "-" + Math.random().toString(36).slice(2));
+        localStorage.setItem("qantara_translate_cid", clientSessionId);
+      }
+
+      var wsUrl = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
+      var socket = new WebSocket(wsUrl);
+      socket.binaryType = "arraybuffer";
+
+      function sendJson(msg) {
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg));
+      }
+
+      var micStream = null;
+      var audioContext = null;
+      var processor = null;
+      var scriptNode = null;
+      var isRecording = false;
+
+      socket.addEventListener("open", function () {
+        sendJson({
+          type: "session_init",
+          client_name: "translate-page",
+          client_session_id: clientSessionId,
+          protocol_version: 1,
+        });
+        // Configure live translator mode via the dedicated endpoint.
+        fetch("/api/translation_mode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            client_session_id: clientSessionId,
+            mode: "live",
+            source: direction.from,
+            target: direction.to,
+          }),
+        });
+      });
+
+      socket.addEventListener("message", function (ev) {
+        if (typeof ev.data !== "string") return;
+        var msg;
+        try { msg = JSON.parse(ev.data); } catch (_) { return; }
+        if (msg.type === "transcript_result") {
+          appendTurn(direction.from, msg.text || "", true);
+        } else if (msg.type === "assistant_text_final" || msg.type === "assistant_output_completed") {
+          var txt = msg.text || "";
+          if (txt) appendTurn(direction.to, txt, false);
+        }
+      });
+
+      function appendTurn(lang, text, original) {
+        var pane = lang === langLeft ? "turns-left" : "turns-right";
+        var div = document.createElement("div");
+        div.className = "turn" + (original ? " original" : "");
+        div.textContent = text;
+        var container = document.getElementById(pane);
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+      }
+
+      document.getElementById("flip-dir").addEventListener("click", function () {
+        direction = { from: direction.to, to: direction.from };
+        document.getElementById("dir-from").textContent = direction.from.toUpperCase();
+        document.getElementById("dir-to").textContent = direction.to.toUpperCase();
+        fetch("/api/translation_mode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            client_session_id: clientSessionId,
+            mode: "live",
+            source: direction.from,
+            target: direction.to,
+          }),
+        });
+      });
+
+      async function startRecording() {
+        if (isRecording) return;
+        try {
+          if (!micStream) {
+            micStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
+          }
+          if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+          }
+          if (audioContext.state === "suspended") await audioContext.resume();
+          var source = audioContext.createMediaStreamSource(micStream);
+          scriptNode = audioContext.createScriptProcessor(2048, 1, 1);
+          source.connect(scriptNode);
+          scriptNode.connect(audioContext.destination);
+          scriptNode.onaudioprocess = function (e) {
+            var chan = e.inputBuffer.getChannelData(0);
+            var pcm = new Int16Array(chan.length);
+            for (var i = 0; i < chan.length; i++) {
+              var s = Math.max(-1, Math.min(1, chan[i]));
+              pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+            }
+            if (socket.readyState === WebSocket.OPEN) socket.send(pcm.buffer);
+          };
+          sendJson({ type: "mic_stream_started", sample_rate: 16000 });
+          isRecording = true;
+          document.getElementById("status").textContent = "Listening\u2026";
+          document.getElementById("talk-btn").classList.add("active");
+        } catch (err) {
+          document.getElementById("status").textContent = "Mic error: " + err.message;
+        }
+      }
+
+      function stopRecording() {
+        if (!isRecording) return;
+        isRecording = false;
+        if (scriptNode) { scriptNode.disconnect(); scriptNode = null; }
+        sendJson({ type: "mic_stream_stopped" });
+        sendJson({ type: "transcribe_recent_audio", submit_turn: true });
+        document.getElementById("status").textContent = "Translating\u2026";
+        document.getElementById("talk-btn").classList.remove("active");
+      }
+
+      var talkBtn = document.getElementById("talk-btn");
+      talkBtn.addEventListener("mousedown", startRecording);
+      talkBtn.addEventListener("mouseup", stopRecording);
+      talkBtn.addEventListener("mouseleave", function () { if (isRecording) stopRecording(); });
+      talkBtn.addEventListener("touchstart", function (e) { e.preventDefault(); startRecording(); }, { passive: false });
+      talkBtn.addEventListener("touchend", function (e) { e.preventDefault(); stopRecording(); }, { passive: false });
+    })();
+  </script>
+</body>
+</html>

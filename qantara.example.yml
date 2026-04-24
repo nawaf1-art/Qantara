@@ -1,0 +1,18 @@
+# Qantara configuration file.
+# Copy to qantara.yml and edit to match your setup.
+#
+# Precedence (highest wins): env vars > CLI flags > config file > defaults.
+
+backend:
+  type: openai_compatible    # openai_compatible | ollama | openclaw | custom | mock
+  url: http://localhost:11434
+  model: qwen2.5:3b
+  # agent: main               # only for the advanced OpenClaw bridge
+
+voice:
+  stt: faster_whisper
+  tts: piper
+
+server:
+  host: 127.0.0.1
+  port: 8765

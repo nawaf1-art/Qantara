@@ -1,0 +1,37 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+
+categories:
+  - title: "Added"
+    labels: ["feature", "enhancement"]
+  - title: "Changed"
+    labels: ["refactor", "change"]
+  - title: "Fixed"
+    labels: ["bug", "fix"]
+  - title: "Docs"
+    labels: ["docs", "documentation"]
+  - title: "Dependencies"
+    labels: ["dependencies", "deps"]
+  - title: "Internal"
+    labels: ["chore", "ci", "test"]
+
+change-template: "- $TITLE (#$NUMBER) @$AUTHOR"
+change-title-escapes: '\<*_&'
+
+version-resolver:
+  major:
+    labels: ["breaking"]
+  minor:
+    labels: ["feature", "enhancement"]
+  patch:
+    labels: ["bug", "fix", "docs", "chore"]
+  default: patch
+
+template: |
+  ## Changes in $RESOLVED_VERSION
+
+  $CHANGES
+
+  ---
+
+  **Full changelog:** https://github.com/nawaf1-art/Qantara/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION

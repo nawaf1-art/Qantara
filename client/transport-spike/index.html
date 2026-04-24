@@ -1,0 +1,2772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Qantara</title>
+  <style>
+    :root {
+      --ui-font-stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --bg: #f4f1ea;
+      --panel: #fffaf2;
+      --ink: #1f2328;
+      --muted: #636b74;
+      --line: #d5c6b5;
+      --accent: #0f766e;
+      --warn: #a16207;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: var(--ui-font-stack);
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, #fdf7ee 0, #f4f1ea 45%, #ebe3d5 100%);
+      min-height: 100vh;
+      min-height: 100dvh;
+    }
+
+    /* Mobile hardening (0.2.2 polish):
+       - touch-action: manipulation removes the 300ms tap delay on iOS Safari
+       - inputs get a 16px font-size floor so iOS doesn't auto-zoom on focus
+       - safe-area env() inserts pad the voice overlay clear of the iPhone
+         notch + home indicator
+    */
+    button, [role="button"], .scan-btn, .start-btn, .test-btn, .copy-btn,
+    .vc-btn, .vc-close {
+      touch-action: manipulation;
+    }
+    input, textarea, select { font-size: max(16px, 1rem); }
+
+    main {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 2.4rem;
+      font-weight: 600;
+    }
+
+    p {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .panel {
+      background: rgba(255, 250, 242, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 14px 40px rgba(31, 35, 40, 0.08);
+      margin-top: 18px;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .mic-permission-error {
+      display: none;
+      margin: -6px 0 14px;
+      color: #b91c1c;
+      font-size: 0.92rem;
+    }
+
+    .mic-permission-error.visible {
+      display: block;
+    }
+
+    button {
+      appearance: none;
+      border: 1px solid var(--ink);
+      background: var(--panel);
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 10px 14px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    button.warn {
+      color: var(--warn);
+      border-color: var(--warn);
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .stat {
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.6);
+    }
+
+    .stat-label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    code, pre {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.9rem;
+    }
+
+    pre {
+      margin: 0;
+      max-height: 360px;
+      overflow: auto;
+      white-space: pre-wrap;
+      background: #211f1b;
+      color: #eae6df;
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(220px, 260px) 1fr;
+      gap: 18px;
+      margin-bottom: 18px;
+      align-items: stretch;
+    }
+
+    .avatar-card {
+      position: relative;
+      overflow: visible;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 280px;
+      background:
+        radial-gradient(circle at top, rgba(15, 118, 110, 0.18), transparent 45%),
+        linear-gradient(160deg, #fffdf8 0%, #f4ece0 100%);
+    }
+
+    .selectors {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .selector-card {
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.62);
+    }
+
+    .selector-card label {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .selector-card select {
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      font: inherit;
+      background: var(--panel);
+      color: var(--ink);
+    }
+
+    .avatar-shell {
+      position: relative;
+      width: 200px;
+      height: 200px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Glowing ring behind avatar */
+    .avatar-shell::before {
+      content: "";
+      position: absolute;
+      inset: -8px;
+      border-radius: 999px;
+      border: 3px solid var(--avatar-ring, var(--accent));
+      opacity: 0;
+      transform: scale(0.92);
+      transition: all 300ms ease;
+    }
+
+    /* Soft glow fill */
+    .avatar-shell::after {
+      content: "";
+      position: absolute;
+      inset: -12px;
+      border-radius: 999px;
+      background: radial-gradient(circle, var(--avatar-glow, rgba(15, 118, 110, 0.18)), transparent 65%);
+      opacity: 0.4;
+      transform: scale(0.9);
+      transition: all 300ms ease;
+    }
+
+    /* Idle: gentle breathing glow */
+    .avatar-shell.idle::after {
+      animation: avatarBreatheGlow 4s ease-in-out infinite;
+    }
+
+    /* Listening: ring appears + pulses */
+    .avatar-shell.listening::before {
+      opacity: 0.7;
+      animation: avatarRingPulse 1.5s ease-in-out infinite;
+    }
+
+    .avatar-shell.listening::after {
+      opacity: 0.8;
+      transform: scale(1.05);
+    }
+
+    /* Thinking: ring slow rotate glow */
+    .avatar-shell.thinking::before {
+      opacity: 0.5;
+      border-style: dashed;
+      animation: avatarThinkSpin 3s linear infinite;
+    }
+
+    .avatar-shell.thinking::after {
+      opacity: 0.7;
+      animation: avatarThinkGlow 2s ease-in-out infinite;
+    }
+
+    /* Speaking: strong pulsing ring */
+    .avatar-shell.speaking::before {
+      opacity: 0.9;
+      border-width: 4px;
+      animation: avatarSpeakRing 0.8s ease-in-out infinite;
+    }
+
+    .avatar-shell.speaking::after {
+      opacity: 1;
+      transform: scale(1.1);
+    }
+
+    .avatar-badge {
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: rgba(255, 255, 255, 0.85);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      z-index: 2;
+    }
+
+    .avatar-svg {
+      width: 190px;
+      height: 210px;
+      position: relative;
+      z-index: 1;
+      filter: drop-shadow(0 10px 26px rgba(31, 35, 40, 0.12));
+    }
+
+    .avatar-face-fill {
+      transition: fill 400ms ease;
+    }
+
+    .avatar-eye {
+      transform-origin: center;
+    }
+
+    @keyframes avatarBreatheGlow {
+      0%, 100% { transform: scale(0.9); opacity: 0.3; }
+      50% { transform: scale(1.0); opacity: 0.6; }
+    }
+
+    @keyframes avatarRingPulse {
+      0%, 100% { transform: scale(1.0); opacity: 0.5; }
+      50% { transform: scale(1.08); opacity: 0.9; }
+    }
+
+    @keyframes avatarThinkSpin {
+      0% { transform: scale(1.02) rotate(0deg); }
+      100% { transform: scale(1.02) rotate(360deg); }
+    }
+
+    @keyframes avatarThinkGlow {
+      0%, 100% { transform: scale(1.0); opacity: 0.5; }
+      50% { transform: scale(1.08); opacity: 0.8; }
+    }
+
+    @keyframes avatarSpeakRing {
+      0%, 100% { transform: scale(1.0); opacity: 0.6; }
+      50% { transform: scale(1.12); opacity: 1; }
+    }
+
+    .avatar-caption {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .avatar-title {
+      margin: 0 0 8px;
+      font-size: 1.2rem;
+      font-weight: 600;
+    }
+
+    .avatar-state {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      color: var(--muted);
+    }
+
+    .avatar-state-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--line);
+      transition: background 160ms ease, transform 160ms ease;
+    }
+
+    .avatar-state[data-state="listening"] .avatar-state-dot {
+      background: var(--accent);
+      transform: scale(1.15);
+    }
+
+    .avatar-state[data-state="thinking"] .avatar-state-dot {
+      background: #a16207;
+      transform: scale(1.15);
+    }
+
+    .avatar-state[data-state="speaking"] .avatar-state-dot {
+      background: #c2410c;
+      transform: scale(1.25);
+    }
+
+    .avatar-meter {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(31, 35, 40, 0.08);
+      overflow: hidden;
+      border: 1px solid rgba(31, 35, 40, 0.08);
+    }
+
+    .avatar-meter-fill {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #0f766e, #c2410c);
+      transition: width 60ms linear;
+    }
+
+    /* avatarPulse removed — replaced by avatarRingPulse and state-specific animations */
+
+    @media (max-width: 760px) {
+      .hero {
+        grid-template-columns: 1fr;
+      }
+
+      .avatar-card {
+        min-height: 240px;
+      }
+    }
+    .backend-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 8px 20px;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .backend-bar-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .backend-bar-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .backend-bar a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .backend-bar a:hover { text-decoration: underline; }
+
+    /* ===== CONVERSATION VIEW (dark voice mode) ===== */
+    .voice-mode {
+      position: fixed; inset: 0; z-index: 900;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: radial-gradient(ellipse 80% 60% at 50% 35%, #1a1a3e 0%, #0f0f1a 45%, #080810 100%);
+      color: #f0f0f5;
+      font-family: var(--ui-font-stack);
+      overflow: hidden;
+      /* Pad clear of iPhone notch + home indicator */
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
+    }
+    .voice-mode.hidden { display: none; }
+
+    /* Voice Avatar (replaces orb) */
+    .voice-avatar-wrap {
+      position: relative; width: 220px; height: 220px; margin-bottom: 24px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    /* State ring behind avatar */
+    .voice-avatar-wrap::before {
+      content: ""; position: absolute; inset: -10px; border-radius: 50%;
+      border: 3px solid var(--vc-ring, rgba(124,106,240,0.3));
+      opacity: 0; transition: all 0.4s ease;
+    }
+    /* Glow behind avatar */
+    .voice-avatar-wrap::after {
+      content: ""; position: absolute; inset: -16px; border-radius: 50%;
+      background: radial-gradient(circle, var(--vc-glow, rgba(124,106,240,0.12)), transparent 65%);
+      opacity: 0.4; transition: all 0.4s ease;
+    }
+    .voice-avatar-wrap.idle::after { animation: vcBreatheGlow 4s ease-in-out infinite; }
+    .voice-avatar-wrap.listening::before { opacity: 0.6; animation: vcRingPulse 1.5s ease-in-out infinite; }
+    .voice-avatar-wrap.listening::after { opacity: 0.8; }
+    .voice-avatar-wrap.thinking::before { opacity: 0.4; border-style: dashed; animation: vcThinkSpin 3s linear infinite; }
+    .voice-avatar-wrap.thinking::after { opacity: 0.6; animation: vcThinkGlow 2s ease-in-out infinite; }
+    .voice-avatar-wrap.speaking::before { opacity: 0.8; border-width: 4px; animation: vcSpeakRing 0.8s ease-in-out infinite; }
+    .voice-avatar-wrap.speaking::after { opacity: 1; }
+
+    .voice-avatar-svg {
+      width: 200px; height: 200px; filter: drop-shadow(0 8px 24px rgba(0,0,0,0.3));
+      position: relative; z-index: 1;
+    }
+
+    @keyframes vcBreatheGlow { 0%,100% { opacity: 0.3; } 50% { opacity: 0.6; } }
+    @keyframes vcRingPulse { 0%,100% { transform: scale(1); opacity: 0.4; } 50% { transform: scale(1.06); opacity: 0.7; } }
+    @keyframes vcThinkSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    @keyframes vcThinkGlow { 0%,100% { opacity: 0.4; } 50% { opacity: 0.7; } }
+    @keyframes vcSpeakRing { 0%,100% { transform: scale(1); opacity: 0.6; } 50% { transform: scale(1.08); opacity: 0.9; } }
+
+    /* Health strip */
+    .voice-health {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 8px 18px; border-radius: 999px; font-size: 0.78rem; font-weight: 500;
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+      color: rgba(200,200,220,0.7); margin-bottom: 12px; transition: all 0.3s;
+    }
+    .voice-health .h-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; transition: background 0.3s; }
+    .voice-health .h-dot.good { background: #50d0b0; }
+    .voice-health .h-dot.warn { background: #f0b43c; }
+    .voice-health .h-dot.bad { background: #f06060; }
+    .voice-health.warn { border-color: rgba(240,180,60,0.2); }
+    .voice-health.bad { border-color: rgba(240,96,96,0.2); }
+
+    /* Metrics overlay */
+    .voice-metrics-overlay {
+      position: fixed; inset: 0; z-index: 960;
+      background: rgba(8,8,16,0.92); backdrop-filter: blur(12px);
+      display: none; flex-direction: column; align-items: center; justify-content: center;
+      font-family: var(--ui-font-stack); color: #f0f0f5;
+    }
+    .voice-metrics-overlay.visible { display: flex; }
+    .vm-back {
+      position: absolute; top: 16px; left: 16px;
+      appearance: none; border: none; background: rgba(255,255,255,0.06);
+      color: rgba(200,200,220,0.7); border-radius: 999px; padding: 8px 16px;
+      font: inherit; font-size: 0.82rem; cursor: pointer;
+    }
+    .vm-back:hover { background: rgba(255,255,255,0.1); color: #f0f0f5; }
+    .vm-title { font-size: 1rem; font-weight: 600; margin-bottom: 20px; }
+    .vm-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+      width: 90%; max-width: 520px;
+    }
+    .vm-card {
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px; padding: 16px; border-left: 4px solid rgba(255,255,255,0.08);
+      transition: border-color 0.3s;
+    }
+    .vm-card.good { border-left-color: #50d0b0; }
+    .vm-card.warn { border-left-color: #f0b43c; }
+    .vm-card.bad { border-left-color: #f06060; }
+    .vm-card-label { font-size: 0.7rem; color: rgba(152,152,176,0.6); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .vm-card-value { font-size: 1.6rem; font-weight: 600; line-height: 1.1; }
+    .vm-card-hint { font-size: 0.68rem; color: rgba(152,152,176,0.5); margin-top: 4px; }
+    .vm-legend { margin-top: 20px; font-size: 0.72rem; color: rgba(152,152,176,0.5); }
+
+    @media (max-width: 480px) {
+      .vm-grid { grid-template-columns: repeat(2, 1fr); }
+      .voice-avatar-wrap { width: 160px; height: 160px; }
+      .voice-avatar-svg { width: 140px; height: 140px; }
+    }
+
+    /* Captions */
+    .voice-captions {
+      position: absolute; bottom: 140px; left: 50%; transform: translateX(-50%);
+      width: 90%; max-width: 600px; text-align: center; pointer-events: none;
+    }
+    .caption-line {
+      font-size: 1.1rem; font-weight: 500; line-height: 1.6; margin-bottom: 4px;
+      animation: capIn 0.25s ease-out;
+    }
+    .caption-line.user { color: rgba(176,176,200,0.8); }
+    .caption-line.assistant { color: #f0f0f5; }
+    .caption-line.fading { animation: capOut 0.4s ease-in forwards; }
+    @keyframes capIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes capOut { to { opacity: 0; transform: translateY(-4px); } }
+
+    /* Stats bar */
+    .voice-stats {
+      position: absolute; bottom: 88px; left: 50%; transform: translateX(-50%);
+      display: flex; align-items: center; gap: 12px;
+      font-size: 0.7rem; color: rgba(152,152,176,0.7); letter-spacing: 0.02em;
+      font-family: var(--ui-font-stack);
+    }
+    .voice-stats span { white-space: nowrap; }
+    .voice-stats .stat-good { color: rgba(80,208,176,0.9); }
+    .voice-stats .stat-warn { color: rgba(240,180,60,0.9); }
+    .voice-stats .stat-bad { color: rgba(240,96,96,0.9); }
+    .voice-stats .stat-sep { color: rgba(152,152,176,0.3); }
+
+    /* Controls */
+    .voice-controls {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      display: flex; align-items: center; justify-content: center; gap: 20px;
+      padding: 24px 20px;
+      padding-bottom: max(24px, env(safe-area-inset-bottom, 0px));
+      background: linear-gradient(to top, rgba(8,8,16,0.7) 0%, transparent 100%);
+    }
+    .vc-btn {
+      display: flex; align-items: center; justify-content: center;
+      border: none; border-radius: 50%; cursor: pointer;
+      transition: transform 0.15s, background 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .vc-btn:hover { transform: scale(1.06); }
+    .vc-btn:active { transform: scale(0.94); }
+
+    .vc-mic {
+      width: 60px; height: 60px;
+      background: #7c6af0; color: #fff;
+      box-shadow: 0 4px 20px rgba(124,106,240,0.3);
+    }
+    .vc-mic.active {
+      background: #50d0b0;
+      box-shadow: 0 4px 20px rgba(80,208,176,0.3);
+      animation: micGlow 2s ease-in-out infinite;
+    }
+    .vc-mic.muted { background: #2a2a3e; color: #666; box-shadow: none; animation: none; }
+    @keyframes micGlow {
+      0%,100% { box-shadow: 0 4px 20px rgba(80,208,176,0.3), 0 0 0 0 rgba(80,208,176,0.2); }
+      50% { box-shadow: 0 4px 20px rgba(80,208,176,0.3), 0 0 0 10px rgba(80,208,176,0); }
+    }
+
+    .vc-secondary {
+      width: 44px; height: 44px;
+      background: rgba(255,255,255,0.06); color: rgba(200,200,220,0.7);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .vc-secondary:hover { background: rgba(255,255,255,0.1); color: #f0f0f5; }
+
+    .vc-end {
+      width: 44px; height: 44px;
+      background: rgba(240,96,96,0.12); color: #f06060;
+      border: 1px solid rgba(240,96,96,0.2);
+    }
+    .vc-end:hover { background: rgba(240,96,96,0.2); }
+
+    /* Status dot top */
+    .voice-status {
+      position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+      display: flex; align-items: center; gap: 6px;
+      font-size: 0.78rem; color: rgba(152,152,176,0.6); font-weight: 500;
+    }
+    .voice-status-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: #5a5a78;
+      transition: background 0.3s;
+    }
+    .voice-status-dot.listening { background: #50d0b0; }
+    .voice-status-dot.thinking { background: #7c6af0; }
+    .voice-status-dot.speaking { background: #f0f0f5; }
+
+    .vc-close {
+      position: absolute; top: 14px; left: 14px;
+      width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+      border-radius: 50%; background: rgba(255,255,255,0.06); border: none;
+      color: rgba(200,200,220,0.6); cursor: pointer; transition: background 0.15s;
+    }
+    .vc-close:hover { background: rgba(255,255,255,0.12); }
+
+    /* Debug panel overlay */
+    .debug-overlay {
+      position: fixed; inset: 0; z-index: 950;
+      background: rgba(8,8,16,0.85); backdrop-filter: blur(8px);
+      overflow-y: auto; padding: 20px;
+      display: none;
+    }
+    .debug-overlay.visible { display: block; }
+    .debug-overlay .debug-inner {
+      max-width: 900px; margin: 0 auto;
+      background: rgba(255,250,242,0.95); border-radius: 16px; padding: 20px;
+      color: var(--ink); font-family: var(--ui-font-stack);
+    }
+    .debug-close {
+      float: right; appearance: none; border: 1px solid var(--line);
+      background: var(--panel); border-radius: 999px; padding: 6px 14px;
+      font: inherit; cursor: pointer; font-size: 0.82rem;
+    }
+
+    /* Settings panel overlay */
+    .settings-overlay {
+      position: fixed; inset: 0; z-index: 950;
+      background: rgba(8,8,16,0.85); backdrop-filter: blur(8px);
+      display: none; align-items: center; justify-content: center;
+    }
+    .settings-overlay.visible { display: flex; }
+    .settings-panel {
+      background: rgba(30,30,50,0.95); border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px; padding: 24px; width: 90%; max-width: 380px;
+      color: #f0f0f5; font-family: var(--ui-font-stack);
+    }
+    .settings-panel h3 { margin: 0 0 16px; font-size: 1rem; font-weight: 600; }
+    .settings-panel label {
+      display: flex; flex-direction: column; gap: 4px;
+      font-size: 0.8rem; color: rgba(200,200,220,0.7); margin-bottom: 14px;
+    }
+    .settings-panel select, .settings-panel input[type="range"] {
+      font-family: inherit; font-size: 0.88rem; padding: 8px 10px;
+      border: 1px solid rgba(255,255,255,0.12); border-radius: 8px;
+      background: rgba(255,255,255,0.06); color: #f0f0f5; outline: none;
+    }
+    .settings-panel select:focus { border-color: #7c6af0; }
+    .settings-close {
+      appearance: none; width: 100%; margin-top: 8px; padding: 10px;
+      border: 1px solid rgba(255,255,255,0.12); border-radius: 999px;
+      background: transparent; color: #f0f0f5; font: inherit; cursor: pointer;
+    }
+    .settings-close:hover { background: rgba(255,255,255,0.06); }
+
+    /* Hide the debug chrome when voice mode is active. */
+    body.voice-active > main,
+    body.voice-active > nav { display: none; }
+  </style>
+</head>
+<body>
+  <nav id="backendBar" class="backend-bar" style="display:none;">
+    <span class="backend-bar-label">
+      <span class="backend-bar-dot"></span>
+      <span id="backendBarText">—</span>
+    </span>
+    <a href="/setup">Change backend</a>
+  </nav>
+  <main>
+    <h1>Qantara</h1>
+    <p>
+      Voice conversation interface. Debug view is shown below — the default conversation view is the dark overlay.
+    </p>
+
+    <section class="panel">
+      <section class="hero">
+        <div class="panel avatar-card" style="margin-top: 0;">
+          <div id="avatarShell" class="avatar-shell idle">
+            <div id="avatarBadge" class="avatar-badge">Idle</div>
+            <svg id="avatarSvg" class="avatar-svg" viewBox="0 0 200 220" aria-label="Avatar" role="img">
+              <!-- Neck -->
+              <rect x="88" y="166" width="24" height="18" rx="6" fill="#f9edd9" id="av-neck"/>
+              <!-- Face -->
+              <ellipse id="av-face" class="avatar-face-fill" cx="100" cy="110" rx="52" ry="60" fill="#f9edd9" stroke="#c4a882" stroke-width="1.5"/>
+              <!-- Hair (solid, covers top third of head) -->
+              <path id="av-hair" d="M48 90C48 52 70 30 100 30C130 30 152 52 152 90C152 82 148 72 140 64C140 78 124 88 100 88C76 88 60 78 60 64C52 72 48 82 48 90Z" fill="#705c48"/>
+              <!-- Eyes -->
+              <ellipse id="av-eye-l" class="avatar-eye" cx="80" cy="108" rx="6" ry="8" fill="#2d2d2d"/>
+              <ellipse id="av-eye-r" class="avatar-eye" cx="120" cy="108" rx="6" ry="8" fill="#2d2d2d"/>
+              <!-- Eye highlights -->
+              <ellipse cx="82" cy="106" rx="2" ry="2.5" fill="#fff" opacity="0.8"/>
+              <ellipse cx="122" cy="106" rx="2" ry="2.5" fill="#fff" opacity="0.8"/>
+              <!-- Eyebrows -->
+              <path id="av-brow-l" d="M68 95C74 91 80 90 88 92" fill="none" stroke="#705c48" stroke-width="2.2" stroke-linecap="round"/>
+              <path id="av-brow-r" d="M112 92C120 90 126 91 132 95" fill="none" stroke="#705c48" stroke-width="2.2" stroke-linecap="round"/>
+              <!-- Nose -->
+              <path d="M97 120C99 124 101 124 103 120" fill="none" stroke="#c4a882" stroke-width="1.2" stroke-linecap="round"/>
+              <!-- Mouth (vanilla JS bezier lerp from amplitude) -->
+              <path id="av-mouth" d="M80 138 Q100 142 120 138" fill="#c47070" stroke="#c47070" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+        </div>
+        <div class="panel avatar-caption" style="margin-top: 0;">
+          <h2 id="avatarTitle" class="avatar-title">Qantara Presence Layer</h2>
+          <div id="avatarState" class="avatar-state" data-state="idle">
+            <span class="avatar-state-dot"></span>
+            <span id="avatarStateText">Idle</span>
+          </div>
+          <p id="avatarDescription">
+            Reflects listening, thinking, and speaking states.
+          </p>
+          <div class="avatar-meter">
+            <div id="avatarMeterFill" class="avatar-meter-fill"></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="selectors">
+        <div class="selector-card">
+          <label for="ttsVoice">
+            <span>TTS Voice</span>
+            <select id="ttsVoice">
+              <option value="lessac">Lessac</option>
+              <option value="amy">Amy</option>
+            </select>
+          </label>
+        </div>
+        <div class="selector-card">
+          <label for="avatarPreset">
+            <span>Avatar</span>
+            <select id="avatarPreset"></select>
+          </label>
+        </div>
+        <div class="selector-card">
+          <label for="voicePreset">
+            <span>Playback Style</span>
+            <select id="voicePreset">
+              <option value="steady">Steady</option>
+              <option value="warm">Warm</option>
+              <option value="bright">Bright</option>
+              <option value="swift">Swift</option>
+            </select>
+          </label>
+        </div>
+        <div class="selector-card">
+          <label for="speechSpeed">
+            <span>Speech Speed</span>
+            <input id="speechSpeed" type="range" min="0.85" max="1.30" step="0.05" value="1.00">
+            <span id="speechSpeedValue">1.00x</span>
+          </label>
+        </div>
+        <div class="selector-card" id="expressivenessCard" style="display:none">
+          <label for="expressiveness">
+            <span>Voice Feeling</span>
+            <input id="expressiveness" type="range" min="0" max="100" step="5" value="50">
+            <span id="expressivenessValue">0.50</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="connectBtn" class="primary">Connect</button>
+        <button id="disconnectBtn" class="warn" disabled>Disconnect</button>
+        <button id="micBtn" disabled>Start Mic</button>
+        <button id="toneBtn" disabled>Request Tone</button>
+        <button id="mockTurnBtn" disabled>Mock Turn</button>
+        <button id="transcribeBtn" disabled>Transcribe Recent Audio</button>
+        <button id="submitSpeechBtn" disabled>Submit Recent Speech</button>
+        <button id="clearBtn" disabled>Clear Playback</button>
+      </div>
+      <div id="micPermissionError" class="mic-permission-error" role="alert"></div>
+
+      <div class="controls">
+        <input id="mockInput" type="text" value="hello from the browser client" style="flex: 1; min-width: 260px; padding: 10px 14px; border-radius: 999px; border: 1px solid var(--line); font: inherit;">
+      </div>
+
+      <div class="controls">
+        <label for="audioMode" style="display: inline-flex; align-items: center; gap: 8px; color: var(--muted);">
+          <span>Audio Mode</span>
+          <select id="audioMode" style="padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); font: inherit; background: var(--panel); color: var(--ink);">
+            <option value="headset">Headset</option>
+            <option value="speakers" selected>Speakers</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="status-grid">
+        <div class="stat"><span class="stat-label">Socket</span><span id="socketState">disconnected</span></div>
+        <div class="stat"><span class="stat-label">Mic</span><span id="micState">stopped</span></div>
+        <div class="stat"><span class="stat-label">Playback</span><span id="playbackState">idle</span></div>
+        <div class="stat"><span class="stat-label">TTS</span><span id="ttsState">unknown</span></div>
+        <div class="stat"><span class="stat-label">Adapter</span><span id="adapterState">unknown</span></div>
+        <div class="stat"><span class="stat-label">VAD</span><span id="vadState">silence</span></div>
+        <div class="stat"><span class="stat-label">Endpoint</span><span id="endpointState">idle</span></div>
+        <div class="stat"><span class="stat-label">Last RMS</span><span id="vadRms">0.0000</span></div>
+        <div class="stat"><span class="stat-label">Frames Sent</span><span id="framesSent">0</span></div>
+        <div class="stat"><span class="stat-label">Frames Received</span><span id="framesReceived">0</span></div>
+        <div class="stat"><span class="stat-label">Speech Submits</span><span id="speechSubmits">0</span></div>
+        <div class="stat"><span class="stat-label">Weak Skips</span><span id="weakSpeechSkips">0</span></div>
+        <div class="stat"><span class="stat-label">Sample Rate</span><span id="sampleRate">16000</span></div>
+        <div class="stat"><span class="stat-label">First Audio</span><span id="firstAudioMs">-</span></div>
+        <div class="stat"><span class="stat-label">Clear Ack</span><span id="clearAckMs">-</span></div>
+      </div>
+
+      <div class="panel" style="margin-top: 0; padding: 14px;">
+        <span class="stat-label">Assistant Text</span>
+        <div id="assistantText" style="min-height: 48px; line-height: 1.5;"></div>
+      </div>
+
+      <div class="panel" style="margin-top: 12px; padding: 14px;">
+        <span class="stat-label">Transcript Result</span>
+        <div id="transcriptText" style="min-height: 48px; line-height: 1.5;"></div>
+        <div id="partialTranscriptText" style="min-height: 18px; line-height: 1.4; color: rgba(120, 130, 160, 0.85); font-style: italic; margin-top: 4px;"></div>
+      </div>
+
+      <pre id="log"></pre>
+    </section>
+  </main>
+
+  <!-- ===== VOICE MODE OVERLAY ===== -->
+  <div id="voiceMode" class="voice-mode hidden">
+    <button class="vc-close" id="vcClose" aria-label="Show debug view" title="Show debug view">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="20" y2="20"/><line x1="20" y1="4" x2="4" y2="20"/></svg>
+    </button>
+
+    <div class="voice-status">
+      <span class="voice-status-dot" id="vcStatusDot"></span>
+      <span id="vcStatusText">Qantara</span>
+      <span id="vcStateCaption" style="margin-left: 12px; font-size: 13px; color: rgba(220, 225, 240, 0.7); font-style: italic;"></span>
+    </div>
+
+    <div id="vcActivityStrip" style="position: absolute; top: 56px; left: 16px; right: 16px; max-height: 120px; overflow: hidden; pointer-events: none; font-size: 12px; color: rgba(200, 210, 240, 0.75);"></div>
+    <div id="vcToast" style="position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); padding: 10px 16px; background: rgba(60, 40, 40, 0.92); border: 1px solid rgba(255, 170, 140, 0.5); border-radius: 8px; color: rgba(255, 220, 200, 0.95); font-size: 13px; opacity: 0; transition: opacity 250ms ease; pointer-events: none; max-width: 80%; text-align: center;"></div>
+
+    <div class="voice-avatar-wrap idle" id="vcAvatarWrap">
+      <svg class="voice-avatar-svg" id="vcAvatarSvg" viewBox="0 0 200 220" aria-label="Voice Avatar">
+        <rect id="vc-neck" x="88" y="168" width="24" height="20" rx="6" fill="#f9edd9"/>
+        <ellipse id="vc-face" cx="100" cy="110" rx="52" ry="60" fill="#f9edd9" stroke="#c4a882" stroke-width="1.5"/>
+        <ellipse cx="47" cy="112" rx="6" ry="10" fill="#f9edd9" stroke="#c4a882" stroke-width="1" id="vc-ear-l"/>
+        <ellipse cx="153" cy="112" rx="6" ry="10" fill="#f9edd9" stroke="#c4a882" stroke-width="1" id="vc-ear-r"/>
+        <path id="vc-hair" d="M48 100C48 55 70 28 100 28C130 28 152 55 152 100C152 96 150 80 145 68C138 54 122 40 100 40C78 40 62 54 55 68C50 80 48 96 48 100Z M55 100C55 98 56 86 62 74C68 62 80 52 100 52C120 52 132 62 138 74C144 86 145 98 145 100Z" fill="#705c48" fill-rule="evenodd"/>
+        <ellipse id="vc-eye-l" cx="80" cy="108" rx="6" ry="8" fill="#2d2d2d"/>
+        <ellipse id="vc-eye-r" cx="120" cy="108" rx="6" ry="8" fill="#2d2d2d"/>
+        <ellipse cx="82" cy="106" rx="2" ry="2.5" fill="#fff" opacity="0.8"/>
+        <ellipse cx="122" cy="106" rx="2" ry="2.5" fill="#fff" opacity="0.8"/>
+        <path id="vc-brow-l" d="M68 95C74 91 80 90 88 92" fill="none" stroke="#705c48" stroke-width="2.2" stroke-linecap="round"/>
+        <path id="vc-brow-r" d="M112 92C120 90 126 91 132 95" fill="none" stroke="#705c48" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M97 120C99 124 101 124 103 120" fill="none" stroke="#c4a882" stroke-width="1.2" stroke-linecap="round"/>
+        <path id="vc-mouth" d="M80 138 Q100 142 120 138" fill="#c47070" stroke="#c47070" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <div class="voice-health" id="vcHealth">
+      <span class="h-dot good" id="vcHealthDot"></span>
+      <span id="vcHealthText">Connecting\u2026</span>
+    </div>
+
+    <div class="voice-captions" id="vcCaptions"></div>
+
+    <div class="voice-stats" id="vcStats">
+      <span id="vcStatTTFT" title="Time to first token from backend"></span>
+      <span class="stat-sep">·</span>
+      <span id="vcStatTokS" title="Token generation speed"></span>
+      <span class="stat-sep">·</span>
+      <span id="vcStatTTS" title="Text-to-speech latency"></span>
+      <span class="stat-sep">·</span>
+      <span id="vcStatTotal" title="Total round-trip (speech end → first audio)"></span>
+      <span class="stat-sep">│</span>
+      <span id="vcStatBackend"></span>
+    </div>
+
+    <div class="voice-controls">
+      <button class="vc-btn vc-secondary" id="vcSettings" aria-label="Settings">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2m-9-11h2m18 0h2m-3.3-6.7-1.4 1.4M5.7 18.3l-1.4 1.4m0-13.4 1.4 1.4m12.6 12.6 1.4 1.4"/></svg>
+      </button>
+      <button class="vc-btn vc-mic" id="vcMic" aria-label="Microphone">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="1" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+      </button>
+      <button class="vc-btn vc-end" id="vcEnd" aria-label="Disconnect">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.88.37 1.73.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+      </button>
+      <button class="vc-btn vc-secondary" id="vcMetrics" aria-label="Performance metrics">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v18h18"/><path d="M7 17l4-8 4 4 6-8"/></svg>
+      </button>
+      <button class="vc-btn vc-secondary" id="vcDebug" aria-label="Debug panel">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2a4 4 0 0 0-4 4v1H6a2 2 0 0 0-2 2v1h16V9a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"/><path d="M4 13h16v4a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z"/><line x1="9" y1="17" x2="9" y2="17"/><line x1="15" y1="17" x2="15" y2="17"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Metrics Overlay -->
+  <div id="vcMetricsOverlay" class="voice-metrics-overlay">
+    <button class="vm-back" id="vcMetricsBack">&larr; Back to conversation</button>
+    <div class="vm-title">Performance Diagnostics</div>
+    <div class="vm-grid">
+      <div class="vm-card" id="vmHeard"><div class="vm-card-label">Heard</div><div class="vm-card-value" id="vmHeardVal">&mdash;</div><div class="vm-card-hint">Speech-to-text</div></div>
+      <div class="vm-card" id="vmTTFT"><div class="vm-card-label">First Response</div><div class="vm-card-value" id="vmTTFTVal">&mdash;</div><div class="vm-card-hint">Time to first token</div></div>
+      <div class="vm-card" id="vmSpeed"><div class="vm-card-label">Speed</div><div class="vm-card-value" id="vmSpeedVal">&mdash;</div><div class="vm-card-hint">Tokens per second</div></div>
+      <div class="vm-card" id="vmAudio"><div class="vm-card-label">First Audio</div><div class="vm-card-value" id="vmAudioVal">&mdash;</div><div class="vm-card-hint">TTS latency</div></div>
+      <div class="vm-card" id="vmTrip"><div class="vm-card-label">Round Trip</div><div class="vm-card-value" id="vmTripVal">&mdash;</div><div class="vm-card-hint">End-to-end</div></div>
+      <div class="vm-card" id="vmBackend"><div class="vm-card-label">Backend</div><div class="vm-card-value" id="vmBackendVal">&mdash;</div><div class="vm-card-hint">Health status</div></div>
+    </div>
+    <div class="vm-legend">🟢 Good &nbsp; 🟡 Moderate &nbsp; 🔴 Slow</div>
+  </div>
+
+  <!-- Settings overlay -->
+  <div id="settingsOverlay" class="settings-overlay">
+    <div class="settings-panel">
+      <h3>Settings</h3>
+      <label>TTS Voice <select id="vcTtsVoice"></select></label>
+      <label>Avatar <select id="vcAvatarPreset"></select></label>
+      <label>Playback Style
+        <select id="vcVoicePreset">
+          <option value="steady">Steady</option>
+          <option value="warm">Warm</option>
+          <option value="bright">Bright</option>
+          <option value="swift">Swift</option>
+        </select>
+      </label>
+      <label>Speech Speed <span id="vcSpeedValue">1.00x</span>
+        <input type="range" id="vcSpeechSpeed" min="0.85" max="1.30" step="0.05" value="1.00">
+      </label>
+      <label>Audio Mode
+        <select id="vcAudioMode">
+          <option value="headset">Headset</option>
+          <option value="speakers" selected>Speakers</option>
+        </select>
+      </label>
+      <button class="settings-close" id="vcSettingsClose">Done</button>
+    </div>
+  </div>
+
+  <!-- Debug overlay -->
+  <div id="debugOverlay" class="debug-overlay">
+    <div class="debug-inner">
+      <button class="debug-close" id="debugClose">Close Debug</button>
+      <h3 style="margin:0 0 12px">Debug Panel</h3>
+      <div id="debugContent"></div>
+    </div>
+  </div>
+
+  <script>
+    // -- Backend status bar from localStorage --
+    (function () {
+      try {
+        var saved = JSON.parse(localStorage.getItem("qantara_backend"));
+        if (saved && saved.type) {
+          var label = saved.type.charAt(0).toUpperCase() + saved.type.slice(1);
+          if (saved.model) label += " \u00b7 " + saved.model;
+          else if (saved.agent) label += " \u00b7 " + saved.agent;
+          else if (saved.url) label += " \u00b7 " + saved.url;
+          document.getElementById("backendBarText").textContent = label;
+          document.getElementById("backendBar").style.display = "";
+        }
+      } catch (_) { /* ignore */ }
+    })();
+
+    const TARGET_SAMPLE_RATE = 16000;
+    const FRAMES_PER_PACKET = 640;
+    const PCM_KIND = 0x01;
+    const JSON_KIND = 0x7b; // "{"
+    // Tuned from observed headset runs to reduce chatty transitions.
+    // VAD thresholds. Tuned to work on both desktop (~0.08-0.18 RMS
+    // speech levels) and phones (~0.015-0.04 RMS via Chrome/Safari AGC).
+    // The earlier defaults (0.045 / 0.012) were desktop-calibrated and
+    // never triggered on Pixel Chrome because phone mic gain is much
+    // lower. Noise floor in a quiet room stays under 0.005 so these
+    // still have healthy margin.
+    const VAD_START_RMS = 0.02;
+    const VAD_STOP_RMS = 0.006;
+    const VAD_START_FRAMES = 4;
+    const VAD_STOP_FRAMES = 7;
+    // Higher threshold for barge-in during active playback so TTS
+    // leaking into the mic doesn't self-trigger. Scaled down with
+    // VAD_START_RMS so the ratio stays roughly the same.
+    const PLAYBACK_BARGE_IN_START_RMS = 0.04;
+    const PLAYBACK_BARGE_IN_START_FRAMES = 6;
+    const ENDPOINT_SILENCE_MS = 1200;
+    const AUTO_SUBMIT_COOLDOWN_MS = 1400;
+    const POST_PLAYBACK_SUBMIT_COOLDOWN_MS = 900;
+    const SPEAKERS_POST_PLAYBACK_SUBMIT_COOLDOWN_MS = 1400;
+    const MIN_SPEECH_MS_FOR_SUBMIT = 700;
+    // Speech-volume filter gate. Rejects VAD-triggered bursts that were
+    // too quiet to be real utterances (mic bumps, throat clears). Tuned
+    // to pass phone mic levels — live testing on Pixel showed real
+    // speech landing at avg_rms ~0.020 / peak_rms ~0.05-0.12, so the
+    // old desktop-calibrated thresholds (0.04 / 0.085) filtered real
+    // utterances out. Quiet-room noise floor is still well under 0.005.
+    const MIN_AVG_RMS_FOR_SUBMIT = 0.006;
+    const MIN_PEAK_RMS_FOR_SUBMIT = 0.018;
+
+    const connectBtn = document.getElementById("connectBtn");
+    const disconnectBtn = document.getElementById("disconnectBtn");
+    const micBtn = document.getElementById("micBtn");
+    const toneBtn = document.getElementById("toneBtn");
+    const mockTurnBtn = document.getElementById("mockTurnBtn");
+    const transcribeBtn = document.getElementById("transcribeBtn");
+    const submitSpeechBtn = document.getElementById("submitSpeechBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const micPermissionError = document.getElementById("micPermissionError");
+    const audioModeSelect = document.getElementById("audioMode");
+    const ttsVoiceSelect = document.getElementById("ttsVoice");
+    const avatarPresetSelect = document.getElementById("avatarPreset");
+    const voicePresetSelect = document.getElementById("voicePreset");
+    const speechSpeedInput = document.getElementById("speechSpeed");
+    const speechSpeedValue = document.getElementById("speechSpeedValue");
+    const avatarShell = document.getElementById("avatarShell");
+    const avatarBadge = document.getElementById("avatarBadge");
+    const avatarState = document.getElementById("avatarState");
+    const avatarStateText = document.getElementById("avatarStateText");
+    const avatarTitle = document.getElementById("avatarTitle");
+    const avatarMeterFill = document.getElementById("avatarMeterFill");
+
+    const AVATAR_PRESETS = {};
+
+    const VOICE_PRESETS = {
+      steady: { label: "Steady", playbackRate: 1.0, detune: 0 },
+      warm: { label: "Warm", playbackRate: 0.95, detune: -140 },
+      bright: { label: "Bright", playbackRate: 1.03, detune: 110 },
+      swift: { label: "Swift", playbackRate: 1.08, detune: 40 },
+    };
+
+    let socket = null;
+    let micContext = null;
+    let captureStream = null;
+    let sourceNode = null;
+    let processorNode = null;
+    let playbackContext = null;
+    let playbackAnalyser = null;
+    let playbackAnalyserData = null;
+    let avatarAnimationFrame = null;
+    let nextPlaybackAt = 0;
+    let currentPlaybackSampleRate = TARGET_SAMPLE_RATE;
+    let framesSent = 0;
+    let framesReceived = 0;
+    let micActive = false;
+    let vadSpeech = false;
+    let assistantText = "";
+    let mockTurnPending = false;
+    let transcribePending = false;
+    let clearRequestedAt = null;
+    let clearPending = false;
+    let speechCandidateFrames = 0;
+    let silenceCandidateFrames = 0;
+    const activePlaybackSources = new Set();
+    let endpointTimerId = null;
+    let lastAutoSubmitAt = 0;
+    let backendTurnActive = false;
+    let playbackActive = false;
+    let playbackCooldownUntil = 0;
+    let speechStartedAt = 0;
+    let speechRmsTotal = 0;
+    let speechRmsSamples = 0;
+    let speechPeakRms = 0;
+    // avatarMouthBase removed — mouth is now driven by vanilla JS path interpolation
+    let speechSubmitCount = 0;
+    let weakSpeechSkipCount = 0;
+    let bargeInPending = false;
+    var _reconnectAttempts = 0;
+    var _userDisconnected = false;
+    let audioMode = localStorage.getItem("qantara_audio_mode") || audioModeSelect?.value || "speakers";
+    let ttsVoiceId = localStorage.getItem("qantara_tts_voice") || ttsVoiceSelect?.value || "lessac";
+    let avatarPreset = localStorage.getItem("qantara_avatar_preset") || avatarPresetSelect?.value || "qantara";
+    let voicePreset = localStorage.getItem("qantara_voice_preset") || voicePresetSelect?.value || "steady";
+    let speechSpeed = Number(localStorage.getItem("qantara_speech_speed") || speechSpeedInput?.value || "1.00");
+    let clientSessionId = localStorage.getItem("qantara_client_session_id");
+    if (!clientSessionId) {
+      clientSessionId = (crypto?.randomUUID?.() || `qantara-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+      localStorage.setItem("qantara_client_session_id", clientSessionId);
+    }
+    if (audioModeSelect) {
+      audioModeSelect.value = audioMode;
+    }
+    if (ttsVoiceSelect) {
+      ttsVoiceSelect.value = ttsVoiceId;
+    }
+    if (avatarPresetSelect) {
+      avatarPresetSelect.value = avatarPreset;
+    }
+    if (voicePresetSelect) {
+      voicePresetSelect.value = voicePreset;
+    }
+    if (speechSpeedInput) {
+      speechSpeedInput.value = String(speechSpeed);
+    }
+    if (speechSpeedValue) {
+      speechSpeedValue.textContent = `${speechSpeed.toFixed(2)}x`;
+    }
+
+    function $(id) {
+      return document.getElementById(id);
+    }
+
+    function log(message) {
+      const stamp = new Date().toISOString();
+      $("log").textContent = `[${stamp}] ${message}\n` + $("log").textContent;
+    }
+
+    function updateText(id, value) {
+      $(id).textContent = String(value);
+    }
+
+    function setSocketState(value) {
+      updateText("socketState", value);
+      const connected = value === "connected";
+      connectBtn.disabled = connected;
+      disconnectBtn.disabled = !connected;
+      micBtn.disabled = !connected;
+      toneBtn.disabled = !connected;
+      mockTurnBtn.disabled = !connected || mockTurnPending;
+      transcribeBtn.disabled = !connected || transcribePending;
+      submitSpeechBtn.disabled = !connected || transcribePending || mockTurnPending;
+      clearBtn.disabled = !connected || clearPending;
+    }
+
+    function setMicState(value) {
+      updateText("micState", value);
+      micBtn.textContent = value === "running" ? "Stop Mic" : "Start Mic";
+      updateAvatarState();
+    }
+
+    function setMicPermissionError(message) {
+      if (!micPermissionError) {
+        return;
+      }
+      micPermissionError.textContent = message;
+      micPermissionError.classList.toggle("visible", Boolean(message));
+    }
+
+    var _playbackDisplayTimer = null;
+    function setPlaybackState(value) {
+      playbackActive = value === "playing";
+      if (playbackActive) {
+        // Immediately show "playing"
+        if (_playbackDisplayTimer) { clearTimeout(_playbackDisplayTimer); _playbackDisplayTimer = null; }
+        updateText("playbackState", "playing");
+      } else {
+        // Delay showing "idle" to prevent flickering between PCM chunks
+        if (!_playbackDisplayTimer) {
+          _playbackDisplayTimer = setTimeout(function() {
+            _playbackDisplayTimer = null;
+            if (!playbackActive) {
+              updateText("playbackState", "idle");
+            }
+          }, 600);
+        }
+      }
+      updateAvatarState();
+    }
+
+    function setTtsState(value) {
+      updateText("ttsState", value);
+    }
+
+    function setAdapterState(value) {
+      updateText("adapterState", value);
+    }
+
+    function setVadState(value) {
+      updateText("vadState", value);
+      updateAvatarState();
+    }
+
+    function setVadRms(value) {
+      updateText("vadRms", value.toFixed(4));
+    }
+
+    function setEndpointState(value) {
+      updateText("endpointState", value);
+      updateAvatarState();
+    }
+
+    var _speakingHoldUntil = 0;
+
+    function getAvatarVisualState() {
+      var now = Date.now();
+      if (playbackActive) {
+        _speakingHoldUntil = now + 800; // hold speaking state for 800ms after last audio frame
+        return "speaking";
+      }
+      if (now < _speakingHoldUntil) return "speaking"; // still in hold period — prevents flickering
+      if (backendTurnActive) return "thinking";
+      if (micActive) return "listening";
+      return "idle";
+    }
+
+    function setAvatarMeter(level) {
+      const clamped = Math.max(0, Math.min(1, level));
+      if (avatarMeterFill) {
+        avatarMeterFill.style.width = `${clamped * 100}%`;
+      }
+      // Drive mouth morph from amplitude
+      if (window._gsapMouthTween) {
+        window._gsapMouthTween.progress(clamped);
+      }
+    }
+
+    function applyAvatarPreset() {
+      const preset = AVATAR_PRESETS[avatarPreset] || AVATAR_PRESETS.qantara;
+      if (!preset) return;
+
+      if (avatarTitle) {
+        avatarTitle.textContent = preset.title || preset.display_name || avatarPreset;
+      }
+
+      // Apply colors to the SVG face
+      var skin = preset.palette?.skin || "#f9edd9";
+      var hair = preset.palette?.hair_primary || "#705c48";
+      var accent = preset.palette?.accent_primary || "#0f766e";
+      var mouthColor = preset.palette?.accent_secondary || "#c47070";
+      var eyeColor = preset.visual?.eye_fill || "#2d2d2d";
+      var browColor = preset.visual?.brow_stroke || hair;
+      var faceStroke = preset.visual?.face_stroke || "#c4a882";
+
+      var face = document.getElementById("av-face");
+      var hairEl = document.getElementById("av-hair");
+      var mouth = document.getElementById("av-mouth");
+      var eyeL = document.getElementById("av-eye-l");
+      var eyeR = document.getElementById("av-eye-r");
+      var browL = document.getElementById("av-brow-l");
+      var browR = document.getElementById("av-brow-r");
+
+      if (face) { face.setAttribute("fill", skin); face.setAttribute("stroke", faceStroke); }
+      if (hairEl) { hairEl.setAttribute("fill", hair); }
+      if (mouth) { mouth.setAttribute("stroke", mouthColor); }
+      if (eyeL) { eyeL.setAttribute("fill", eyeColor); }
+      if (eyeR) { eyeR.setAttribute("fill", eyeColor); }
+      if (browL) { browL.setAttribute("stroke", browColor); }
+      if (browR) { browR.setAttribute("stroke", browColor); }
+      // Neck matches skin
+      var neck = document.getElementById("av-neck");
+      if (neck) { neck.setAttribute("fill", skin); }
+
+      // Update glow and ring color
+      if (avatarShell) {
+        avatarShell.style.setProperty("--avatar-glow", rgbaFromHex(accent, 0.22));
+        avatarShell.style.setProperty("--avatar-ring", accent);
+      }
+      var avatarCard = document.querySelector(".avatar-card");
+      if (avatarCard) {
+        avatarCard.style.background = "radial-gradient(circle at top, " + rgbaFromHex(accent, 0.18) + ", transparent 45%), linear-gradient(160deg, #fffdf8 0%, #f4ece0 100%)";
+      }
+    }
+
+    function rgbaFromHex(hex, alpha) {
+      var safeHex = /^#[0-9a-fA-F]{6}$/.test(hex || "") ? hex : "#0f766e";
+      var value = safeHex.slice(1);
+      var r = parseInt(value.slice(0, 2), 16);
+      var g = parseInt(value.slice(2, 4), 16);
+      var b = parseInt(value.slice(4, 6), 16);
+      return "rgba(" + r + ", " + g + ", " + b + ", " + alpha + ")";
+    }
+
+    async function loadAvatarPresets() {
+      try {
+        const response = await fetch("/identity/avatar-packs/presets.json", { cache: "no-cache" });
+        if (!response.ok) {
+          throw new Error(`avatar preset fetch failed (${response.status})`);
+        }
+        const payload = await response.json();
+        const presets = Array.isArray(payload.presets) ? payload.presets : [];
+        for (const preset of presets) {
+          if (!preset?.avatar_id) {
+            continue;
+          }
+          AVATAR_PRESETS[preset.avatar_id] = preset;
+        }
+        if (avatarPresetSelect) {
+          avatarPresetSelect.innerHTML = "";
+          for (const preset of presets) {
+            if (!preset?.avatar_id) {
+              continue;
+            }
+            const option = document.createElement("option");
+            option.value = preset.avatar_id;
+            option.textContent = preset.display_name || preset.title || preset.avatar_id;
+            avatarPresetSelect.appendChild(option);
+          }
+        }
+        if (!AVATAR_PRESETS[avatarPreset] && presets[0]?.avatar_id) {
+          avatarPreset = presets[0].avatar_id;
+          localStorage.setItem("qantara_avatar_preset", avatarPreset);
+        }
+        if (avatarPresetSelect && AVATAR_PRESETS[avatarPreset]) {
+          avatarPresetSelect.value = avatarPreset;
+        }
+        applyAvatarPreset();
+      } catch (error) {
+        log(`avatar preset load failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    function getVoiceProfile() {
+      return VOICE_PRESETS[voicePreset] || VOICE_PRESETS.steady;
+    }
+
+    function syncTtsVoiceOptions(voices, selectedVoiceId) {
+      if (!ttsVoiceSelect || !Array.isArray(voices) || voices.length === 0) {
+        return;
+      }
+      const nextSelectedVoiceId = voices.some((voice) => voice.voice_id === selectedVoiceId)
+        ? selectedVoiceId
+        : voices[0].voice_id;
+      ttsVoiceSelect.innerHTML = "";
+      for (const voice of voices) {
+        const option = document.createElement("option");
+        option.value = voice.voice_id;
+        option.textContent = voice.label || voice.voice_id;
+        ttsVoiceSelect.appendChild(option);
+      }
+      ttsVoiceSelect.value = nextSelectedVoiceId;
+      ttsVoiceId = nextSelectedVoiceId;
+      localStorage.setItem("qantara_tts_voice", ttsVoiceId);
+    }
+
+    function getSpeechSpeed() {
+      return Math.max(0.85, Math.min(1.30, Number.isFinite(speechSpeed) ? speechSpeed : 1.0));
+    }
+
+    function updateAvatarState() {
+      const state = getAvatarVisualState();
+      if (avatarShell) {
+        avatarShell.className = `avatar-shell ${state}`;
+      }
+      if (avatarBadge) {
+        avatarBadge.textContent = state;
+      }
+      if (avatarState) {
+        avatarState.dataset.state = state;
+      }
+      if (avatarStateText) {
+        avatarStateText.textContent = state.charAt(0).toUpperCase() + state.slice(1);
+      }
+      if (state !== "speaking") {
+        setAvatarMeter(0);
+      }
+    }
+
+    function startAvatarAnimationLoop() {
+      if (avatarAnimationFrame != null) return;
+      const tick = () => {
+        avatarAnimationFrame = requestAnimationFrame(tick);
+        if (!playbackAnalyser || !playbackActive) {
+          return;
+        }
+        playbackAnalyser.getByteTimeDomainData(playbackAnalyserData);
+        let total = 0;
+        for (let i = 0; i < playbackAnalyserData.length; i += 1) {
+          total += Math.abs(playbackAnalyserData[i] - 128);
+        }
+        // Amplify and curve so mouth opens visibly even for quieter speech
+        const raw = (total / playbackAnalyserData.length) / 28;
+        const level = Math.min(1, Math.pow(Math.min(1, raw), 0.6));
+        setAvatarMeter(level);
+      };
+      avatarAnimationFrame = requestAnimationFrame(tick);
+    }
+
+    function setFirstAudioMs(value) {
+      updateText("firstAudioMs", value == null ? "-" : `${value} ms`);
+    }
+
+    function setClearAckMs(value) {
+      updateText("clearAckMs", value == null ? "-" : `${value} ms`);
+    }
+
+    function setSpeechSubmitCount(value) {
+      updateText("speechSubmits", value);
+    }
+
+    function setWeakSpeechSkipCount(value) {
+      updateText("weakSpeechSkips", value);
+    }
+
+    function getPlaybackStartRms() {
+      return audioMode === "speakers" ? PLAYBACK_BARGE_IN_START_RMS : VAD_START_RMS;
+    }
+
+    function getPlaybackStartFrames() {
+      return audioMode === "speakers" ? PLAYBACK_BARGE_IN_START_FRAMES : VAD_START_FRAMES;
+    }
+
+    function getPostPlaybackCooldownMs() {
+      return audioMode === "speakers"
+        ? SPEAKERS_POST_PLAYBACK_SUBMIT_COOLDOWN_MS
+        : POST_PLAYBACK_SUBMIT_COOLDOWN_MS;
+    }
+
+    function setClearPending(value) {
+      clearPending = value;
+      clearBtn.disabled = !socket || socket.readyState !== WebSocket.OPEN || value;
+      clearBtn.textContent = value ? "Clearing..." : "Clear Playback";
+    }
+
+    function appendAssistantDelta(text) {
+      assistantText += text;
+      $("assistantText").textContent = assistantText;
+    }
+
+    function replaceAssistantText(text) {
+      assistantText = text;
+      $("assistantText").textContent = assistantText;
+    }
+
+    function setTranscriptText(text) {
+      $("transcriptText").textContent = text;
+    }
+
+    function setPartialTranscriptText(text, stablePrefixChars) {
+      const el = $("partialTranscriptText");
+      if (!el) return;
+      const stable = Math.max(0, Math.min(stablePrefixChars | 0, text.length));
+      if (stable >= text.length) {
+        el.textContent = text;
+      } else {
+        el.innerHTML = "";
+        if (stable > 0) {
+          const stableSpan = document.createElement("span");
+          stableSpan.textContent = text.slice(0, stable);
+          stableSpan.style.opacity = "0.95";
+          el.appendChild(stableSpan);
+        }
+        const tailSpan = document.createElement("span");
+        tailSpan.textContent = text.slice(stable);
+        tailSpan.style.opacity = "0.55";
+        el.appendChild(tailSpan);
+      }
+    }
+
+    function clearPartialTranscript() {
+      const el = $("partialTranscriptText");
+      if (el) el.textContent = "";
+    }
+
+    const SESSION_STATE_CAPTIONS = {
+      idle: "",
+      listening: "Listening…",
+      thinking: "Thinking…",
+      speaking: "Speaking",
+      interrupted: "Interrupted",
+    };
+
+    function applySessionState(state, reason) {
+      const caption = SESSION_STATE_CAPTIONS[state] !== undefined ? SESSION_STATE_CAPTIONS[state] : state;
+      const captionEl = document.getElementById("vcStateCaption");
+      if (captionEl) captionEl.textContent = caption;
+      // Drive avatar state so the voice-mode orb matches the server-side
+      // state machine even before the polling cycle catches up.
+      const stateEl = document.getElementById("avatarStateText");
+      if (stateEl) stateEl.textContent = state;
+    }
+
+    function showAssistantActivity(activityType, summary, progress) {
+      const strip = document.getElementById("vcActivityStrip");
+      if (!strip || !summary) return;
+      const icon = {
+        tool_call: "🔧",
+        reading_files: "📄",
+        searching: "🔍",
+        thinking: "💭",
+      }[activityType] || "•";
+      const line = document.createElement("div");
+      line.textContent = `${icon} ${summary}`;
+      line.style.cssText = "padding: 2px 0; opacity: 0; transition: opacity 200ms ease;";
+      strip.appendChild(line);
+      // Fade in, auto-fade after 3.5s
+      requestAnimationFrame(() => { line.style.opacity = "1"; });
+      setTimeout(() => {
+        line.style.opacity = "0";
+        setTimeout(() => { if (line.parentNode) line.parentNode.removeChild(line); }, 300);
+      }, 3500);
+      // Cap total rendered lines to keep the strip tight.
+      while (strip.childNodes.length > 4) {
+        strip.removeChild(strip.firstChild);
+      }
+    }
+
+    let turnRejectedToastTimer = null;
+    function showTurnRejectedToast(reason) {
+      const toast = document.getElementById("vcToast");
+      if (!toast) return;
+      const friendly = reason === "turn already active"
+        ? "Still processing your last message — one moment…"
+        : `Turn rejected: ${reason}`;
+      toast.textContent = friendly;
+      toast.style.opacity = "1";
+      if (turnRejectedToastTimer) clearTimeout(turnRejectedToastTimer);
+      turnRejectedToastTimer = setTimeout(() => {
+        toast.style.opacity = "0";
+        turnRejectedToastTimer = null;
+      }, 3500);
+    }
+
+    function handleTurnInterrupted(partialText, resumable, duringState) {
+      // Brief visual flash on the caption, then fall back to session state.
+      const captionEl = document.getElementById("vcStateCaption");
+      if (captionEl) {
+        const label = resumable ? "Interrupted (resumable)" : "Interrupted";
+        captionEl.textContent = label;
+        captionEl.style.color = "rgba(255, 180, 160, 0.9)";
+        setTimeout(() => { captionEl.style.color = ""; }, 1800);
+      }
+      // Surface the captured partial in the assistant panel with an
+      // "(interrupted)" marker so the user sees what they interrupted.
+      if (partialText) {
+        replaceAssistantText(`${partialText}  …(interrupted)`);
+      }
+    }
+
+    function setMockTurnPending(value) {
+      mockTurnPending = value;
+      mockTurnBtn.disabled = !socket || socket.readyState !== WebSocket.OPEN || value;
+      mockTurnBtn.textContent = value ? "Mock Turn..." : "Mock Turn";
+    }
+
+    function setTranscribePending(value) {
+      transcribePending = value;
+      transcribeBtn.disabled = !socket || socket.readyState !== WebSocket.OPEN || value;
+      transcribeBtn.textContent = value ? "Transcribing..." : "Transcribe Recent Audio";
+      submitSpeechBtn.disabled = !socket || socket.readyState !== WebSocket.OPEN || value || mockTurnPending;
+    }
+
+    function encodePcmFrame(samples) {
+      const payload = new ArrayBuffer(1 + samples.length * 2);
+      const view = new DataView(payload);
+      view.setUint8(0, PCM_KIND);
+      for (let i = 0; i < samples.length; i += 1) {
+        view.setInt16(1 + i * 2, samples[i], true);
+      }
+      return payload;
+    }
+
+    function floatToInt16(floatArray) {
+      const pcm = new Int16Array(floatArray.length);
+      for (let i = 0; i < floatArray.length; i += 1) {
+        const sample = Math.max(-1, Math.min(1, floatArray[i]));
+        pcm[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+      }
+      return pcm;
+    }
+
+    function downsample(input, inputRate, targetRate) {
+      if (inputRate === targetRate) {
+        return input;
+      }
+
+      const ratio = inputRate / targetRate;
+      const length = Math.round(input.length / ratio);
+      const output = new Float32Array(length);
+      let offsetResult = 0;
+      let offsetBuffer = 0;
+
+      while (offsetResult < output.length) {
+        const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
+        let accum = 0;
+        let count = 0;
+        for (let i = offsetBuffer; i < nextOffsetBuffer && i < input.length; i += 1) {
+          accum += input[i];
+          count += 1;
+        }
+        output[offsetResult] = count > 0 ? accum / count : 0;
+        offsetResult += 1;
+        offsetBuffer = nextOffsetBuffer;
+      }
+
+      return output;
+    }
+
+    async function ensurePlaybackContext() {
+      if (!playbackContext) {
+        playbackContext = new AudioContext();
+        playbackAnalyser = playbackContext.createAnalyser();
+        playbackAnalyser.fftSize = 256;
+        playbackAnalyser.smoothingTimeConstant = 0.72;
+        playbackAnalyserData = new Uint8Array(playbackAnalyser.fftSize);
+        playbackAnalyser.connect(playbackContext.destination);
+        startAvatarAnimationLoop();
+      }
+      if (playbackContext.state === "suspended") {
+        await playbackContext.resume();
+      }
+    }
+
+    async function schedulePlayback(int16Payload) {
+      await ensurePlaybackContext();
+
+      const float32 = new Float32Array(int16Payload.length);
+      for (let i = 0; i < int16Payload.length; i += 1) {
+        float32[i] = int16Payload[i] / 32768;
+      }
+
+      const buffer = playbackContext.createBuffer(1, float32.length, currentPlaybackSampleRate || TARGET_SAMPLE_RATE);
+      buffer.copyToChannel(float32, 0);
+
+      const source = playbackContext.createBufferSource();
+      const voiceProfile = getVoiceProfile();
+      source.buffer = buffer;
+      source.playbackRate.value = voiceProfile.playbackRate;
+      source.detune.value = voiceProfile.detune;
+      source.connect(playbackAnalyser);
+      activePlaybackSources.add(source);
+
+      const now = playbackContext.currentTime;
+      // Schedule with minimal gap — too much gap causes audible buzzing
+      nextPlaybackAt = Math.max(nextPlaybackAt, now + 0.005);
+      source.start(nextPlaybackAt);
+      setPlaybackState("playing");
+
+      const duration = buffer.duration / source.playbackRate.value;
+      nextPlaybackAt += duration;
+
+      source.onended = () => {
+        activePlaybackSources.delete(source);
+        if (playbackContext.currentTime >= nextPlaybackAt - 0.01) {
+          setPlaybackState("idle");
+        }
+      };
+    }
+
+    function clearPlaybackQueue() {
+      nextPlaybackAt = playbackContext ? playbackContext.currentTime : 0;
+      for (const source of activePlaybackSources) {
+        try {
+          source.onended = null;
+          source.stop();
+        } catch {}
+      }
+      activePlaybackSources.clear();
+      setPlaybackState("idle");
+      setAvatarMeter(0);
+    }
+
+    function clearEndpointTimer() {
+      if (endpointTimerId != null) {
+        clearTimeout(endpointTimerId);
+        endpointTimerId = null;
+      }
+      setEndpointState("idle");
+    }
+
+    function requestBargeInClear(reason) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      if (clearPending || bargeInPending) {
+        return;
+      }
+      if (!playbackActive && !backendTurnActive) {
+        return;
+      }
+      bargeInPending = true;
+      clearPlaybackQueue();
+      clearRequestedAt = performance.now();
+      setClearPending(true);
+      sendJson({ type: "clear_playback" });
+      log(`barge-in clear requested (${reason})`);
+    }
+
+    function scheduleEndpointTimer() {
+      clearEndpointTimer();
+      setEndpointState("pending");
+      sendJson({ type: "endpoint_candidate", silence_ms: ENDPOINT_SILENCE_MS });
+      endpointTimerId = setTimeout(() => {
+        endpointTimerId = null;
+        const now = performance.now();
+        const speechDurationMs = speechStartedAt > 0 ? now - speechStartedAt : 0;
+        const averageSpeechRms = speechRmsSamples > 0 ? speechRmsTotal / speechRmsSamples : 0;
+        const strongEnough = averageSpeechRms >= MIN_AVG_RMS_FOR_SUBMIT || speechPeakRms >= MIN_PEAK_RMS_FOR_SUBMIT;
+        if (speechDurationMs < MIN_SPEECH_MS_FOR_SUBMIT || !strongEnough) {
+          setEndpointState("idle");
+          weakSpeechSkipCount += 1;
+          setWeakSpeechSkipCount(weakSpeechSkipCount);
+          log(
+            `auto-submit skipped for weak speech (duration=${Math.round(speechDurationMs)} ms avg_rms=${averageSpeechRms.toFixed(4)} peak_rms=${speechPeakRms.toFixed(4)})`
+          );
+          speechStartedAt = 0;
+          speechRmsTotal = 0;
+          speechRmsSamples = 0;
+          speechPeakRms = 0;
+          return;
+        }
+        setEndpointState("ready");
+        log(`endpoint ready after ${ENDPOINT_SILENCE_MS} ms silence`);
+        requestRecentSpeechSubmit("auto");
+        speechStartedAt = 0;
+        speechRmsTotal = 0;
+        speechRmsSamples = 0;
+        speechPeakRms = 0;
+      }, ENDPOINT_SILENCE_MS);
+    }
+
+    function requestRecentSpeechSubmit(mode) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      if (!micActive || transcribePending || mockTurnPending) {
+        return;
+      }
+      if (backendTurnActive) {
+        if (mode === "auto") {
+          log("auto-submit skipped while backend turn is active");
+        }
+        return;
+      }
+      if (playbackActive) {
+        if (mode === "auto") {
+          log("auto-submit skipped while assistant playback is active");
+        }
+        return;
+      }
+      const now = performance.now();
+      if (now < playbackCooldownUntil) {
+        if (mode === "auto") {
+          log(`auto-submit skipped during post-playback cooldown (${Math.round(playbackCooldownUntil - now)} ms remaining)`);
+        }
+        return;
+      }
+      if (mode === "auto") {
+        if (now - lastAutoSubmitAt < AUTO_SUBMIT_COOLDOWN_MS) {
+          log(`auto-submit skipped during cooldown (${Math.round(now - lastAutoSubmitAt)} ms)`);
+          return;
+        }
+        lastAutoSubmitAt = now;
+        speechSubmitCount += 1;
+        setSpeechSubmitCount(speechSubmitCount);
+      }
+      setTranscriptText("");
+      setTranscribePending(true);
+      setEndpointState("submitting");
+      sendJson({ type: "transcribe_recent_audio", submit_turn: true });
+      log(mode === "auto" ? "auto-submit recent speech requested" : "submit recent speech requested");
+    }
+
+    function sendJson(message) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      socket.send(JSON.stringify(message));
+    }
+
+    async function startMic() {
+      if (micActive) {
+        stopMic();
+        return;
+      }
+
+      try {
+        captureStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+      } catch (error) {
+        setMicState("stopped");
+        setMicPermissionError("Microphone access denied. Click the lock icon in the address bar to allow microphone access.");
+        log(`microphone start failed: ${error instanceof Error ? error.message : String(error)}`);
+        return;
+      }
+      setMicPermissionError("");
+
+      micContext = new AudioContext();
+      sourceNode = micContext.createMediaStreamSource(captureStream);
+      processorNode = micContext.createScriptProcessor(2048, 1, 1);
+
+      let pending = new Int16Array(0);
+
+      processorNode.onaudioprocess = (event) => {
+        const input = event.inputBuffer.getChannelData(0);
+        let rms = 0;
+        for (let i = 0; i < input.length; i += 1) {
+          rms += input[i] * input[i];
+        }
+        rms = Math.sqrt(rms / input.length);
+        setVadRms(rms);
+        const activeStartRms = playbackActive ? getPlaybackStartRms() : VAD_START_RMS;
+        const activeStartFrames = playbackActive ? getPlaybackStartFrames() : VAD_START_FRAMES;
+        if (vadSpeech) {
+          if (rms > VAD_STOP_RMS) {
+            silenceCandidateFrames = 0;
+          } else {
+            silenceCandidateFrames += 1;
+          }
+          if (silenceCandidateFrames >= VAD_STOP_FRAMES) {
+            vadSpeech = false;
+            silenceCandidateFrames = 0;
+            speechCandidateFrames = 0;
+            const state = "silence";
+            setVadState(state);
+            scheduleEndpointTimer();
+            sendJson({ type: "vad_state", state, rms: Number(rms.toFixed(4)) });
+            log(`vad ${state} rms=${rms.toFixed(4)}`);
+          }
+        } else {
+          if (rms > activeStartRms) {
+            speechCandidateFrames += 1;
+          } else {
+            speechCandidateFrames = 0;
+          }
+          if (speechCandidateFrames >= activeStartFrames) {
+            vadSpeech = true;
+            speechCandidateFrames = 0;
+            silenceCandidateFrames = 0;
+            speechStartedAt = performance.now();
+            speechRmsTotal = 0;
+            speechRmsSamples = 0;
+            speechPeakRms = rms;
+            clearEndpointTimer();
+            const state = "speech";
+            setVadState(state);
+            sendJson({ type: "vad_state", state, rms: Number(rms.toFixed(4)) });
+            log(`vad ${state} rms=${rms.toFixed(4)}`);
+            requestBargeInClear("speech_detected");
+          }
+        }
+        if (vadSpeech) {
+          speechRmsTotal += rms;
+          speechRmsSamples += 1;
+          speechPeakRms = Math.max(speechPeakRms, rms);
+        }
+
+        const downsampled = downsample(input, micContext.sampleRate, TARGET_SAMPLE_RATE);
+        const pcm = floatToInt16(downsampled);
+        const merged = new Int16Array(pending.length + pcm.length);
+        merged.set(pending);
+        merged.set(pcm, pending.length);
+
+        let offset = 0;
+        while (merged.length - offset >= FRAMES_PER_PACKET) {
+          const packet = merged.slice(offset, offset + FRAMES_PER_PACKET);
+          socket.send(encodePcmFrame(packet));
+          framesSent += 1;
+          updateText("framesSent", framesSent);
+          offset += FRAMES_PER_PACKET;
+        }
+
+        pending = merged.slice(offset);
+      };
+
+      sourceNode.connect(processorNode);
+      processorNode.connect(micContext.destination);
+      micActive = true;
+      bargeInPending = false;
+      setMicState("running");
+      setVadState("silence");
+      setEndpointState("idle");
+      setVadRms(0);
+      updateAvatarState();
+      updateText("sampleRate", TARGET_SAMPLE_RATE);
+      sendJson({ type: "mic_stream_started", sample_rate: TARGET_SAMPLE_RATE });
+      log("microphone capture started");
+    }
+
+    function stopMic() {
+      if (!micActive) {
+        return;
+      }
+
+      processorNode?.disconnect();
+      sourceNode?.disconnect();
+      captureStream?.getTracks().forEach((track) => track.stop());
+      micContext?.close();
+      micContext = null;
+      captureStream = null;
+      sourceNode = null;
+      processorNode = null;
+      micActive = false;
+      vadSpeech = false;
+      speechCandidateFrames = 0;
+      silenceCandidateFrames = 0;
+      speechStartedAt = 0;
+      speechRmsTotal = 0;
+      speechRmsSamples = 0;
+      speechPeakRms = 0;
+      bargeInPending = false;
+      clearEndpointTimer();
+      setMicState("stopped");
+      setVadState("silence");
+      setEndpointState("idle");
+      setVadRms(0);
+      updateAvatarState();
+      sendJson({ type: "mic_stream_stopped" });
+      log("microphone capture stopped");
+    }
+
+    function connect() {
+      const host = window.location.hostname || "127.0.0.1";
+      const port = window.location.port || "8765";
+      const wsScheme = window.location.protocol === "https:" ? "wss" : "ws";
+      socket = new WebSocket(`${wsScheme}://${host}:${port}/ws`);
+      socket.binaryType = "arraybuffer";
+
+      socket.onopen = () => {
+        setSocketState("connected");
+        _reconnectAttempts = 0;
+        _userDisconnected = false;
+        setFirstAudioMs(null);
+        setClearAckMs(null);
+        setClearPending(false);
+        setEndpointState("idle");
+        backendTurnActive = false;
+        playbackCooldownUntil = 0;
+        updateAvatarState();
+        sendJson({
+          type: "session_init",
+          client_name: "qantara-browser",
+          client_session_id: clientSessionId,
+          protocol_version: 1,
+          sample_rate: TARGET_SAMPLE_RATE,
+          voice_id: ttsVoiceId,
+          speech_rate: getSpeechSpeed(),
+        });
+        log("socket connected");
+      };
+
+      socket.onclose = (event) => {
+        stopMic();
+        clearPlaybackQueue();
+        setSocketState("disconnected");
+        setPlaybackState("idle");
+        setMockTurnPending(false);
+        setTranscribePending(false);
+        setClearPending(false);
+        bargeInPending = false;
+        backendTurnActive = false;
+        playbackCooldownUntil = 0;
+        clearEndpointTimer();
+        setAvatarMeter(0);
+        updateAvatarState();
+        log(
+          `socket disconnected code=${event.code} clean=${event.wasClean}${event.reason ? ` reason=${event.reason}` : ""}`
+        );
+        // Auto-reconnect with exponential backoff (unless user disconnected)
+        if (event.code !== 1000 && !_userDisconnected) {
+          var delay = Math.min(30000, 1000 * Math.pow(2, _reconnectAttempts));
+          _reconnectAttempts++;
+          log(`auto-reconnect in ${delay}ms (attempt ${_reconnectAttempts})`);
+          setTimeout(function () {
+            if (!socket || socket.readyState === WebSocket.CLOSED) {
+              log("auto-reconnecting...");
+              connectBtn.click();
+            }
+          }, delay);
+        }
+      };
+
+      socket.onerror = (event) => {
+        const details = event?.message || event?.type || "unknown";
+        log(`socket error (${details})`);
+      };
+
+      socket.onmessage = async (event) => {
+        if (typeof event.data === "string") {
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload.type === "assistant_text_delta") {
+              appendAssistantDelta(payload.text);
+              log(`assistant delta: ${payload.text}`);
+            } else if (payload.type === "assistant_text_final") {
+              replaceAssistantText(payload.text);
+              setMockTurnPending(false);
+              log(`assistant final: ${payload.text}`);
+            } else if (payload.type === "partial_transcript_ready") {
+              setPartialTranscriptText(payload.text || "", payload.stable_prefix_chars || 0);
+              log(`partial transcript (+${(payload.ms_since_speech_start || 0).toFixed(0)}ms): ${payload.text || ""}`);
+            } else if (payload.type === "session_state_changed") {
+              applySessionState(payload.current_state, payload.reason);
+              log(`session state: ${payload.previous_state} → ${payload.current_state}${payload.reason ? ` (${payload.reason})` : ""}`);
+            } else if (payload.type === "assistant_activity") {
+              showAssistantActivity(payload.activity_type, payload.summary, payload.progress);
+              log(`activity: ${payload.activity_type} — ${payload.summary}`);
+            } else if (payload.type === "turn_interrupted") {
+              handleTurnInterrupted(payload.partial_text || "", payload.resumable, payload.interrupted_during_state);
+              log(`turn interrupted (during ${payload.interrupted_during_state}, resumable=${payload.resumable}): ${payload.partial_text || ""}`);
+            } else if (payload.type === "transcript_result") {
+              setTranscriptText(payload.text || "");
+              clearPartialTranscript();
+              setTranscribePending(false);
+              if (micActive) {
+                setEndpointState("idle");
+              }
+              var langTag = payload.language ? ` [${String(payload.language).toUpperCase()}]` : "";
+              log(`transcript (${payload.engine})${langTag}: ${payload.text || "<empty>"}`);
+            } else if (payload.type === "tts_status") {
+              const voiceText = payload.voice_id ? `${payload.engine}:${payload.voice_id}` : payload.engine;
+              const statusText = payload.reason ? `${voiceText} (${payload.reason})` : voiceText;
+              setTtsState(statusText);
+              if (payload.sample_rate) {
+                currentPlaybackSampleRate = payload.sample_rate;
+                updateText("sampleRate", currentPlaybackSampleRate);
+              }
+              log(`tts status: ${statusText}`);
+            } else if (payload.type === "session_ready") {
+              if (payload.adapter_kind) {
+                const adapterText = payload.adapter_detail
+                  ? `${payload.adapter_kind} (${payload.adapter_health}: ${payload.adapter_detail})`
+                  : `${payload.adapter_kind} (${payload.adapter_health})`;
+                setAdapterState(adapterText);
+              }
+              if (payload.sample_rate) {
+                currentPlaybackSampleRate = payload.sample_rate;
+                updateText("sampleRate", currentPlaybackSampleRate);
+              }
+              if (Number.isFinite(Number(payload.speech_rate))) {
+                speechSpeed = Number(payload.speech_rate);
+                localStorage.setItem("qantara_speech_speed", String(speechSpeed));
+                if (speechSpeedInput) {
+                  speechSpeedInput.value = speechSpeed.toFixed(2);
+                }
+                if (speechSpeedValue) {
+                  speechSpeedValue.textContent = `${speechSpeed.toFixed(2)}x`;
+                }
+              }
+              syncTtsVoiceOptions(payload.available_voices, payload.voice_id || ttsVoiceId);
+              if (payload.voice_id) {
+                log(`tts voice ready: ${payload.voice_id}${payload.fallback_reason ? ` (${payload.fallback_reason})` : ""}`);
+              }
+              if (Array.isArray(payload.allowed_transforms)) {
+                setExpressivenessVisible(payload.allowed_transforms.indexOf("expressiveness") >= 0);
+              }
+              if (payload.client_session_id) {
+                log(`client session: ${payload.client_session_id}`);
+              }
+              log(`control ${event.data}`);
+            } else if (payload.type === "session_updated") {
+              if (payload.sample_rate) {
+                currentPlaybackSampleRate = payload.sample_rate;
+                updateText("sampleRate", currentPlaybackSampleRate);
+              }
+              if (Number.isFinite(Number(payload.speech_rate))) {
+                speechSpeed = Number(payload.speech_rate);
+                localStorage.setItem("qantara_speech_speed", String(speechSpeed));
+                if (speechSpeedInput) {
+                  speechSpeedInput.value = speechSpeed.toFixed(2);
+                }
+                if (speechSpeedValue) {
+                  speechSpeedValue.textContent = `${speechSpeed.toFixed(2)}x`;
+                }
+              }
+              syncTtsVoiceOptions(payload.available_voices, payload.voice_id || ttsVoiceId);
+              if (payload.voice_id) {
+                log(`tts voice updated: ${payload.voice_id}${payload.fallback_reason ? ` (${payload.fallback_reason})` : ""}`);
+              }
+              if (Array.isArray(payload.allowed_transforms)) {
+                setExpressivenessVisible(payload.allowed_transforms.indexOf("expressiveness") >= 0);
+              }
+              log(`control ${event.data}`);
+            } else if (payload.type === "adapter_status") {
+              if (payload.adapter_kind) {
+                const adapterText = payload.adapter_detail
+                  ? `${payload.adapter_kind} (${payload.adapter_health}: ${payload.adapter_detail})`
+                  : `${payload.adapter_kind} (${payload.adapter_health})`;
+                setAdapterState(adapterText);
+              }
+              log(`control ${event.data}`);
+            } else if (payload.type === "turn_state") {
+              backendTurnActive = payload.state === "active";
+              if (!backendTurnActive && !playbackActive) {
+                playbackCooldownUntil = performance.now() + getPostPlaybackCooldownMs();
+              }
+              updateAvatarState();
+              log(`turn state: ${payload.state}${payload.reason ? ` (${payload.reason})` : ""}`);
+            } else if (payload.type === "playback_metrics") {
+              setFirstAudioMs(payload.tts_to_first_audio_ms);
+              log(
+                `playback metrics: engine=${payload.engine} tts_to_first_audio_ms=${payload.tts_to_first_audio_ms ?? "-"} synthesis_ms=${payload.synthesis_ms ?? "-"}`
+              );
+            } else if (payload.type === "playback_cleared") {
+              const clearAckMs = clearRequestedAt == null ? null : Math.round(performance.now() - clearRequestedAt);
+              setClearAckMs(clearAckMs);
+              bargeInPending = false;
+              log(`playback cleared ack${clearAckMs == null ? "" : ` ${clearAckMs} ms`}`);
+            } else if (payload.type === "playback_stopped") {
+              const clearStopMs = clearRequestedAt == null ? null : Math.round(performance.now() - clearRequestedAt);
+              if (clearStopMs != null) {
+                setClearAckMs(clearStopMs);
+              }
+              clearRequestedAt = null;
+              setClearPending(false);
+              bargeInPending = false;
+              playbackCooldownUntil = performance.now() + getPostPlaybackCooldownMs();
+              setAvatarMeter(0);
+              updateAvatarState();
+              log(`playback stopped (${payload.reason})${clearStopMs == null ? "" : ` ${clearStopMs} ms`}`);
+            } else if (payload.type === "cancel_status") {
+              bargeInPending = false;
+              log(`cancel status: ${JSON.stringify(payload.result)}`);
+            } else if (payload.type === "turn_rejected") {
+              log(`turn rejected: ${payload.reason}`);
+              setMockTurnPending(false);
+              showTurnRejectedToast(payload.reason || "turn rejected");
+            } else if (payload.type === "turn_failed") {
+              const kind = payload.failure_kind ? `${payload.failure_kind}` : "error";
+              const retryHint = payload.retriable ? " (retriable)" : "";
+              log(`turn failed [${kind}${retryHint}]: ${payload.message}`);
+              setMockTurnPending(false);
+            } else {
+              log(`control ${event.data}`);
+            }
+          } catch {
+            log(`control ${event.data}`);
+          }
+          return;
+        }
+
+        const data = new Uint8Array(event.data);
+        if (data[0] === JSON_KIND) {
+          const text = new TextDecoder().decode(data);
+          log(`control ${text}`);
+          return;
+        }
+
+        if (data[0] !== PCM_KIND) {
+          log(`ignored binary message kind=${data[0]}`);
+          return;
+        }
+
+        framesReceived += 1;
+        updateText("framesReceived", framesReceived);
+        const view = new DataView(data.buffer, data.byteOffset + 1, data.byteLength - 1);
+        const samples = new Int16Array((data.byteLength - 1) / 2);
+        for (let i = 0; i < samples.length; i += 1) {
+          samples[i] = view.getInt16(i * 2, true);
+        }
+        await schedulePlayback(samples);
+      };
+    }
+
+    function disconnect() {
+      _userDisconnected = true;
+      stopMic();
+      socket?.close();
+    }
+
+    connectBtn.addEventListener("click", async () => {
+      await ensurePlaybackContext();
+      if (!window.isSecureContext && window.location.hostname !== "127.0.0.1" && window.location.hostname !== "localhost") {
+        log("warning: microphone access will likely fail on insecure non-localhost origins; use HTTPS for LAN mic access");
+      }
+      connect();
+    });
+
+    disconnectBtn.addEventListener("click", () => disconnect());
+    micBtn.addEventListener("click", async () => {
+      await startMic();
+    });
+    toneBtn.addEventListener("click", () => sendJson({ type: "request_tone" }));
+    mockTurnBtn.addEventListener("click", () => {
+      if (mockTurnPending) return;
+      replaceAssistantText("");
+      setMockTurnPending(true);
+      sendJson({ type: "submit_mock_turn", text: $("mockInput").value });
+    });
+    transcribeBtn.addEventListener("click", () => {
+      if (transcribePending) return;
+      setTranscriptText("");
+      setTranscribePending(true);
+      sendJson({ type: "transcribe_recent_audio" });
+    });
+    submitSpeechBtn.addEventListener("click", () => {
+      requestRecentSpeechSubmit("manual");
+    });
+    clearBtn.addEventListener("click", () => {
+      if (clearPending) return;
+      clearPlaybackQueue();
+      clearRequestedAt = performance.now();
+      setClearPending(true);
+      sendJson({ type: "clear_playback" });
+      log("playback clear requested");
+    });
+    audioModeSelect?.addEventListener("change", () => {
+      audioMode = audioModeSelect.value;
+      localStorage.setItem("qantara_audio_mode", audioMode);
+      log(`audio mode set to ${audioMode}`);
+    });
+
+    ttsVoiceSelect?.addEventListener("change", () => {
+      ttsVoiceId = ttsVoiceSelect.value;
+      localStorage.setItem("qantara_tts_voice", ttsVoiceId);
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        sendJson({ type: "session_update", voice_id: ttsVoiceId, speech_rate: getSpeechSpeed(), protocol_version: 1 });
+      }
+      log(`tts voice set to ${ttsVoiceId}`);
+    });
+
+    avatarPresetSelect?.addEventListener("change", () => {
+      avatarPreset = avatarPresetSelect.value;
+      localStorage.setItem("qantara_avatar_preset", avatarPreset);
+      applyAvatarPreset();
+      log(`avatar preset set to ${avatarPreset}`);
+    });
+
+    voicePresetSelect?.addEventListener("change", () => {
+      voicePreset = voicePresetSelect.value;
+      localStorage.setItem("qantara_voice_preset", voicePreset);
+      log(`playback style set to ${voicePreset}`);
+    });
+
+    speechSpeedInput?.addEventListener("input", () => {
+      speechSpeed = Number(speechSpeedInput.value);
+      localStorage.setItem("qantara_speech_speed", String(speechSpeed));
+      if (speechSpeedValue) {
+        speechSpeedValue.textContent = `${speechSpeed.toFixed(2)}x`;
+      }
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        sendJson({ type: "session_update", voice_id: ttsVoiceId, speech_rate: getSpeechSpeed(), protocol_version: 1 });
+      }
+      log(`speech speed set to ${speechSpeed.toFixed(2)}x`);
+    });
+
+    const expressivenessInput = document.getElementById("expressiveness");
+    const expressivenessValue = document.getElementById("expressivenessValue");
+    const expressivenessCard = document.getElementById("expressivenessCard");
+
+    function setExpressivenessVisible(allowed) {
+      if (!expressivenessCard) return;
+      expressivenessCard.style.display = allowed ? "" : "none";
+    }
+
+    expressivenessInput?.addEventListener("input", () => {
+      const raw = Number(expressivenessInput.value);
+      const unit = Math.max(0, Math.min(1, raw / 100));
+      if (expressivenessValue) {
+        expressivenessValue.textContent = unit.toFixed(2);
+      }
+      localStorage.setItem("qantara_expressiveness", String(unit));
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        sendJson({
+          type: "session_update",
+          voice_id: ttsVoiceId,
+          speech_rate: getSpeechSpeed(),
+          expressiveness: unit,
+          protocol_version: 1,
+        });
+      }
+    });
+
+    updateAvatarState();
+    loadAvatarPresets();
+  </script>
+  <script>
+  (function() {
+    // --- Vanilla JS Avatar Animation (zero dependencies) ---
+    var mouthEl = document.getElementById("av-mouth");
+    var eyeL = document.getElementById("av-eye-l");
+    var eyeR = document.getElementById("av-eye-r");
+    var svgEl = document.getElementById("avatarSvg");
+    if (!mouthEl) return;
+
+    // --- Mouth: lerp between closed and open quadratic bezier ---
+    // Closed: M80 138 Q100 142 120 138
+    // Open:   M80 134 Q100 162 120 134
+    // Only the Y values change: start_y, control_y, end_y
+    var MOUTH_CLOSED_Y = { sy: 138, cy: 142, ey: 138 };
+    var MOUTH_OPEN_Y   = { sy: 134, cy: 162, ey: 134 };
+
+    function setMouthProgress(t) {
+      t = Math.max(0, Math.min(1, t));
+      var sy = MOUTH_CLOSED_Y.sy + (MOUTH_OPEN_Y.sy - MOUTH_CLOSED_Y.sy) * t;
+      var cy = MOUTH_CLOSED_Y.cy + (MOUTH_OPEN_Y.cy - MOUTH_CLOSED_Y.cy) * t;
+      var ey = MOUTH_CLOSED_Y.ey + (MOUTH_OPEN_Y.ey - MOUTH_CLOSED_Y.ey) * t;
+      mouthEl.setAttribute("d", "M80 " + sy.toFixed(1) + " Q100 " + cy.toFixed(1) + " 120 " + ey.toFixed(1));
+    }
+
+    // Expose for the existing amplitude animation loop
+    window._gsapMouthTween = { progress: setMouthProgress };
+
+    // --- Eye Blink ---
+    var EYE_RY_NORMAL = 8;
+    var blinkPhase = -1; // -1 = not blinking
+    var blinkStart = 0;
+    var BLINK_DURATION = 150; // ms total (close + open)
+
+    function scheduleBlink() {
+      var delay = 2500 + Math.random() * 4000;
+      setTimeout(function() {
+        blinkPhase = 0;
+        blinkStart = performance.now();
+        // Occasional double blink
+        if (Math.random() < 0.2) {
+          setTimeout(function() {
+            blinkPhase = 0;
+            blinkStart = performance.now();
+          }, 250);
+        }
+        scheduleBlink();
+      }, delay);
+    }
+    scheduleBlink();
+
+    // --- Breathing ---
+    var breathStart = performance.now();
+    var BREATH_DURATION = 5000; // ms per cycle
+    var BREATH_AMOUNT = 3; // px
+
+    // --- Animation loop for blink + breathing ---
+    function animateFace() {
+      requestAnimationFrame(animateFace);
+      var now = performance.now();
+
+      // Blink
+      if (blinkPhase >= 0) {
+        var elapsed = now - blinkStart;
+        var half = BLINK_DURATION / 2;
+        var ry;
+        if (elapsed < half) {
+          // Closing
+          ry = EYE_RY_NORMAL * (1 - elapsed / half);
+        } else if (elapsed < BLINK_DURATION) {
+          // Opening
+          ry = EYE_RY_NORMAL * ((elapsed - half) / half);
+        } else {
+          ry = EYE_RY_NORMAL;
+          blinkPhase = -1;
+        }
+        ry = Math.max(0.5, ry);
+        if (eyeL) eyeL.setAttribute("ry", ry.toFixed(1));
+        if (eyeR) eyeR.setAttribute("ry", ry.toFixed(1));
+      }
+
+      // Breathing
+      if (svgEl) {
+        var breathT = ((now - breathStart) % BREATH_DURATION) / BREATH_DURATION;
+        var breathY = Math.sin(breathT * Math.PI * 2) * BREATH_AMOUNT;
+        svgEl.style.transform = "translateY(" + breathY.toFixed(1) + "px)";
+      }
+    }
+    requestAnimationFrame(animateFace);
+  })();
+  </script>
+  <script>
+  // ===== VOICE MODE CONTROLLER =====
+  (function () {
+    var voiceMode = document.getElementById("voiceMode");
+    var vcAvatarWrap = document.getElementById("vcAvatarWrap");
+    var vcCaptions = document.getElementById("vcCaptions");
+    var vcStatusDot = document.getElementById("vcStatusDot");
+    var vcStatusText = document.getElementById("vcStatusText");
+    var vcHealth = document.getElementById("vcHealth");
+    var vcHealthDot = document.getElementById("vcHealthDot");
+    var vcHealthText = document.getElementById("vcHealthText");
+    var vcMic = document.getElementById("vcMic");
+    var vcMouth = document.getElementById("vc-mouth");
+    var vcEyeL = document.getElementById("vc-eye-l");
+    var vcEyeR = document.getElementById("vc-eye-r");
+
+    // Voice avatar mouth animation (same bezier lerp as debug avatar)
+    var VC_MOUTH_CLOSED_Y = { sy: 138, cy: 142, ey: 138 };
+    var VC_MOUTH_OPEN_Y   = { sy: 134, cy: 162, ey: 134 };
+    function vcSetMouth(t) {
+      t = Math.max(0, Math.min(1, t));
+      var sy = VC_MOUTH_CLOSED_Y.sy + (VC_MOUTH_OPEN_Y.sy - VC_MOUTH_CLOSED_Y.sy) * t;
+      var cy = VC_MOUTH_CLOSED_Y.cy + (VC_MOUTH_OPEN_Y.cy - VC_MOUTH_CLOSED_Y.cy) * t;
+      var ey = VC_MOUTH_CLOSED_Y.ey + (VC_MOUTH_OPEN_Y.ey - VC_MOUTH_CLOSED_Y.ey) * t;
+      if (vcMouth) vcMouth.setAttribute("d", "M80 " + sy.toFixed(1) + " Q100 " + cy.toFixed(1) + " 120 " + ey.toFixed(1));
+    }
+
+    // Voice avatar blink
+    var vcBlinkPhase = -1, vcBlinkStart = 0;
+    function vcScheduleBlink() {
+      setTimeout(function () {
+        vcBlinkPhase = 0; vcBlinkStart = performance.now();
+        if (Math.random() < 0.2) setTimeout(function () { vcBlinkPhase = 0; vcBlinkStart = performance.now(); }, 250);
+        vcScheduleBlink();
+      }, 2500 + Math.random() * 4000);
+    }
+    vcScheduleBlink();
+
+    // Voice avatar breathing + blink loop
+    var vcBreathStart = performance.now();
+    function vcAnimateAvatar() {
+      requestAnimationFrame(vcAnimateAvatar);
+      var now = performance.now();
+      // Blink
+      if (vcBlinkPhase >= 0) {
+        var elapsed = now - vcBlinkStart;
+        var ry = elapsed < 75 ? 8 * (1 - elapsed / 75) : elapsed < 150 ? 8 * ((elapsed - 75) / 75) : 8;
+        ry = Math.max(0.5, ry);
+        if (vcEyeL) vcEyeL.setAttribute("ry", ry.toFixed(1));
+        if (vcEyeR) vcEyeR.setAttribute("ry", ry.toFixed(1));
+        if (elapsed >= 150) vcBlinkPhase = -1;
+      }
+      // Breathing
+      var svgEl = document.getElementById("vcAvatarSvg");
+      if (svgEl) {
+        var t = ((now - vcBreathStart) % 5000) / 5000;
+        svgEl.style.transform = "translateY(" + (Math.sin(t * Math.PI * 2) * 3).toFixed(1) + "px)";
+      }
+    }
+    requestAnimationFrame(vcAnimateAvatar);
+
+    // Show voice mode by default, auto-connect
+    var useVoiceMode = false; // Disabled — single-screen mode, no overlay
+    if (useVoiceMode) {
+      voiceMode.classList.remove("hidden");
+      document.body.classList.add("voice-active");
+      attemptConnect();
+    }
+
+    function attemptConnect() {
+      setTimeout(function () {
+        var connectBtn = document.getElementById("connectBtn");
+        if (connectBtn && !connectBtn.disabled) connectBtn.click();
+      }, 500);
+    }
+
+    // Monitor connection state — show reconnect in voice mode if disconnected
+    var vcReconnectBtn = null;
+    setInterval(function () {
+      if (voiceMode.classList.contains("hidden")) return;
+      var socketState = document.getElementById("socketState");
+      var isDisconnected = socketState && socketState.textContent === "disconnected";
+      if (isDisconnected && !vcReconnectBtn) {
+        vcReconnectBtn = document.createElement("button");
+        vcReconnectBtn.className = "vc-btn vc-mic";
+        vcReconnectBtn.style.position = "absolute";
+        vcReconnectBtn.style.bottom = "100px";
+        vcReconnectBtn.style.background = "#7c6af0";
+        vcReconnectBtn.innerHTML = '<span style="font-family:-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,Roboto,&quot;Helvetica Neue&quot;,Arial,sans-serif;font-size:0.82rem;font-weight:500">Reconnect</span>';
+        vcReconnectBtn.addEventListener("click", function () {
+          attemptConnect();
+          if (vcReconnectBtn && vcReconnectBtn.parentNode) {
+            vcReconnectBtn.parentNode.removeChild(vcReconnectBtn);
+            vcReconnectBtn = null;
+          }
+        });
+        voiceMode.appendChild(vcReconnectBtn);
+        vcStatusText.textContent = "Disconnected";
+      } else if (!isDisconnected && vcReconnectBtn) {
+        if (vcReconnectBtn.parentNode) vcReconnectBtn.parentNode.removeChild(vcReconnectBtn);
+        vcReconnectBtn = null;
+        vcStatusText.textContent = "Qantara";
+      }
+    }, 1000);
+
+    // Close voice mode -> show debug panel.
+    document.getElementById("vcClose").addEventListener("click", function () {
+      voiceMode.classList.add("hidden");
+      document.body.classList.remove("voice-active");
+    });
+
+    // End call → disconnect + go to setup
+    document.getElementById("vcEnd").addEventListener("click", function () {
+      var disconnectBtn = document.getElementById("disconnectBtn");
+      if (disconnectBtn) disconnectBtn.click();
+      window.location.href = "/setup";
+    });
+
+    // Mic toggle
+    vcMic.addEventListener("click", function () {
+      var micBtn = document.getElementById("micBtn");
+      if (micBtn) micBtn.click();
+    });
+
+    // Settings
+    document.getElementById("vcSettings").addEventListener("click", function () {
+      // Sync settings from main controls
+      syncSettingsPanel();
+      document.getElementById("settingsOverlay").classList.add("visible");
+    });
+    document.getElementById("vcSettingsClose").addEventListener("click", function () {
+      document.getElementById("settingsOverlay").classList.remove("visible");
+    });
+
+    // Debug
+    // Metrics overlay toggle
+    document.getElementById("vcMetrics").addEventListener("click", function () {
+      document.getElementById("vcMetricsOverlay").classList.add("visible");
+    });
+    document.getElementById("vcMetricsBack").addEventListener("click", function () {
+      document.getElementById("vcMetricsOverlay").classList.remove("visible");
+    });
+
+    document.getElementById("vcDebug").addEventListener("click", function () {
+      voiceMode.classList.add("hidden");
+      document.body.classList.remove("voice-active");
+    });
+
+    // Close debug overlay
+    document.getElementById("debugClose").addEventListener("click", function () {
+      document.getElementById("debugOverlay").classList.remove("visible");
+    });
+
+    // Sync settings panel with main controls
+    function syncSettingsPanel() {
+      var pairs = [
+        ["ttsVoice", "vcTtsVoice"],
+        ["avatarPreset", "vcAvatarPreset"],
+        ["voicePreset", "vcVoicePreset"],
+        ["audioMode", "vcAudioMode"],
+      ];
+      pairs.forEach(function (p) {
+        var src = document.getElementById(p[0]);
+        var dst = document.getElementById(p[1]);
+        if (src && dst) {
+          dst.innerHTML = src.innerHTML;
+          dst.value = src.value;
+          dst.onchange = function () {
+            src.value = dst.value;
+            src.dispatchEvent(new Event("change"));
+          };
+        }
+      });
+      var speedSrc = document.getElementById("speechSpeed");
+      var speedDst = document.getElementById("vcSpeechSpeed");
+      var speedVal = document.getElementById("vcSpeedValue");
+      if (speedSrc && speedDst) {
+        speedDst.value = speedSrc.value;
+        if (speedVal) speedVal.textContent = Number(speedSrc.value).toFixed(2) + "x";
+        speedDst.oninput = function () {
+          speedSrc.value = speedDst.value;
+          speedSrc.dispatchEvent(new Event("input"));
+          if (speedVal) speedVal.textContent = Number(speedDst.value).toFixed(2) + "x";
+        };
+      }
+    }
+
+    // --- Orb + captions driven by existing state ---
+    var lastAvatarState = "";
+    var captionLines = [];
+    var MAX_CAPTIONS = 4;
+
+    // Poll the avatar visual state and update orb
+    setInterval(function () {
+      if (voiceMode.classList.contains("hidden")) return;
+
+      // Read state from the existing avatar system
+      var stateEl = document.getElementById("avatarStateText");
+      var state = stateEl ? stateEl.textContent.toLowerCase() : "idle";
+
+      if (state !== lastAvatarState) {
+        lastAvatarState = state;
+        vcAvatarWrap.className = "voice-avatar-wrap " + state;
+        vcStatusDot.className = "voice-status-dot " + state;
+
+        // Mic button state
+        var micState = document.getElementById("micState");
+        var isMicOn = micState && micState.textContent === "running";
+        vcMic.className = "vc-btn vc-mic" + (isMicOn ? " active" : " muted");
+      }
+
+      // Drive mouth from amplitude meter
+      var meterFill = document.getElementById("avatarMeterFill");
+      if (meterFill && state === "speaking") {
+        var width = parseFloat(meterFill.style.width) || 0;
+        vcSetMouth(width / 100);
+      } else {
+        vcSetMouth(0);
+      }
+
+      // Old orb scale code removed — mouth animation replaces it
+    }, 50);
+
+    // Capture transcript and assistant text for captions
+    var lastTranscript = "";
+    var lastAssistant = "";
+    var currentAssistantLine = null; // Reused for in-progress updates
+    var assistantFinalized = true;   // Track whether current response is complete
+    setInterval(function () {
+      if (voiceMode.classList.contains("hidden")) return;
+
+      var transcriptEl = document.getElementById("transcriptText");
+      var assistantEl = document.getElementById("assistantText");
+
+      var t = transcriptEl ? transcriptEl.textContent : "";
+      var a = assistantEl ? assistantEl.textContent : "";
+
+      if (t && t !== lastTranscript) {
+        lastTranscript = t;
+        addCaption("You: " + t, "user");
+        // New user turn — next assistant text is a new response
+        assistantFinalized = true;
+        currentAssistantLine = null;
+      }
+      if (a && a !== lastAssistant) {
+        lastAssistant = a;
+        if (assistantFinalized) {
+          // Start a new assistant caption
+          currentAssistantLine = addCaption(a, "assistant");
+          assistantFinalized = false;
+        } else if (currentAssistantLine) {
+          // Update existing caption in-place (streaming delta)
+          currentAssistantLine.textContent = a;
+        }
+      }
+      // Detect turn completion — assistant text gets cleared
+      if (!a && lastAssistant && currentAssistantLine) {
+        assistantFinalized = true;
+        currentAssistantLine = null;
+        lastAssistant = "";
+      }
+
+      // Update rich stats with health indicators
+      var vcStatTTFT = document.getElementById("vcStatTTFT");
+      var vcStatTokS = document.getElementById("vcStatTokS");
+      var vcStatTTS = document.getElementById("vcStatTTS");
+      var vcStatTotal = document.getElementById("vcStatTotal");
+      var vcStatBackend = document.getElementById("vcStatBackend");
+
+      // First audio (TTS latency)
+      var firstAudioEl = document.getElementById("firstAudioMs");
+      if (firstAudioEl && firstAudioEl.textContent !== "-") {
+        var ttsMs = parseFloat(firstAudioEl.textContent);
+        if (!isNaN(ttsMs)) {
+          vcStatTTS.textContent = "TTS " + Math.round(ttsMs) + "ms";
+          vcStatTTS.className = ttsMs < 800 ? "stat-good" : ttsMs < 1500 ? "stat-warn" : "stat-bad";
+        }
+      }
+
+      // Calculate approximate TTFT and tok/s from assistant deltas
+      var assistantEl = document.getElementById("assistantText");
+      var assistantText = assistantEl ? assistantEl.textContent : "";
+      if (assistantText && !window._vcLastAssistantLen) window._vcLastAssistantLen = 0;
+      if (assistantText.length > window._vcLastAssistantLen) {
+        var now = Date.now();
+        if (!window._vcFirstDeltaAt && assistantText.length > 0) {
+          window._vcFirstDeltaAt = now;
+        }
+        // Estimate tokens (~4 chars per token)
+        var tokens = Math.round(assistantText.length / 4);
+        var elapsed = (now - (window._vcFirstDeltaAt || now)) / 1000;
+        if (elapsed > 0.3 && tokens > 2) {
+          var tokS = Math.round(tokens / elapsed);
+          vcStatTokS.textContent = tokS + " tok/s";
+          vcStatTokS.className = tokS > 20 ? "stat-good" : tokS > 8 ? "stat-warn" : "stat-bad";
+        }
+        window._vcLastAssistantLen = assistantText.length;
+      }
+      // Reset on new turn
+      var turnStateEl = document.getElementById("avatarStateText");
+      var turnState = turnStateEl ? turnStateEl.textContent.toLowerCase() : "";
+      if (turnState === "idle" && window._vcFirstDeltaAt) {
+        window._vcFirstDeltaAt = null;
+        window._vcLastAssistantLen = 0;
+      }
+
+      // Total round-trip (approximate: from last speech submit to first audio)
+      if (firstAudioEl && firstAudioEl.textContent !== "-") {
+        var totalMs = parseFloat(firstAudioEl.textContent);
+        // Add estimated STT time (~500ms average)
+        totalMs += 500;
+        vcStatTotal.textContent = "\u2211 " + (totalMs / 1000).toFixed(1) + "s";
+        vcStatTotal.className = totalMs < 2000 ? "stat-good" : totalMs < 3500 ? "stat-warn" : "stat-bad";
+      }
+
+      // Backend info
+      var saved = null;
+      try { saved = JSON.parse(localStorage.getItem("qantara_backend")); } catch (_) {}
+      if (saved) {
+        var label = saved.type || "";
+        if (saved.model) label += " \u00b7 " + saved.model;
+        else if (saved.agent) label += " \u00b7 " + saved.agent;
+        if (saved.url) {
+          try { var u = new URL(saved.url); label += " \u00b7 " + u.hostname; } catch (_) {}
+        }
+        vcStatBackend.textContent = label;
+        // Update metrics overlay backend card
+        var vmBV = document.getElementById("vmBackendVal");
+        if (vmBV) vmBV.textContent = saved.type || "—";
+        var vmB = document.getElementById("vmBackend");
+        if (vmB) vmB.className = "vm-card good";
+      }
+
+      // === HEALTH STRIP UPDATE ===
+      var worstLevel = "good";
+      var worstMetric = "";
+
+      // Get TTS ms for health
+      var ttsVal = parseFloat((document.getElementById("firstAudioMs") || {}).textContent);
+      if (!isNaN(ttsVal)) {
+        var ttsLevel = ttsVal < 800 ? "good" : ttsVal < 1500 ? "warn" : "bad";
+        if (ttsLevel === "bad" || (ttsLevel === "warn" && worstLevel === "good")) {
+          worstLevel = ttsLevel; worstMetric = "First Audio " + Math.round(ttsVal) + "ms";
+        }
+        // Metrics card
+        var vmAV = document.getElementById("vmAudioVal");
+        if (vmAV) vmAV.textContent = Math.round(ttsVal) + "ms";
+        var vmA = document.getElementById("vmAudio");
+        if (vmA) vmA.className = "vm-card " + ttsLevel;
+      }
+
+      // Total round trip
+      if (!isNaN(ttsVal)) {
+        var totalMs = ttsVal + 500;
+        var totalLevel = totalMs < 2000 ? "good" : totalMs < 3500 ? "warn" : "bad";
+        if (totalLevel === "bad" || (totalLevel === "warn" && worstLevel === "good")) {
+          worstLevel = totalLevel; worstMetric = "Round Trip " + (totalMs / 1000).toFixed(1) + "s";
+        }
+        var vmTV = document.getElementById("vmTripVal");
+        if (vmTV) vmTV.textContent = (totalMs / 1000).toFixed(1) + "s";
+        var vmT = document.getElementById("vmTrip");
+        if (vmT) vmT.className = "vm-card " + totalLevel;
+      }
+
+      // Tok/s from existing calculation
+      var tokSEl = document.getElementById("vcStatTokS");
+      if (tokSEl && tokSEl.textContent) {
+        var tokSVal = parseInt(tokSEl.textContent);
+        if (!isNaN(tokSVal)) {
+          var tokLevel = tokSVal > 20 ? "good" : tokSVal > 8 ? "warn" : "bad";
+          var vmSV = document.getElementById("vmSpeedVal");
+          if (vmSV) vmSV.textContent = tokSVal + " tok/s";
+          var vmS = document.getElementById("vmSpeed");
+          if (vmS) vmS.className = "vm-card " + tokLevel;
+        }
+      }
+
+      // Update health strip
+      if (vcHealthDot) vcHealthDot.className = "h-dot " + worstLevel;
+      if (vcHealth) vcHealth.className = "voice-health " + (worstLevel !== "good" ? worstLevel : "");
+
+      var backendLabel = "";
+      try { var s2 = JSON.parse(localStorage.getItem("qantara_backend")); backendLabel = (s2 && s2.type) || ""; if (s2 && s2.model) backendLabel += " \u00b7 " + s2.model; } catch (_) {}
+
+      if (worstLevel === "good") {
+        vcHealthText.textContent = "Voice ready" + (!isNaN(ttsVal) ? " \u00b7 " + ((ttsVal + 500) / 1000).toFixed(1) + "s round trip" : "") + (backendLabel ? " \u00b7 " + backendLabel : "");
+      } else {
+        vcHealthText.textContent = (worstLevel === "warn" ? "Moderate" : "Slow") + " \u00b7 " + worstMetric + (backendLabel ? " \u00b7 " + backendLabel : "");
+      }
+    }, 200);
+
+    function addCaption(text, type) {
+      var line = document.createElement("div");
+      line.className = "caption-line " + type;
+      line.textContent = text;
+      vcCaptions.appendChild(line);
+      captionLines.push(line);
+
+      // Fade out old lines
+      while (captionLines.length > MAX_CAPTIONS) {
+        var old = captionLines.shift();
+        old.classList.add("fading");
+        setTimeout(function () { if (old.parentNode) old.parentNode.removeChild(old); }, 400);
+      }
+      return line;
+    }
+  })();
+  </script>
+</body>
+</html>

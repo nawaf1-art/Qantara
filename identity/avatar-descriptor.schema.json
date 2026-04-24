@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qantara/avatar-descriptor.schema.json",
+  "title": "Qantara Avatar Descriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "avatar_id",
+    "display_name",
+    "renderer_kind",
+    "style_family",
+    "base_pack_id",
+    "parts",
+    "palette"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^1\\.0$"
+    },
+    "avatar_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "renderer_kind": {
+      "type": "string",
+      "enum": ["svg_parts_2d"]
+    },
+    "style_family": {
+      "type": "string",
+      "enum": ["anime_soft", "anime_sharp", "cartoon_playful", "action_figure"]
+    },
+    "base_pack_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["face_base", "hair_front", "hair_back", "brows", "eyes", "nose", "mouth_set"],
+      "properties": {
+        "face_base": { "type": "string", "minLength": 1 },
+        "hair_front": { "type": "string", "minLength": 1 },
+        "hair_back": { "type": "string", "minLength": 1 },
+        "brows": { "type": "string", "minLength": 1 },
+        "eyes": { "type": "string", "minLength": 1 },
+        "nose": { "type": "string", "minLength": 1 },
+        "mouth_set": { "type": "string", "minLength": 1 },
+        "ears": { "type": "string" },
+        "accessory_head": { "type": "string" },
+        "accessory_face": { "type": "string" },
+        "outfit_accent": { "type": "string" }
+      }
+    },
+    "palette": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["skin", "hair_primary", "hair_secondary", "accent_primary"],
+      "properties": {
+        "skin": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "hair_primary": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "hair_secondary": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "accent_primary": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "accent_secondary": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }
+      }
+    },
+    "animation_profile": {
+      "type": "string",
+      "default": "default_idle"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}
