@@ -6,7 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
-No changes yet.
+### Changed
+- First-run Docker documentation now reflects the measured larger disk footprint of the Qantara image and local LLM pull.
+
+### Fixed
+- Docker runtime dependency lock now includes the mesh discovery dependencies (`ifaddr`, `wyoming`, and `zeroconf`) required by the gateway container.
 
 ## [0.2.6] - 2026-04-24
 

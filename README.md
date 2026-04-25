@@ -78,7 +78,7 @@ If you want Docker to expose Qantara to your LAN instead of loopback only:
 QANTARA_DOCKER_BIND=0.0.0.0 docker compose up
 ```
 
-> **First-run note.** The initial `docker compose up` downloads the Ollama image, a ~2 GB LLM (`qwen2.5:3b`), and builds the Qantara image (PyTorch CPU + faster-whisper + Kokoro ≈ 3 GB). Expect **5–10 minutes and ~5 GB of disk** on the first run. Subsequent runs start in seconds.
+> **First-run note.** The initial `docker compose up` downloads the Ollama image, a ~2 GB LLM (`qwen2.5:3b`), and builds the Qantara image with Python/ML speech dependencies. Expect **5–10 minutes and roughly 8–10 GB of disk** on the first run, plus extra temporary Docker build cache. Subsequent runs start in seconds.
 >
 > **Docker supports Ollama and OpenAI-compatible backends out of the box.** OpenClaw is an advanced optional bridge that requires the `openclaw` CLI on your host, so it is not available inside the container. Use the Manual install path only if you already run OpenClaw agents.
 

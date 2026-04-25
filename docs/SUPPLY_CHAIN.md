@@ -10,7 +10,7 @@ Qantara runs AI models locally. This document explains what gets downloaded, fro
 | `Kokoro-82M` ONNX + voice packs | HuggingFace Hub (`hexgrad/Kokoro-82M`) | First Kokoro TTS call | ~350 MB |
 | Piper voices (`en_US-lessac-medium.onnx` etc.) | You download manually to `models/piper/` | Pre-installed by user | ~20 MB each |
 | Ollama model (`qwen2.5:3b` by default in Docker) | `registry.ollama.ai` | `docker compose up` or first run | ~2 GB |
-| Python dependencies | PyPI via `pip` | `pip install -r requirements.txt` | Hundreds of MB |
+| Python/ML dependencies | PyPI via `pip` | `pip install -r requirements.txt` or Docker build | Several GB in the Docker image because speech packages include large ML wheels |
 
 ## Who verifies integrity
 

@@ -4,20 +4,23 @@ Date: 2026-04-24
 
 ## Verdict
 
-Qantara is ready for the first public GitHub release. The clean public branch is published, old private-history tags were removed from the public remote, cross-OS CI is green, and the LAN voice demo has been manually validated.
+Qantara is ready for the first public GitHub release. The clean public branch is published, old private-history tags were removed from the public remote, cross-OS CI is green, Docker fresh-clone validation has passed, and the LAN voice demo has been manually validated.
 
-Current readiness score after the public release step: **94 / 100**.
+Current readiness score after the public release step and Docker clean-install validation: **95 / 100**.
 
 ## Remaining Risks
 
-1. **Clean-machine validation**
-   - Docker and native install instructions should still be run on a machine or VM that has not accumulated local models, certs, and Python caches before a broad announcement.
+1. **Native clean-machine validation**
+   - Docker fresh-clone validation passed on 2026-04-25. A native Python install should still be run on a clean machine or VM before a broad announcement.
 
 2. **Project-growth setup**
    - Good-first issues and optional demo media can be added after the first tag.
 
 3. **Packaging**
    - PyPI distribution is not ready; users should install via Docker or the documented native path.
+
+4. **Docker footprint**
+   - Docker first run is heavier than early docs stated. The gateway image measured about 5.4 GB, and the default Ollama model pull measured about 1.9 GB. This is acceptable for an ML voice gateway, but it should be optimized later.
 
 ## Non-Blocking Improvements
 
@@ -52,10 +55,12 @@ Current readiness score after the public release step: **94 / 100**.
 - Updated README to point to the new public docs.
 - Updated `.gitignore` for common local artifacts.
 - Created the `public-main` orphan branch plan so the first public commit can avoid private development history.
+- Fixed the Docker runtime dependency lock after a fresh-clone test exposed missing mesh discovery dependencies.
+- Corrected first-run documentation to state the measured larger Docker disk footprint.
 
 ## Installability Assessment
 
-Status: **Good, with clean-machine validation still recommended before broad announcement**.
+Status: **Good. Docker fresh-clone validation passed; native clean-machine validation is still recommended before a broad announcement**.
 
 Strengths:
 
@@ -64,10 +69,10 @@ Strengths:
 - Setup page guides backend selection.
 - Troubleshooting covers microphone, backend, voice, and LAN issues.
 
-Risks:
+Remaining risks:
 
-- First-run dependency/model downloads are large and may surprise users.
-- Docker build depends on several large Python/ML packages.
+- First-run dependency/model downloads are large and may surprise users, even with the updated docs.
+- Docker build depends on several large Python/ML packages and should be slimmed later if Docker distribution becomes the main public path.
 - Browser mic behavior depends on HTTPS when accessed from another LAN device.
 
 ## Documentation Assessment
@@ -151,9 +156,17 @@ Validation run during this pass:
 - `./.venv/bin/python scripts/bench_launch.py --json --barge-in-iterations 3 --tts-iterations 1`
 - `git diff --check`
 
+Additional Docker fresh-clone validation on 2026-04-25:
+
+- Fresh clone from `https://github.com/nawaf1-art/Qantara`
+- Docker Compose build and first run on LAN bind `0.0.0.0`, published as `http://<LAN_IP>:9876`
+- Setup page returned HTTP 200 locally and over LAN
+- `/api/status`, `/api/backends`, and `/api/tts` returned valid JSON
+- Default Ollama model `qwen2.5:3b` was pulled and listed inside the container
+- WebSocket text-turn smoke test completed through the gateway, backend, and TTS path
+
 Remaining manual validation:
 
-- fresh Docker first run
 - fresh native install
 - browser mic permission on localhost
 - LAN HTTPS with trusted cert

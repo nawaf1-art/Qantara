@@ -35,7 +35,7 @@ For Docker install:
 
 - Docker Desktop or Docker Engine
 - Docker Compose v2
-- roughly 5 GB free disk for the first build and model pull
+- at least 10 GB free disk for the first build, Docker image, and model pull; keep more available if Docker retains build cache
 
 Optional:
 

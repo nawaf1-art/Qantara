@@ -1,6 +1,6 @@
 # Session Handoff
 
-Date: 2026-04-24
+Date: 2026-04-25
 
 ## Purpose
 
@@ -31,6 +31,8 @@ Major findings:
 - No real tracked API keys or private TLS keys were found.
 - Local certs, model weights, caches, and venv files exist in the working tree but are ignored.
 - The repo is not ready for PyPI packaging; Docker/native script execution are the supported install paths.
+- A fresh GitHub clone Docker run exposed that `ops/docker/requirements.txt` was stale and missing gateway runtime mesh dependencies.
+- Docker first-run disk usage is larger than the early docs stated: the gateway image measured about 5.4 GB, before the default Ollama model and build cache.
 
 ## What Was Fixed
 
@@ -56,15 +58,15 @@ Major findings:
 - OpenClaw examples/defaults
 - LAN TLS examples
 - visible `M0 spike` wording in gateway/client docs and browser debug defaults
+- Docker runtime dependency lock for `ifaddr`, `wyoming`, and `zeroconf`
+- first-run documentation for the measured Docker disk footprint
 
 ## Current Risk Register
 
-Blockers before public release:
+Blockers before broad announcement:
 
-1. Publish `public-main`, not private `main`.
-2. Run clean-machine Docker and native install validation.
-3. Confirm CI passes after cleanup.
-4. Configure GitHub description, topics, Issues, and vulnerability reporting.
+1. Run native clean-machine install validation.
+2. Confirm CI passes after the Docker dependency-lock fix.
 
 Non-blocking:
 
@@ -73,6 +75,7 @@ Non-blocking:
 - extra backend example docs
 - good-first issues published in GitHub
 - future `/voice` or `/app` alias to retire the historical `/spike` URL cleanly
+- Docker image slimming
 
 ## Validation Run In This Pass
 
@@ -94,35 +97,48 @@ Results:
 - whitespace check: passed
 - benchmark sample: barge-in p95 0.98 ms over 3 samples; Piper TTS 1661.17 ms for one `lessac` sample
 
+Clean Docker validation on 2026-04-25:
+
+```bash
+git clone https://github.com/nawaf1-art/Qantara /tmp/qantara-clean-20260425-052425
+COMPOSE_PROJECT_NAME=qantara_clean_052425 \
+  QANTARA_PORT=9876 \
+  QANTARA_DOCKER_BIND=0.0.0.0 \
+  docker compose up --build -d
+```
+
+Initial fresh-clone result:
+
+- backend and Ollama containers became healthy
+- gateway container exited because `zeroconf` was missing from `ops/docker/requirements.txt`
+
+After regenerating `ops/docker/requirements.txt` from `ops/docker/requirements.in`:
+
+- gateway, backend, and Ollama containers started successfully
+- setup page returned HTTP 200 at `http://127.0.0.1:9876/setup/index.html`
+- setup page returned HTTP 200 over LAN at `http://<LAN_IP>:9876/setup/index.html`
+- `/api/status`, `/api/backends`, and `/api/tts` returned valid JSON
+- default model `qwen2.5:3b` was pulled into Ollama
+- WebSocket text-turn smoke test completed through gateway -> backend -> TTS
+
 ## Recommended Next Steps
 
-1. Run the full validation set:
+1. Run the native clean-machine validation:
 
 ```bash
-make test
-ruff check .
-./.venv/bin/python scripts/bench_launch.py --arabic
+python3 -m venv .venv
+./.venv/bin/pip install -r gateway/transport_spike/requirements.txt
+make spike-run-venv
 ```
 
-2. Run a clean-machine Docker test:
+2. Confirm CI passes after the Docker dependency-lock fix is pushed.
 
-```bash
-docker compose build
-docker compose up
-```
+3. Publish GitHub issues from `docs/PUBLISHING_READINESS_AUDIT.md`.
 
-3. Publish only the clean public branch:
-
-```bash
-git push <public-remote> public-main:main
-```
-
-4. Publish GitHub issues from `docs/PUBLISHING_READINESS_AUDIT.md`.
-
-5. `v0.2.6` is the first public release tag.
+4. `v0.2.6` is the first public release tag.
 
 ## Current Readiness
 
-Status: public release tagged.
+Status: public release tagged; Docker clean-install fix included.
 
-Score: 94 / 100.
+Score: 95 / 100.

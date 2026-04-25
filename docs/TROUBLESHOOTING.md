@@ -6,7 +6,7 @@ Common problems and how to fix them. If your issue isn't here, open a GitHub iss
 
 ### `docker compose up` is stuck "pulling" for minutes
 
-Expected on first run. The initial build downloads the Ollama image, a ~2 GB LLM (`qwen2.5:3b`), and builds the Qantara image with PyTorch CPU, faster-whisper, and Kokoro (~3 GB). Total: 5 GB, 5–10 minutes on a reasonable connection. Subsequent runs start in seconds.
+Expected on first run. The initial build downloads the Ollama image, a ~2 GB LLM (`qwen2.5:3b`), and builds the Qantara image with Python/ML speech dependencies. Plan for roughly 8–10 GB of disk, plus temporary Docker build cache, and 5–10 minutes on a reasonable connection. Subsequent runs start in seconds.
 
 If you see no progress for 10+ minutes, check Docker Desktop's status and your disk space.
 

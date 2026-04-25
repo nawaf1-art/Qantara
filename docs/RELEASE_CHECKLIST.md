@@ -2,6 +2,10 @@
 
 Use this before making the repository public and before tagging `v0.2.6`.
 
+## Latest Validation Note
+
+Docker fresh-clone validation passed on 2026-04-25 after regenerating `ops/docker/requirements.txt` from `ops/docker/requirements.in`. Keep the checklist below as the repeatable release checklist for future tags.
+
 ## Automated Checks
 
 - [ ] `make test`
