@@ -75,12 +75,60 @@
         localStorage.setItem("qantara_translate_cid", clientSessionId);
       }
 
-      var wsUrl = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
-      var socket = new WebSocket(wsUrl);
-      socket.binaryType = "arraybuffer";
+      var socket = null;
+
+      fetch("/api/auth/status", { cache: "no-store" })
+        .then(function (r) { return r.json(); })
+        .then(function (status) {
+          if (status.required && !status.authenticated) {
+            document.getElementById("status").textContent = "Qantara is locked. Unlock from setup first.";
+            setTimeout(function () { window.location.href = "/setup?auth=1"; }, 800);
+            return;
+          }
+          initSocket();
+        })
+        .catch(function () { initSocket(); });
+
+      function initSocket() {
+        var wsUrl = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
+        socket = new WebSocket(wsUrl);
+        socket.binaryType = "arraybuffer";
+
+        socket.addEventListener("open", function () {
+          sendJson({
+            type: "session_init",
+            client_name: "translate-page",
+            client_session_id: clientSessionId,
+            protocol_version: 1,
+          });
+          // Configure live translator mode via the dedicated endpoint.
+          fetch("/api/translation_mode", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              client_session_id: clientSessionId,
+              mode: "live",
+              source: direction.from,
+              target: direction.to,
+            }),
+          });
+        });
+
+        socket.addEventListener("message", function (ev) {
+          if (typeof ev.data !== "string") return;
+          var msg;
+          try { msg = JSON.parse(ev.data); } catch (_) { return; }
+          if (msg.type === "transcript_result") {
+            appendTurn(direction.from, msg.text || "", true);
+          } else if (msg.type === "assistant_text_final" || msg.type === "assistant_output_completed") {
+            var txt = msg.text || "";
+            if (txt) appendTurn(direction.to, txt, false);
+          }
+        });
+      }
 
       function sendJson(msg) {
-        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg));
+        if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg));
       }
 
       var micStream = null;
@@ -88,38 +136,6 @@
       var processor = null;
       var scriptNode = null;
       var isRecording = false;
-
-      socket.addEventListener("open", function () {
-        sendJson({
-          type: "session_init",
-          client_name: "translate-page",
-          client_session_id: clientSessionId,
-          protocol_version: 1,
-        });
-        // Configure live translator mode via the dedicated endpoint.
-        fetch("/api/translation_mode", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            client_session_id: clientSessionId,
-            mode: "live",
-            source: direction.from,
-            target: direction.to,
-          }),
-        });
-      });
-
-      socket.addEventListener("message", function (ev) {
-        if (typeof ev.data !== "string") return;
-        var msg;
-        try { msg = JSON.parse(ev.data); } catch (_) { return; }
-        if (msg.type === "transcript_result") {
-          appendTurn(direction.from, msg.text || "", true);
-        } else if (msg.type === "assistant_text_final" || msg.type === "assistant_output_completed") {
-          var txt = msg.text || "";
-          if (txt) appendTurn(direction.to, txt, false);
-        }
-      });
 
       function appendTurn(lang, text, original) {
         var pane = lang === langLeft ? "turns-left" : "turns-right";

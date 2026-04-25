@@ -258,6 +258,19 @@
     <h1>Qantara</h1>
     <p class="subtitle">Talk to your AI agent by voice. Choose how your AI is running to get started.</p>
 
+    <div id="auth-panel" class="panel" hidden>
+      <span class="section-label">Local access token</span>
+      <p style="font-size:0.85rem;color:var(--muted);line-height:1.5;margin:0 0 12px;">
+        This Qantara gateway requires a local token before backend setup, LAN discovery, or voice mode can start.
+      </p>
+      <div class="url-row">
+        <input id="auth-token-input" type="password" autocomplete="current-password" placeholder="QANTARA_AUTH_TOKEN">
+        <button id="auth-login-btn" class="test-btn">Unlock</button>
+      </div>
+      <div id="auth-status" class="status-msg"></div>
+    </div>
+
+    <div id="setup-content" hidden>
     <div class="panel">
       <div id="getting-started-area"></div>
       <span class="section-label">Available backends</span>
@@ -310,6 +323,7 @@
       <div id="mesh-status" style="font-size: 0.78rem; color: var(--muted); margin-bottom: 8px;"></div>
       <div id="mesh-peers-list" style="display: flex; flex-direction: column; gap: 6px;"></div>
     </div>
+    </div>
   </main>
 
   <script>
@@ -326,6 +340,11 @@
     var configEl = document.getElementById("config-area");
     var startBtn = document.getElementById("start-btn");
     var statusMsg = document.getElementById("status-msg");
+    var authPanel = document.getElementById("auth-panel");
+    var setupContent = document.getElementById("setup-content");
+    var authTokenInput = document.getElementById("auth-token-input");
+    var authLoginBtn = document.getElementById("auth-login-btn");
+    var authStatus = document.getElementById("auth-status");
 
     // Recommended models for voice (fast, conversational)
     var RECOMMENDED = ["gemma4:e4b", "llama3.2:3b", "llama3.1:8b", "qwen2.5:7b", "qwen2.5:3b", "mistral:latest", "gemma2:latest"];
@@ -334,7 +353,70 @@
     try { saved = JSON.parse(localStorage.getItem("qantara_backend")); } catch (_) {}
 
     var currentProbeStream = null;
-    streamBackends();
+    ensureAuthenticated();
+
+    function setAuthLocked(locked) {
+      if (authPanel) authPanel.hidden = !locked;
+      if (setupContent) setupContent.hidden = locked;
+      if (locked && authTokenInput) authTokenInput.focus();
+    }
+
+    function ensureAuthenticated() {
+      fetch("/api/auth/status", { cache: "no-store" })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.required && !data.authenticated) {
+            setAuthLocked(true);
+            return;
+          }
+          setAuthLocked(false);
+          streamBackends();
+        })
+        .catch(function () {
+          setAuthLocked(false);
+          streamBackends();
+        });
+    }
+
+    function submitAuthToken() {
+      var token = authTokenInput ? authTokenInput.value : "";
+      if (!token) return;
+      if (authLoginBtn) authLoginBtn.disabled = true;
+      if (authStatus) {
+        authStatus.textContent = "Checking token...";
+        authStatus.className = "status-msg";
+      }
+      fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: token }),
+      })
+        .then(function (r) {
+          if (!r.ok) throw new Error("Token was not accepted");
+          return r.json();
+        })
+        .then(function () {
+          if (authTokenInput) authTokenInput.value = "";
+          setAuthLocked(false);
+          streamBackends();
+        })
+        .catch(function (err) {
+          if (authStatus) {
+            authStatus.textContent = err.message;
+            authStatus.className = "status-msg error";
+          }
+        })
+        .finally(function () {
+          if (authLoginBtn) authLoginBtn.disabled = false;
+        });
+    }
+
+    if (authLoginBtn) authLoginBtn.addEventListener("click", submitAuthToken);
+    if (authTokenInput) {
+      authTokenInput.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") submitAuthToken();
+      });
+    }
 
     function streamBackends() {
       if (currentProbeStream) { try { currentProbeStream.close(); } catch (_) {} }

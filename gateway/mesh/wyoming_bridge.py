@@ -155,8 +155,10 @@ class WyomingBridge:
         has_vad: bool,
         runtime=None,  # type: ignore[no-untyped-def]
         register_zeroconf: bool = True,
+        host: str = "127.0.0.1",
     ) -> None:
         self._info = build_satellite_info(node_name, area, version, has_vad)
+        self._host = host
         self._port = port
         self._register_zeroconf = register_zeroconf
         self._runtime = runtime
@@ -210,7 +212,7 @@ class WyomingBridge:
                 except Exception:
                     pass
 
-        self._server = await asyncio.start_server(_handle, "0.0.0.0", self._port)
+        self._server = await asyncio.start_server(_handle, self._host, self._port)
         if self._register_zeroconf:
             await self._register_mdns()
 

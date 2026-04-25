@@ -43,8 +43,8 @@ Qantara's niche is the middle: **a real full-duplex voice stack for local LLMs a
 | No JS build tooling | ✅ | n/a | n/a | n/a | n/a |
 | Swap LLM backend | ✅ | ✅ | ✅ | Limited | ❌ |
 | Works without GPU | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Time to first conversation | Minutes | Hours–days | Hours–days | ~1 hour | Minutes |
-| Repo size to read | ~3k LOC | ~50k | Large | Ecosystem | ~500 |
+| First conversation | ~10 min on first Docker run; seconds after setup | Hours–days | Hours–days | ~1 hour | Minutes |
+| Core code to read | ~4.5k Python LOC + vanilla JS client | ~50k | Large | Ecosystem | ~500 |
 
 Comparisons reflect common configurations as of 2026-04; each of these projects is actively evolving.
 
@@ -72,11 +72,15 @@ Open **http://localhost:8765** — the setup page will guide you through backend
 
 If port 8765 is in use: `QANTARA_PORT=9765 docker compose up`
 
-If you want Docker to expose Qantara to your LAN instead of loopback only:
+If you want Docker to expose Qantara to your LAN instead of loopback only, set a strong local token too:
 
 ```bash
-QANTARA_DOCKER_BIND=0.0.0.0 docker compose up
+QANTARA_AUTH_TOKEN="$(openssl rand -hex 24)" \
+QANTARA_DOCKER_BIND=0.0.0.0 \
+docker compose up
 ```
+
+Then open `http://<your-lan-ip>:8765` and enter that token on the setup page.
 
 > **First-run note.** The initial `docker compose up` downloads the Ollama image, a ~2 GB LLM (`qwen2.5:3b`), and builds the Qantara image with Python/ML speech dependencies. Expect **5–10 minutes and roughly 8–10 GB of disk** on the first run, plus extra temporary Docker build cache. Subsequent runs start in seconds.
 >
@@ -95,6 +99,7 @@ This installs the full local gateway runtime stack, including STT/TTS dependenci
 For LAN microphone testing from another device, run Qantara with HTTPS/WSS and bind it explicitly:
 
 ```bash
+QANTARA_AUTH_TOKEN="$(openssl rand -hex 24)" \
 QANTARA_SPIKE_HOST=0.0.0.0 \
 QANTARA_SPIKE_PORT=8899 \
 QANTARA_TLS_CERT=ops/certs/qantara-cert.pem \
@@ -102,7 +107,7 @@ QANTARA_TLS_KEY=ops/certs/qantara-key.pem \
 make spike-run-venv
 ```
 
-Open `https://<your-lan-ip>:8899/spike`. Browsers require HTTPS or `localhost` for microphone access.
+Open `https://<your-lan-ip>:8899/spike` and enter the token on the setup page if prompted. Browsers require HTTPS or `localhost` for microphone access.
 
 ## Setup Experience
 
@@ -130,7 +135,7 @@ After selecting a backend, Qantara shows a full-screen dark voice mode:
 - **STT:** faster-whisper (local, CPU)
 - **TTS:** Kokoro 82M, Piper, and Chatterbox provider paths
 - **Arabic TTS:** Piper `ar_JO-kareem-medium` with a faster 1.3x baseline for natural pacing
-- Audio-driven animated SVG avatar with mouth morphing, eye blink, breathing
+- Audio-driven animated SVG avatar with amplitude-driven mouth motion, eye blink, and breathing
 
 ### Voice Interaction
 - Full-duplex (listen while speaking)
@@ -206,7 +211,7 @@ qantara/
 │   ├── stt/faster_whisper.py
 │   ├── tts/kokoro.py
 │   └── tts/piper.py
-├── identity/                      # Avatar, voice, lipsync
+├── identity/                      # Avatar, voice, and mouth-motion schemas
 ├── cli.py                         # CLI launcher
 ├── config.py                      # Config file loader
 ├── Dockerfile                     # Docker image
@@ -220,7 +225,7 @@ qantara/
 |-------|-----------|
 | Gateway | Python 3, aiohttp (async) |
 | STT | faster-whisper / CTranslate2 |
-| TTS | Kokoro 82M (ONNX), Piper (fallback) |
+| TTS | Kokoro 82M via the `kokoro` Python package, Piper, Chatterbox |
 | Transport | WebSocket, PCM16 mono 16kHz/24kHz |
 | Browser | Vanilla JS, WebAudio API, no frameworks |
 | Docker | Python 3.12 slim + Ollama |
@@ -276,11 +281,13 @@ Start with the [documentation map](docs/README.md). The main public guides are:
 Qantara is designed to run on your local network, not the public internet.
 
 - The browser setup page's URL probe (`/api/test-url`) and backend configuration endpoint (`/api/configure`) restrict outbound URLs to private/loopback IPs — public URLs are rejected.
-- If you set `QANTARA_AUTH_TOKEN`, `/ws`, `/api/configure`, and `/api/translation_mode` require `Authorization: Bearer <token>`. Leave it unset for zero-config loopback deployments.
+- If you set `QANTARA_AUTH_TOKEN`, it must be at least 24 characters. Browsers unlock Qantara through `/api/auth/login` and an HttpOnly local cookie; API clients may use `Authorization: Bearer <token>`.
+- Token auth protects `/ws`, `/api/configure`, `/api/translation_mode`, `/api/warmup`, `/api/test-url`, `/api/discovery/scan`, backend discovery endpoints, and mesh status endpoints.
 - If you set `QANTARA_ADMIN_TOKEN`, `/api/admin/runtime` requires `Authorization: Bearer <token>`. If you leave it unset, that endpoint is disabled and returns `404`.
 - Selecting the Ollama bridge, or the advanced optional OpenClaw bridge, spawns a local bridge subprocess on a dynamically allocated port. The gateway trusts the bridge binary; run Qantara only on machines you control.
 - Native runs bind to `127.0.0.1:8765` by default. To expose a native run to your LAN, set `QANTARA_SPIKE_HOST=0.0.0.0` explicitly and consider running behind TLS (`QANTARA_TLS_CERT` / `QANTARA_TLS_KEY`).
 - Docker publishes `127.0.0.1:8765` on the host by default even though the container listens on `0.0.0.0`. To publish on all host interfaces, set `QANTARA_DOCKER_BIND=0.0.0.0`.
+- Mesh and Wyoming bind to loopback by default. To make them reachable across your LAN, explicitly set `QANTARA_MESH_HOST=0.0.0.0` or `QANTARA_WYOMING_HOST=0.0.0.0` and use only on a trusted LAN.
 
 If you find a security issue, please use GitHub private vulnerability reporting rather than opening a public issue — see [SECURITY.md](SECURITY.md).
 

@@ -7,6 +7,7 @@ Use this to record the public-launch clip. Target length: 45-60 seconds.
 Start a local OpenAI-compatible backend, then run Qantara on LAN HTTPS:
 
 ```bash
+QANTARA_AUTH_TOKEN="$(openssl rand -hex 24)" \
 QANTARA_SPIKE_HOST=0.0.0.0 \
 QANTARA_SPIKE_PORT=8899 \
 QANTARA_TLS_CERT=ops/certs/qantara-cert.pem \
@@ -23,7 +24,7 @@ Open:
 https://<lan-ip>:8899/spike
 ```
 
-Allow microphone access. Use a headset for the cleanest barge-in recording.
+Enter the auth token on the setup page, allow microphone access, and use a headset for the cleanest barge-in recording.
 
 ## Shot List
 

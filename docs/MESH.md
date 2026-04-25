@@ -10,11 +10,14 @@ On each node, set:
 
 ```bash
 export QANTARA_MESH_ROLE=full      # full | mic-only | speaker-only | disabled
+export QANTARA_MESH_HOST=0.0.0.0   # required for LAN peers; default is 127.0.0.1
 export QANTARA_MESH_PORT=8901      # default
 ```
 
 Start the gateway normally (`make spike-run-lan-venv`). Nodes find
 each other automatically within ~2 seconds.
+
+Mesh traffic is plaintext and intended only for a trusted LAN. Do not expose the mesh port to the public internet.
 
 ## Roles
 
@@ -51,6 +54,8 @@ never see each other.
 Check `make doctor --mesh`. If peers are `UNREACHABLE`, it's
 usually a firewall on the mesh port. Open port `8901/tcp` on each
 node (or whatever you set via `QANTARA_MESH_PORT`).
+
+If each node only sees itself, confirm `QANTARA_MESH_HOST=0.0.0.0` is set. The safe default is loopback, which is correct for single-node installs but invisible to LAN peers.
 
 If mDNS discovery itself fails:
 - Linux with Avahi: usually fine; confirm `avahi-daemon` is running.

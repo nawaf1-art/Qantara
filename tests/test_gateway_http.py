@@ -153,7 +153,7 @@ class GatewayHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["adapter_kind"], "mock")
 
     async def test_admin_runtime_endpoint_exposes_bindings_and_sessions(self) -> None:
-        await self._restart_client({"QANTARA_ADMIN_TOKEN": "admin-secret"})
+        await self._restart_client({"QANTARA_ADMIN_TOKEN": "admin-secret-token-123456"})
         ws = await self.client.ws_connect("/ws")
         await ws.send_json(
             {
@@ -169,7 +169,7 @@ class GatewayHTTPTests(unittest.IsolatedAsyncioTestCase):
 
         resp = await self.client.get(
             "/api/admin/runtime",
-            headers={"Authorization": "Bearer admin-secret"},
+            headers={"Authorization": "Bearer admin-secret-token-123456"},
         )
         body = await resp.json()
         self.assertEqual(resp.status, 200)
@@ -185,7 +185,7 @@ class GatewayHTTPTests(unittest.IsolatedAsyncioTestCase):
         resp = await self.client.get("/api/admin/runtime")
         self.assertEqual(resp.status, 404)
 
-        await self._restart_client({"QANTARA_ADMIN_TOKEN": "admin-secret"})
+        await self._restart_client({"QANTARA_ADMIN_TOKEN": "admin-secret-token-123456"})
         wrong = await self.client.get(
             "/api/admin/runtime",
             headers={"Authorization": "Bearer wrong"},
@@ -222,7 +222,7 @@ class GatewayHTTPTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(allowed.status, 200)
 
-        await self._restart_client({"QANTARA_AUTH_TOKEN": "voice-secret"})
+        await self._restart_client({"QANTARA_AUTH_TOKEN": "voice-secret-token-123456"})
         missing = await self.client.post(
             "/api/configure",
             json={"type": "custom", "url": "http://127.0.0.1:1"},
@@ -239,15 +239,80 @@ class GatewayHTTPTests(unittest.IsolatedAsyncioTestCase):
         correct = await self.client.post(
             "/api/configure",
             json={"type": "custom", "url": "http://127.0.0.1:1"},
-            headers={"Authorization": "Bearer voice-secret"},
+            headers={"Authorization": "Bearer voice-secret-token-123456"},
         )
         self.assertEqual(correct.status, 200)
+
+    async def test_browser_auth_cookie_unlocks_api_and_websocket(self) -> None:
+        await self._restart_client({"QANTARA_AUTH_TOKEN": "voice-secret-token-123456"})
+
+        status = await self.client.get("/api/auth/status")
+        status_body = await status.json()
+        self.assertEqual(status.status, 200)
+        self.assertTrue(status_body["required"])
+        self.assertFalse(status_body["authenticated"])
+
+        wrong = await self.client.post("/api/auth/login", json={"token": "wrong"})
+        self.assertEqual(wrong.status, 401)
+
+        login = await self.client.post(
+            "/api/auth/login",
+            json={"token": "voice-secret-token-123456"},
+        )
+        self.assertEqual(login.status, 200)
+
+        authed_status = await self.client.get("/api/auth/status")
+        authed_body = await authed_status.json()
+        self.assertTrue(authed_body["authenticated"])
+
+        configured = await self.client.post(
+            "/api/configure",
+            json={"type": "custom", "url": "http://127.0.0.1:1"},
+        )
+        self.assertEqual(configured.status, 200)
+
+        ws = await self.client.ws_connect("/ws")
+        await ws.close()
+
+    async def test_short_auth_token_is_rejected_at_startup(self) -> None:
+        await self.client.close()
+        self.env_patch.stop()
+        self.env_patch = patch.dict(
+            os.environ,
+            {"QANTARA_AUTH_TOKEN": "too-short", "QANTARA_ADMIN_TOKEN": ""},
+        )
+        self.env_patch.start()
+        with self.assertRaisesRegex(RuntimeError, "QANTARA_AUTH_TOKEN"):
+            await self._start_client()
+
+        self.env_patch.stop()
+        self.env_patch = patch.dict(
+            os.environ,
+            {"QANTARA_AUTH_TOKEN": "", "QANTARA_ADMIN_TOKEN": ""},
+        )
+        self.env_patch.start()
+        await self._start_client()
+
+    async def test_warmup_test_url_and_discovery_require_auth_when_configured(self) -> None:
+        await self._restart_client({"QANTARA_AUTH_TOKEN": "voice-secret-token-123456"})
+
+        warmup = await self.client.post("/api/warmup")
+        self.assertEqual(warmup.status, 401)
+
+        test_url = await self.client.post("/api/test-url", json={})
+        self.assertEqual(test_url.status, 401)
+
+        discovery = await self.client.get("/api/discovery/scan")
+        self.assertEqual(discovery.status, 401)
+
+        backends = await self.client.get("/api/backends")
+        self.assertEqual(backends.status, 401)
 
     async def test_websocket_endpoint_auth_token_behavior(self) -> None:
         ws = await self.client.ws_connect("/ws")
         await ws.close()
 
-        await self._restart_client({"QANTARA_AUTH_TOKEN": "voice-secret"})
+        await self._restart_client({"QANTARA_AUTH_TOKEN": "voice-secret-token-123456"})
         with self.assertRaises(WSServerHandshakeError) as missing_ctx:
             await self.client.ws_connect("/ws")
         self.assertEqual(missing_ctx.exception.status, 401)
@@ -261,7 +326,7 @@ class GatewayHTTPTests(unittest.IsolatedAsyncioTestCase):
 
         authed = await self.client.ws_connect(
             "/ws",
-            headers={"Authorization": "Bearer voice-secret"},
+            headers={"Authorization": "Bearer voice-secret-token-123456"},
         )
         await authed.close()
 

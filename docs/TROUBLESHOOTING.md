@@ -94,9 +94,15 @@ You may be using the Piper fallback instead of Kokoro. Check the gateway log for
 
 By default the gateway binds to `127.0.0.1`. To expose to your LAN:
 ```bash
-QANTARA_SPIKE_HOST=0.0.0.0 make spike-run
+QANTARA_AUTH_TOKEN="$(openssl rand -hex 24)" QANTARA_SPIKE_HOST=0.0.0.0 make spike-run
 ```
 And in the browser on the other device, access `http://<your-host-ip>:8765`. For mic to work off-localhost you will need HTTPS — see the TLS note above.
+
+If the gateway exits immediately after setting auth, confirm the token is at least 24 characters.
+
+### Setup page says Qantara is locked
+
+This means `QANTARA_AUTH_TOKEN` is enabled. Open `/setup`, enter the token, and the browser will receive a local HttpOnly session cookie. API clients can use `Authorization: Bearer <token>` instead.
 
 ### TLS cert not trusted on other devices
 

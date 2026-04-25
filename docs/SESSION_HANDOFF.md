@@ -1,43 +1,32 @@
 # Session Handoff
 
-Date: 2026-04-25
+Date: 2026-04-26
 
-## Purpose
+## Current State
 
-This handoff summarizes the pre-publication readiness pass so the next Codex, Claude, or human maintainer can continue without reading removed private development notes.
+Qantara is public on GitHub at `https://github.com/nawaf1-art/Qantara` from the clean `public-main` history. Do not publish the old private git history.
+
+This handoff covers the original public-release readiness pass plus the 2026-04-26 post-public hardening pass based on the read-only external audit in `docs/audits/QANTARA-end-to-end-readonly-audit-2026-04-25.md`.
+
+Latest local commit for this pass has message: `fix: harden auth and LAN defaults`. Run `git log -1 --oneline` for the exact hash.
+
+Important: `docs/audits/` is currently untracked and contains local-machine details from the external audit. Do not add it to a public commit unless it is deliberately sanitized first.
 
 ## What Was Requested
 
-Perform a serious open-source publication readiness audit and remediation pass for Qantara, covering:
+The user asked for Qantara to be made ready for public GitHub publication, then asked to handle the external audit findings and prepare the work for handover.
 
-- repository hygiene
-- sensitive data
-- installability
-- public docs
-- GitHub readiness
-- versioning/release readiness
-- contributor onboarding
-- test confidence
-- first-release prep
-- final handoff documentation
+The project objective is unchanged:
 
-## What Was Found
+- Qantara is a standalone, local-first real-time voice gateway.
+- It is for Ollama, local LLM engines, and local AI agents.
+- It is a voice layer, not an agent framework.
+- Local LLMs remain with Qantara and the user's local runtime.
 
-Major findings:
-
-- The public codebase was functionally strong but documentation was split between public docs and a large tracked `docs/internal/` tree.
-- `docs/internal/` contained local IPs, personal paths, historical agent names, and private workflow notes.
-- `ARCHITECTURE.md` still framed Qantara as primarily an OpenClaw gateway, which no longer matched the standalone/backend-agnostic objective.
-- No real tracked API keys or private TLS keys were found.
-- Local certs, model weights, caches, and venv files exist in the working tree but are ignored.
-- The repo is not ready for PyPI packaging; Docker/native script execution are the supported install paths.
-- A fresh GitHub clone Docker run exposed that `ops/docker/requirements.txt` was stale and missing gateway runtime mesh dependencies.
-- Docker first-run disk usage is larger than the early docs stated: the gateway image measured about 5.4 GB, before the default Ollama model and build cache.
-
-## What Was Fixed
+## What Was Fixed In The Original Readiness Pass
 
 - Removed tracked `docs/internal/`.
-- Added:
+- Added the public documentation set:
   - `docs/README.md`
   - `docs/PUBLISHING_READINESS_AUDIT.md`
   - `docs/REPOSITORY_CLEANUP_REPORT.md`
@@ -49,96 +38,113 @@ Major findings:
   - `docs/FIRST_PUBLIC_RELEASE_NOTES_DRAFT.md`
   - `docs/SESSION_HANDOFF.md`
   - `.env.example`
-- Updated:
-  - `README.md`
-  - `ARCHITECTURE.md`
-  - `CONTRIBUTING.md`
-  - `.gitignore`
-  - `qantara.example.yml`
-- OpenClaw examples/defaults
-- LAN TLS examples
-- visible `M0 spike` wording in gateway/client docs and browser debug defaults
-- Docker runtime dependency lock for `ifaddr`, `wyoming`, and `zeroconf`
-- first-run documentation for the measured Docker disk footprint
+- Updated `README.md`, `ARCHITECTURE.md`, `CONTRIBUTING.md`, `.gitignore`, and `qantara.example.yml`.
+- Sanitized public-facing wording away from the old OpenClaw-first framing.
+- Fixed Docker runtime dependency lock for mesh/Wyoming dependencies.
+- Ran and documented a clean Docker validation after the dependency-lock fix.
 
-## Current Risk Register
+## What Was Fixed In This Hardening Pass
 
-Blockers before broad announcement:
+- Hardened `QANTARA_AUTH_TOKEN`:
+  - rejects configured tokens shorter than 24 characters
+  - uses constant-time token comparison
+  - supports browser login through `/api/auth/login`
+  - stores browser unlock state in an HttpOnly local cookie
+  - keeps bearer-token auth for API clients
+- Protected additional endpoints when `QANTARA_AUTH_TOKEN` is set:
+  - `/ws`
+  - `/api/configure`
+  - `/api/translation_mode`
+  - `/api/warmup`
+  - `/api/test-url`
+  - `/api/backends`
+  - `/api/backends/stream`
+  - `/api/discovery/scan`
+  - `/api/mesh/peers`
+  - `/api/mesh/status`
+- Added auth status/login/logout routes:
+  - `GET /api/auth/status`
+  - `POST /api/auth/login`
+  - `POST /api/auth/logout`
+- Updated the setup page and voice/translate clients so browser users can unlock Qantara instead of needing impossible WebSocket/EventSource auth headers.
+- Added a startup warning when the gateway binds to a non-loopback host with no `QANTARA_AUTH_TOKEN`.
+- Hardened backend URL probing:
+  - public URLs are rejected
+  - dotted public hostnames are fast-rejected unless they are clearly local suffixes
+  - `/api/test-url` connects to resolved private/loopback IPs while preserving the original Host header
+- Changed mesh and Wyoming defaults to loopback:
+  - `QANTARA_MESH_HOST` default is now `127.0.0.1`
+  - `QANTARA_WYOMING_HOST` default is now `127.0.0.1`
+  - LAN mesh/Wyoming now requires explicit `0.0.0.0`
+- Updated Docker Compose:
+  - gateway healthcheck for `/api/status`
+  - `QANTARA_WHISPER_MODEL=small` to match multilingual launch behavior
+  - pass-through for auth, admin, mesh, and Wyoming environment variables
+- Corrected public docs:
+  - Qantara wording emphasizes Ollama, local LLMs, and local AI agents
+  - LAN docs include token examples
+  - Kokoro is described as running through the `kokoro` Python package, not direct ONNX runtime
+  - avatar wording now says amplitude-driven mouth motion, not phoneme lipsync
+  - mesh/Wyoming docs state the plaintext trusted-LAN boundary
 
-1. Run native clean-machine install validation.
-2. Confirm CI passes after the Docker dependency-lock fix.
+## Validation Run
 
-Non-blocking:
-
-- screenshots/demo media
-- PyPI package layout
-- extra backend example docs
-- good-first issues published in GitHub
-- future `/voice` or `/app` alias to retire the historical `/spike` URL cleanly
-- Docker image slimming
-
-## Validation Run In This Pass
-
-Passed on 2026-04-24:
+Passed on 2026-04-26:
 
 ```bash
 ruff check .
 ./.venv/bin/python -m unittest discover -s tests -v
 ./.venv/bin/python -m compileall -q adapters gateway providers scripts tests cli.py config.py discovery
-./.venv/bin/python scripts/bench_launch.py --json --barge-in-iterations 3 --tts-iterations 1
 git diff --check
+docker compose config -q
+QANTARA_AUTH_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa QANTARA_DOCKER_BIND=0.0.0.0 docker compose config
+QANTARA_AUTH_TOKEN=<generated> QANTARA_DOCKER_BIND=0.0.0.0 docker compose up --build -d
+QANTARA_AUTH_TOKEN=<generated> QANTARA_DOCKER_BIND=0.0.0.0 QANTARA_PORT=9876 docker compose up -d qantara-gateway
+chromium --headless --disable-gpu --no-sandbox --user-data-dir=/tmp/qantara-chrome-smoke --dump-dom http://192.168.68.69:9876/setup/index.html
 ```
 
 Results:
 
 - `ruff`: passed
-- unit tests: 156 passed
+- unit tests: 161 passed
 - compileall: passed
 - whitespace check: passed
-- benchmark sample: barge-in p95 0.98 ms over 3 samples; Piper TTS 1661.17 ms for one `lessac` sample
+- Docker Compose config: passed
+- Compose auth/LAN interpolation verified with a fake 24-character token
+- Fresh Docker image rebuild: passed
+- Docker stack health: `qantara-ollama`, `qantara-backend`, and `qantara-gateway` healthy
+- LAN publish: passed on `http://192.168.68.69:9876` because host port `8765` was already occupied by a separate local Python process
+- LAN auth smoke: passed; unauthenticated `/api/backends` returned `401`, `/api/auth/login` set the browser session cookie, and authenticated `/api/backends` returned backend options
+- LAN WebSocket/TTS smoke: passed through `ws://192.168.68.69:9876/ws`; a real backend turn returned Kokoro TTS status and final assistant text
+- Headless Chromium page smoke: passed; the LAN setup page loaded and rendered the `QANTARA_AUTH_TOKEN` auth panel
 
-Clean Docker validation on 2026-04-25:
+One warning appeared during the unit run:
 
-```bash
-git clone https://github.com/nawaf1-art/Qantara /tmp/qantara-clean-20260425-052425
-COMPOSE_PROJECT_NAME=qantara_clean_052425 \
-  QANTARA_PORT=9876 \
-  QANTARA_DOCKER_BIND=0.0.0.0 \
-  docker compose up --build -d
-```
+- PyTorch warned that the installed NVIDIA driver is too old for CUDA initialization. Tests still passed. This is local environment noise, not a Qantara regression.
 
-Initial fresh-clone result:
+## Current Risk Register
 
-- backend and Ollama containers became healthy
-- gateway container exited because `zeroconf` was missing from `ops/docker/requirements.txt`
+Blockers before tagging another public release:
 
-After regenerating `ops/docker/requirements.txt` from `ops/docker/requirements.in`:
+1. Decide whether the untracked `docs/audits/` report should stay local, be sanitized, or be removed before a future public commit.
+2. Optional: run a physical microphone/browser test on another device over HTTPS. The automated LAN auth/WebSocket/TTS path and headless Chromium setup-page load already passed.
 
-- gateway, backend, and Ollama containers started successfully
-- setup page returned HTTP 200 at `http://127.0.0.1:9876/setup/index.html`
-- setup page returned HTTP 200 over LAN at `http://<LAN_IP>:9876/setup/index.html`
-- `/api/status`, `/api/backends`, and `/api/tts` returned valid JSON
-- default model `qwen2.5:3b` was pulled into Ollama
-- WebSocket text-turn smoke test completed through gateway -> backend -> TTS
+Non-blocking but important:
+
+- Mesh and Wyoming are still plaintext trusted-LAN features. A future release should add a pre-shared key or HMAC handshake if they become more than trusted-home-LAN features.
+- The setup URL safety hardening rejects dotted public-looking hostnames unless they end in `.local`, `.lan`, or `.home.arpa`; users with unusual private DNS names may need to use an IP address or supported local suffix.
+- Docker image size is still large because Python ML speech dependencies are included.
+- PyPI packaging is still not ready; Docker/native execution remain the supported install paths.
+- Avatar motion is amplitude-driven. Phoneme lipsync remains future work.
 
 ## Recommended Next Steps
 
-1. Run the native clean-machine validation:
-
-```bash
-python3 -m venv .venv
-./.venv/bin/pip install -r gateway/transport_spike/requirements.txt
-make spike-run-venv
-```
-
-2. Confirm CI passes after the Docker dependency-lock fix is pushed.
-
-3. Publish GitHub issues from `docs/PUBLISHING_READINESS_AUDIT.md`.
-
-4. `v0.2.6` is the first public release tag.
+1. Push `public-main` to GitHub `main` if the user wants the public repo updated now.
+2. Keep the next release notes under `CHANGELOG.md` `[Unreleased]` until a version number is chosen.
+3. For a manual browser demo from another device, use the current LAN stack at `http://192.168.68.69:9876` or restart with HTTPS for microphone access.
 
 ## Current Readiness
 
-Status: public release tagged; Docker clean-install fix included.
+Status: ready to push the hardening update. Fresh Docker rebuild, LAN auth smoke, LAN WebSocket/TTS smoke, and headless Chromium setup-page smoke passed.
 
-Score: 95 / 100.
+Score: 96 / 100.

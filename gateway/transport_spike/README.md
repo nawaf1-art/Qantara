@@ -57,7 +57,7 @@ If `faster-whisper` is installed, Qantara can transcribe the recent microphone b
 Optional model selection:
 
 ```bash
-export QANTARA_WHISPER_MODEL=base.en
+export QANTARA_WHISPER_MODEL=small
 ```
 
 Recommended compatibility defaults:

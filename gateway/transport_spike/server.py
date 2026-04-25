@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ipaddress
+import logging
 import os
 import ssl
 import sys
@@ -13,8 +15,10 @@ if REPO_ROOT not in sys.path:
 
 from gateway.transport_spike.auth import (  # noqa: E402
     ADMIN_TOKEN_KEY,
+    AUTH_SESSION_TOKEN_KEY,
     AUTH_TOKEN_KEY,
     load_auth_token,
+    new_auth_session_token,
 )
 from gateway.transport_spike.common import (  # noqa: E402
     DEFAULT_HOST,
@@ -38,6 +42,8 @@ from gateway.transport_spike.websocket_api import (  # noqa: E402
     websocket_handler,
 )
 
+LOGGER = logging.getLogger(__name__)
+
 __all__ = [
     "GatewayRuntime",
     "Session",
@@ -57,11 +63,21 @@ __all__ = [
 def create_app(runtime: GatewayRuntime | None = None) -> web.Application:
     app = web.Application()
     app[APP_RUNTIME_KEY] = runtime or GatewayRuntime()
-    app[AUTH_TOKEN_KEY] = load_auth_token("QANTARA_AUTH_TOKEN")
+    auth_token = load_auth_token("QANTARA_AUTH_TOKEN")
+    app[AUTH_TOKEN_KEY] = auth_token
+    app[AUTH_SESSION_TOKEN_KEY] = new_auth_session_token(auth_token)
     app[ADMIN_TOKEN_KEY] = load_auth_token("QANTARA_ADMIN_TOKEN")
     app.router.add_get("/ws", websocket_handler)
     app.router.add_get("/api/discovery/scan", api_discovery_scan_handler)
     mount_static_routes(app)
+
+    bind_host = os.environ.get("QANTARA_SPIKE_HOST", DEFAULT_HOST)
+    if _is_non_loopback_bind(bind_host) and auth_token is None:
+        LOGGER.warning(
+            "qantara gateway is configured to listen on %s without QANTARA_AUTH_TOKEN; "
+            "set a strong token before exposing Qantara on a LAN",
+            bind_host,
+        )
 
     async def _on_startup(_app: web.Application) -> None:
         await app[APP_RUNTIME_KEY].start_mesh()
@@ -70,6 +86,15 @@ def create_app(runtime: GatewayRuntime | None = None) -> web.Application:
     app.on_startup.append(_on_startup)
     app.on_cleanup.append(cleanup_bridge)
     return app
+
+
+def _is_non_loopback_bind(host: str) -> bool:
+    if host in {"", "0.0.0.0", "::"}:
+        return True
+    try:
+        return not ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return host not in {"localhost"}
 
 
 def create_ssl_context() -> ssl.SSLContext | None:

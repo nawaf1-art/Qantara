@@ -6,11 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- Browser-friendly auth unlock flow for `QANTARA_AUTH_TOKEN` using `/api/auth/status`, `/api/auth/login`, `/api/auth/logout`, and an HttpOnly local session cookie.
+- Docker Compose pass-through for `QANTARA_AUTH_TOKEN`, `QANTARA_ADMIN_TOKEN`, mesh, and Wyoming variables.
+- Gateway container healthcheck for `/api/status`.
+
 ### Changed
 - First-run Docker documentation now reflects the measured larger disk footprint of the Qantara image and local LLM pull.
+- Docker uses the multilingual `small` Whisper model by default, matching the public multilingual launch claim.
+- Mesh and Wyoming bind to loopback by default; LAN exposure now requires explicit `QANTARA_MESH_HOST=0.0.0.0` or `QANTARA_WYOMING_HOST=0.0.0.0`.
+- Public docs now describe Kokoro as running through the `kokoro` Python package instead of implying direct ONNX runtime usage.
 
 ### Fixed
 - Docker runtime dependency lock now includes the mesh discovery dependencies (`ifaddr`, `wyoming`, and `zeroconf`) required by the gateway container.
+- `QANTARA_AUTH_TOKEN` comparison now uses constant-time comparison and rejects configured tokens shorter than 24 characters.
+- `QANTARA_AUTH_TOKEN` now protects warmup, test URL probing, backend discovery, LAN discovery scan, and mesh status endpoints in addition to WebSocket and configuration endpoints.
+- `/api/test-url` now connects to resolved private/loopback addresses while preserving the original Host header, reducing DNS-rebinding exposure during setup probing.
 
 ## [0.2.6] - 2026-04-24
 

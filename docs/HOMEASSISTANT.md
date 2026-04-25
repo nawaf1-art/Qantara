@@ -11,6 +11,7 @@ Set two environment variables before starting the gateway:
 
 ```bash
 export QANTARA_WYOMING_ENABLED=true
+export QANTARA_WYOMING_HOST=0.0.0.0           # required for Home Assistant on your LAN
 export QANTARA_WYOMING_PORT=10700           # default
 export QANTARA_WYOMING_NODE_NAME=kitchen    # shows up in HA as the satellite name
 export QANTARA_WYOMING_AREA=kitchen         # optional; maps to HA area
@@ -24,6 +25,8 @@ make spike-run-lan-venv
 
 HA should discover the satellite within ~10 seconds. Look in
 **Settings → Devices & Services** for a prompt to add "Wyoming Protocol".
+
+The Wyoming bridge is plaintext and does not authenticate Home Assistant. Use it only on a trusted LAN.
 
 ## Manual setup in HA (if auto-discovery fails)
 
@@ -44,6 +47,7 @@ services:
     network_mode: host
     environment:
       - QANTARA_WYOMING_ENABLED=true
+      - QANTARA_WYOMING_HOST=0.0.0.0
       - QANTARA_WYOMING_PORT=10700
 ```
 

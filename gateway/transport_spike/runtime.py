@@ -453,11 +453,13 @@ class GatewayRuntime:
             return
         node_id = os.environ.get("QANTARA_MESH_NODE_ID", f"qantara-{uuid.uuid4().hex[:8]}")
         mesh_port = int(os.environ.get("QANTARA_MESH_PORT", "8901"))
+        mesh_host = os.environ.get("QANTARA_MESH_HOST", "127.0.0.1")
         service_type = os.environ.get("QANTARA_MESH_SERVICE_TYPE", "_qantara._tcp.local.")
         self.mesh_controller = MeshController(MeshControllerConfig(
             node_id=node_id,
             role=role,
             mesh_port=mesh_port,
+            mesh_host=mesh_host,
             service_type=service_type,
             capabilities={
                 "stt": self.stt.available if self.stt else False,
@@ -479,12 +481,14 @@ class GatewayRuntime:
         if self.wyoming_bridge is not None:
             return
         wyoming_port = int(os.environ.get("QANTARA_WYOMING_PORT", "10700"))
+        wyoming_host = os.environ.get("QANTARA_WYOMING_HOST", "127.0.0.1")
         wyoming_node_name = os.environ.get("QANTARA_WYOMING_NODE_NAME", "qantara")
         wyoming_area = os.environ.get("QANTARA_WYOMING_AREA", "")
         self.wyoming_bridge = WyomingBridge(
             node_name=wyoming_node_name, area=wyoming_area,
-            port=wyoming_port, version="0.2.2", has_vad=False,
+            host=wyoming_host, port=wyoming_port, version="0.2.2", has_vad=False,
             runtime=self,
+            register_zeroconf=wyoming_host not in {"127.0.0.1", "::1", "localhost"},
         )
         await self.wyoming_bridge.start()
 

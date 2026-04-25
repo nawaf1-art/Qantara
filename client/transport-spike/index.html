@@ -2163,6 +2163,22 @@
       };
     }
 
+    async function ensureVoiceAuthenticated() {
+      try {
+        const response = await fetch("/api/auth/status", { cache: "no-store" });
+        const status = await response.json();
+        if (status.required && !status.authenticated) {
+          log("auth required: unlock Qantara from the setup page first");
+          showMicPermissionError("Qantara is locked. Open the setup page and enter QANTARA_AUTH_TOKEN.");
+          setTimeout(() => { window.location.href = "/setup?auth=1"; }, 800);
+          return false;
+        }
+      } catch (error) {
+        log(`auth status check failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      return true;
+    }
+
     function disconnect() {
       _userDisconnected = true;
       stopMic();
@@ -2174,7 +2190,7 @@
       if (!window.isSecureContext && window.location.hostname !== "127.0.0.1" && window.location.hostname !== "localhost") {
         log("warning: microphone access will likely fail on insecure non-localhost origins; use HTTPS for LAN mic access");
       }
-      connect();
+      if (await ensureVoiceAuthenticated()) connect();
     });
 
     disconnectBtn.addEventListener("click", () => disconnect());

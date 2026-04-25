@@ -19,7 +19,7 @@ class MeshControllerConfig:
     node_id: str
     role: str = "full"
     mesh_port: int = 8901
-    mesh_host: str = "0.0.0.0"
+    mesh_host: str = "127.0.0.1"
     service_type: str = DEFAULT_SERVICE_TYPE
     capabilities: dict = field(default_factory=dict)
 
@@ -39,6 +39,7 @@ class MeshController:
             role=cfg.role,
             port=cfg.mesh_port,
             capabilities=cfg.capabilities,
+            host_ip=None if cfg.mesh_host in {"0.0.0.0", "::"} else cfg.mesh_host,
         )
         self._browser = MeshBrowser(
             service_type=cfg.service_type,

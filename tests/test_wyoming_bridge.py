@@ -44,6 +44,19 @@ class WyomingHandlerTests(unittest.IsolatedAsyncioTestCase):
 
 
 class WyomingBridgeLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_bridge_defaults_to_loopback_host(self) -> None:
+        from gateway.mesh.wyoming_bridge import WyomingBridge
+
+        bridge = WyomingBridge(
+            node_name="wyo-test",
+            area="",
+            port=10797,
+            version="0.2.2",
+            has_vad=False,
+            register_zeroconf=False,
+        )
+        self.assertEqual(bridge._host, "127.0.0.1")
+
     async def test_bridge_starts_and_accepts_describe(self) -> None:
         from gateway.mesh.wyoming_bridge import WyomingBridge
 

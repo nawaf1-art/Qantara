@@ -11,7 +11,14 @@ from typing import Any
 import aiohttp as _aiohttp
 from aiohttp import web
 
-from gateway.transport_spike.auth import ADMIN_TOKEN_KEY, AUTH_TOKEN_KEY, require_bearer_token
+from gateway.transport_spike.auth import (
+    ADMIN_TOKEN_KEY,
+    AUTH_TOKEN_KEY,
+    api_auth_login_handler,
+    api_auth_logout_handler,
+    api_auth_status_handler,
+    require_bearer_token,
+)
 from gateway.transport_spike.common import CLIENT_SETUP_DIR, CLIENT_SPIKE_DIR, CLIENT_TRANSLATE_DIR, IDENTITY_DIR
 from gateway.transport_spike.runtime import APP_RUNTIME_KEY, GatewayRuntime
 
@@ -152,7 +159,10 @@ def _assemble_backends(
     return backends
 
 
-async def api_backends_handler(_request: web.Request) -> web.Response:
+async def api_backends_handler(request: web.Request) -> web.Response:
+    auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
+    if auth_error is not None:
+        return auth_error
     ollama_result, openclaw_result, openai_result = await asyncio.gather(probe_ollama(), probe_openclaw(), probe_openai_compatible())
     return web.json_response({"backends": _assemble_backends(ollama_result, openclaw_result, openai_result)})
 
@@ -163,6 +173,9 @@ async def api_backends_stream_handler(request: web.Request) -> web.StreamRespons
     the fully-assembled backends list matching /api/backends exactly. Useful
     for surfacing per-probe progress in the setup page, which otherwise has
     to wait up to 60s on a slow OpenClaw install."""
+    auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
+    if auth_error is not None:
+        return auth_error
     response = web.StreamResponse(status=200, headers={"Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive"})
     await response.prepare(request)
 
@@ -312,6 +325,9 @@ async def warmup_current_backend(runtime: GatewayRuntime, timeout_s: float = 90.
 
 
 async def api_warmup_handler(request: web.Request) -> web.Response:
+    auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
+    if auth_error is not None:
+        return auth_error
     runtime: GatewayRuntime = request.app[APP_RUNTIME_KEY]
     result = await warmup_current_backend(runtime)
     return web.json_response(result)
@@ -438,25 +454,54 @@ async def api_configure_handler(request: web.Request) -> web.Response:
 
 
 def is_safe_url(url: str) -> bool:
+    return _resolve_safe_url(url) is not None
+
+
+def _resolve_safe_url(url: str) -> tuple[str, str] | None:
     import ipaddress as _ipa
     from urllib.parse import urlparse
 
     try:
         parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"}:
+            return None
         host = parsed.hostname or ""
-        if host in ("localhost", "127.0.0.1", "::1"):
-            return True
-        addr = _ipa.ip_address(host)
-        return addr.is_private or addr.is_loopback
-    except (ValueError, TypeError):
+        if not host:
+            return None
+        port = parsed.port
         try:
-            resolved = _sock.getaddrinfo(host, None, _sock.AF_UNSPEC, _sock.SOCK_STREAM)
-            return len(resolved) > 0 and all(_ipa.ip_address(sockaddr[0]).is_private or _ipa.ip_address(sockaddr[0]).is_loopback for _, _, _, _, sockaddr in resolved)
-        except Exception:
-            return False
+            candidates = [_ipa.ip_address(host)]
+        except ValueError:
+            if host not in {"localhost"} and "." in host and not host.endswith((".local", ".lan", ".home.arpa")):
+                return None
+            resolved = _sock.getaddrinfo(host, port, _sock.AF_UNSPEC, _sock.SOCK_STREAM)
+            candidates = [_ipa.ip_address(sockaddr[0]) for _, _, _, _, sockaddr in resolved]
+        if not candidates or not all(addr.is_private or addr.is_loopback for addr in candidates):
+            return None
+        selected = candidates[0]
+        selected_host = selected.compressed
+        if selected.version == 6:
+            selected_host = f"[{selected_host}]"
+        if port is not None:
+            selected_host = f"{selected_host}:{port}"
+        return parsed._replace(netloc=selected_host).geturl(), parsed.netloc
+    except Exception:
+        return None
+
+
+def _safe_model_probe_base(raw_url: str) -> tuple[str, dict[str, str]] | None:
+    resolved = _resolve_safe_url(raw_url)
+    if resolved is None:
+        return None
+    safe_url, host_header = resolved
+    base = safe_url[:-3] if safe_url.endswith("/v1") else safe_url
+    return base, {"Host": host_header}
 
 
 async def api_test_url_handler(request: web.Request) -> web.Response:
+    auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
+    if auth_error is not None:
+        return auth_error
     client_ip = request.remote or "unknown"
     if not _check_test_url_rate_limit(client_ip):
         return web.json_response(
@@ -472,14 +517,15 @@ async def api_test_url_handler(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "missing url"}, status=400)
     if not raw_url.startswith(("http://", "https://")):
         raw_url = "http://" + raw_url
-    if not is_safe_url(raw_url):
+    safe_probe = _safe_model_probe_base(raw_url)
+    if safe_probe is None:
         return web.json_response({"ok": False, "error": "Only private network URLs are allowed"}, status=403)
-    base = raw_url[:-3] if raw_url.endswith("/v1") else raw_url
+    base, headers = safe_probe
     timeout = _aiohttp.ClientTimeout(total=5)
     for prefix in ("/v1", ""):
         try:
             async with _aiohttp.ClientSession(timeout=timeout) as cs:
-                async with cs.get(f"{base}{prefix}/models") as resp:
+                async with cs.get(f"{base}{prefix}/models", headers=headers) as resp:
                     if resp.status < 400:
                         data = await resp.json()
                         models = [m.get("id", "") for m in data.get("data", []) if m.get("id")]
@@ -506,6 +552,9 @@ async def translate_handler(_request: web.Request) -> web.StreamResponse:
 
 
 async def api_mesh_peers_handler(request: web.Request) -> web.Response:
+    auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
+    if auth_error is not None:
+        return auth_error
     runtime: GatewayRuntime = request.app[APP_RUNTIME_KEY]
     controller = runtime.mesh_controller
     if controller is None:
@@ -523,6 +572,9 @@ async def api_mesh_peers_handler(request: web.Request) -> web.Response:
 
 
 async def api_mesh_status_handler(request: web.Request) -> web.Response:
+    auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
+    if auth_error is not None:
+        return auth_error
     runtime: GatewayRuntime = request.app[APP_RUNTIME_KEY]
     controller = runtime.mesh_controller
     if controller is None:
@@ -540,6 +592,9 @@ async def api_mesh_status_handler(request: web.Request) -> web.Response:
 
 def mount_static_routes(app: web.Application) -> None:
     app.router.add_get("/", index_handler)
+    app.router.add_get("/api/auth/status", api_auth_status_handler)
+    app.router.add_post("/api/auth/login", api_auth_login_handler)
+    app.router.add_post("/api/auth/logout", api_auth_logout_handler)
     app.router.add_get("/api/backends", api_backends_handler)
     app.router.add_get("/api/backends/stream", api_backends_stream_handler)
     app.router.add_get("/api/status", api_status_handler)

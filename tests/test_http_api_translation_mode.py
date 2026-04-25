@@ -113,7 +113,7 @@ class TranslationModeApiTests(AioHTTPTestCase):
         self.assertEqual(resp.status, 404)
 
     async def test_requires_auth_token_when_configured(self) -> None:
-        client, runtime = await self._start_authed_client("voice-secret")
+        client, runtime = await self._start_authed_client("voice-secret-token-123456")
         try:
             session = Session(DummyWebSocket(), runtime)
             session.client_session_id = "c5"
@@ -131,7 +131,7 @@ class TranslationModeApiTests(AioHTTPTestCase):
                 data=json.dumps({"client_session_id": "c5", "mode": "assistant"}),
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": "Bearer voice-secret",
+                    "Authorization": "Bearer voice-secret-token-123456",
                 },
             )
             self.assertEqual(ok.status, 200)

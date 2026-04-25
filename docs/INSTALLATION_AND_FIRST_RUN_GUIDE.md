@@ -110,6 +110,7 @@ openssl req -x509 -nodes -days 30 \
 Run the gateway:
 
 ```bash
+QANTARA_AUTH_TOKEN="$(openssl rand -hex 24)" \
 QANTARA_SPIKE_HOST=0.0.0.0 \
 QANTARA_SPIKE_PORT=8899 \
 QANTARA_TLS_CERT=ops/certs/qantara-cert.pem \
@@ -123,7 +124,7 @@ Open:
 https://<your-lan-ip>:8899
 ```
 
-The client device must trust the certificate. See `ops/TRUST_CERT_WINDOWS.md` for Windows.
+The client device must trust the certificate. Enter the auth token on the setup page if Qantara asks for it. See `ops/TRUST_CERT_WINDOWS.md` for Windows.
 
 ## Verify Your Install
 

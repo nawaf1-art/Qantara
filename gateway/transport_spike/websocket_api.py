@@ -6,7 +6,7 @@ import time
 from aiohttp import WSMsgType, web
 
 from discovery.scanner import scan_lan
-from gateway.transport_spike.auth import AUTH_TOKEN_KEY, has_valid_bearer_token
+from gateway.transport_spike.auth import AUTH_TOKEN_KEY, has_valid_auth_token, require_bearer_token
 from gateway.transport_spike.common import PCM_KIND, TARGET_SAMPLE_RATE
 from gateway.transport_spike.runtime import APP_RUNTIME_KEY, GatewayRuntime, Session
 from gateway.transport_spike.speech import (
@@ -24,7 +24,7 @@ from gateway.transport_spike.speech import (
 
 
 async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
-    if not has_valid_bearer_token(request, AUTH_TOKEN_KEY):
+    if not has_valid_auth_token(request, AUTH_TOKEN_KEY):
         raise web.HTTPUnauthorized()
     runtime: GatewayRuntime = request.app[APP_RUNTIME_KEY]
     ws = web.WebSocketResponse(max_msg_size=8 * 1024 * 1024, heartbeat=30.0)
@@ -181,6 +181,9 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
 
 
 async def api_discovery_scan_handler(request: web.Request) -> web.StreamResponse:
+    auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
+    if auth_error is not None:
+        return auth_error
     response = web.StreamResponse(status=200, headers={"Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive"})
     await response.prepare(request)
 

@@ -65,15 +65,29 @@ services:
       QANTARA_STT_PROVIDER: faster_whisper
       QANTARA_TTS_PROVIDER: kokoro
       QANTARA_DEFAULT_SPEECH_RATE: 1.2
-      QANTARA_WHISPER_MODEL: base.en
+      QANTARA_WHISPER_MODEL: small
+      QANTARA_AUTH_TOKEN: ${QANTARA_AUTH_TOKEN:-}
+      QANTARA_ADMIN_TOKEN: ${QANTARA_ADMIN_TOKEN:-}
       QANTARA_OLLAMA_BASE_URL: http://ollama:11434
       QANTARA_WHISPER_DEVICE: cpu
       QANTARA_WHISPER_COMPUTE: int8
       QANTARA_KOKORO_DEVICE: cpu
       QANTARA_KOKORO_VOICE: af_heart
+      QANTARA_MESH_ROLE: ${QANTARA_MESH_ROLE:-disabled}
+      QANTARA_MESH_HOST: ${QANTARA_MESH_HOST:-127.0.0.1}
+      QANTARA_MESH_PORT: ${QANTARA_MESH_PORT:-8901}
+      QANTARA_WYOMING_ENABLED: ${QANTARA_WYOMING_ENABLED:-false}
+      QANTARA_WYOMING_HOST: ${QANTARA_WYOMING_HOST:-127.0.0.1}
+      QANTARA_WYOMING_PORT: ${QANTARA_WYOMING_PORT:-10700}
     ports:
       - "${QANTARA_DOCKER_BIND:-127.0.0.1}:${QANTARA_PORT:-8765}:8765"
     command: ["python", "gateway/transport_spike/server.py"]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8765/api/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
 volumes:
   ollama-data:
