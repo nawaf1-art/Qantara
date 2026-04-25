@@ -8,7 +8,18 @@ Qantara is public on GitHub at `https://github.com/nawaf1-art/Qantara` from the 
 
 This handoff covers the original public-release readiness pass plus the 2026-04-26 post-public hardening pass based on the read-only external audit in `docs/audits/QANTARA-end-to-end-readonly-audit-2026-04-25.md`.
 
-Latest local commit for this pass has message: `fix: harden auth and LAN defaults`. Run `git log -1 --oneline` for the exact hash.
+Hardening update pushed to GitHub `main`: `6d2e028 fix: harden auth and LAN defaults`.
+
+GitHub Actions for that commit passed:
+
+- `Tests`: passed across Ubuntu, macOS, and Windows on Python 3.11 and 3.12
+- `Release Drafter`: passed
+
+Current local Docker demo stack is running:
+
+- LAN URL: `http://192.168.68.69:9876`
+- token file for this local smoke stack: `/tmp/qantara-smoke-token`
+- services: `qantara-ollama`, `qantara-backend`, and `qantara-gateway` are healthy
 
 Important: `docs/audits/` is currently untracked and contains local-machine details from the external audit. Do not add it to a public commit unless it is deliberately sanitized first.
 
@@ -117,6 +128,8 @@ Results:
 - LAN auth smoke: passed; unauthenticated `/api/backends` returned `401`, `/api/auth/login` set the browser session cookie, and authenticated `/api/backends` returned backend options
 - LAN WebSocket/TTS smoke: passed through `ws://192.168.68.69:9876/ws`; a real backend turn returned Kokoro TTS status and final assistant text
 - Headless Chromium page smoke: passed; the LAN setup page loaded and rendered the `QANTARA_AUTH_TOKEN` auth panel
+- GitHub push: passed, `public-main -> main`
+- GitHub CI: passed for commit `6d2e028`
 
 One warning appeared during the unit run:
 
@@ -139,12 +152,12 @@ Non-blocking but important:
 
 ## Recommended Next Steps
 
-1. Push `public-main` to GitHub `main` if the user wants the public repo updated now.
-2. Keep the next release notes under `CHANGELOG.md` `[Unreleased]` until a version number is chosen.
-3. For a manual browser demo from another device, use the current LAN stack at `http://192.168.68.69:9876` or restart with HTTPS for microphone access.
+1. Keep the next release notes under `CHANGELOG.md` `[Unreleased]` until a version number is chosen.
+2. For a manual browser demo from another device, use the current LAN stack at `http://192.168.68.69:9876` or restart with HTTPS for microphone access.
+3. Before a tagged hardening release, decide whether this should remain part of `0.2.6`, become `0.2.7`, or use another pre-1.0 patch version. The existing roadmap currently reserves `0.2.7` for MCP work, so choose deliberately.
 
 ## Current Readiness
 
-Status: ready to push the hardening update. Fresh Docker rebuild, LAN auth smoke, LAN WebSocket/TTS smoke, and headless Chromium setup-page smoke passed.
+Status: hardening update pushed and CI passed. Fresh Docker rebuild, LAN auth smoke, LAN WebSocket/TTS smoke, and headless Chromium setup-page smoke passed.
 
 Score: 96 / 100.
