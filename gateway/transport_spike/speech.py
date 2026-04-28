@@ -647,6 +647,16 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                 remaining = event["text"][len(spoken_so_far):].strip()
                 if remaining:
                     enqueue_speech(session, remaining, turn_speech_generation, turn_voice_id)
+            elif event_type == "assistant_activity":
+                payload = {
+                    "activity_type": event.get("activity_type", "other"),
+                    "summary": event.get("summary", ""),
+                }
+                if event.get("progress") is not None:
+                    payload["progress"] = event["progress"]
+                await session.emit("assistant_activity", "adapter", payload)
+                if not await safe_send_str(session, {"type": "assistant_activity", **payload}):
+                    return
             elif event_type == "cancel_acknowledged":
                 await session.emit("turn_cancel_acknowledged", "adapter", {"turn_handle": turn_handle})
                 await safe_send_str(session, {"type": "cancel_status", "result": {"status": "acknowledged"}})

@@ -135,6 +135,17 @@ class DeltaOnlyAdapter(RuntimeAdapter):
         yield {"type": "turn_completed"}
 
 
+class ActivityAdapter(DeltaOnlyAdapter):
+    async def stream_assistant_output(self, session_handle: str, turn_handle: str):
+        yield {
+            "type": "assistant_activity",
+            "activity_type": "tool_call",
+            "summary": "reading voice transcript",
+            "progress": 0.5,
+        }
+        yield {"type": "assistant_text_final", "text": "Done."}
+
+
 class TransportSpikeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.tts = FakeTTS()
@@ -161,6 +172,24 @@ class TransportSpikeTests(unittest.IsolatedAsyncioTestCase):
         final_messages = [m for m in ws.strings if m.get("type") == "assistant_text_final"]
         self.assertTrue(final_messages)
         self.assertEqual(final_messages[-1]["text"], "Hello there")
+
+    async def test_stream_turn_forwards_adapter_activity_events(self) -> None:
+        emitted: list[dict] = []
+        self.runtime.event_sink = emitted.append
+        binding = self.runtime.default_binding()
+        binding.adapter = ActivityAdapter()
+        ws = DummyWebSocket()
+        session = Session(ws, self.runtime)
+        session.client_session_id = "client-activity"
+        self.runtime.register_session(session)
+
+        await stream_assistant_turn(session, "hello")
+
+        activity_messages = [m for m in ws.strings if m.get("type") == "assistant_activity"]
+        self.assertTrue(activity_messages)
+        self.assertEqual(activity_messages[0]["activity_type"], "tool_call")
+        self.assertEqual(activity_messages[0]["progress"], 0.5)
+        self.assertTrue(any(record["event_name"] == "assistant_activity" for record in emitted))
 
     async def test_runtime_close_terminates_managed_bridge_processes(self) -> None:
         import asyncio

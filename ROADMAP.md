@@ -294,14 +294,14 @@ Small patch release after the first public tag. This keeps the public launch tag
 
 #### `0.2.8` — MCP voice client + server (postponed from 0.2.1)
 
-Landed together post-launch as a single MCP release. **Client:** talk to any MCP-enabled agent (HASS MCP, `claude mcp serve`, custom tool servers). **Server:** expose Qantara's own voice capabilities as MCP tools so any MCP-compatible agent elsewhere can drive Qantara remotely.
+Planned together post-launch as a single MCP release. **Client:** talk to any MCP-enabled agent (HASS MCP, `claude mcp serve`, custom tool servers). **Server:** expose Qantara's own voice capabilities as MCP tools so any MCP-compatible agent elsewhere can drive Qantara remotely.
 
 **MCP client adapter:**
-- [ ] `adapters/mcp_client.py` against `mcp==1.27.*` — stdio + streamable-HTTP transports. Initial scope = agent-style: invoke a named chat tool with the transcript, stream the result via `progress_callback` → `assistant_activity` events, final text → `assistant_text_final`
-- [ ] `runtime.py::_create_binding` learns `mcp` backend kind
-- [ ] `QANTARA_MCP_TRANSPORT` (stdio|http) + `QANTARA_MCP_COMMAND` / `QANTARA_MCP_URL` / `QANTARA_MCP_CHAT_TOOL` env config
-- [ ] Setup page tile for "Any MCP server" with `tools/list` probe
-- [ ] Reference preset configs in `docs/examples/mcp/` (HASS MCP, `claude mcp serve`, filesystem-MCP, hello-world fixture)
+- [x] `adapters/mcp_client.py` against `mcp==1.27.*` — stdio + streamable-HTTP transports. Initial scope = agent-style: invoke a named chat tool with the transcript, stream the result via `progress_callback` → `assistant_activity` events, final text → `assistant_text_final`
+- [x] `runtime.py::_create_binding` learns `mcp` backend kind
+- [x] `QANTARA_MCP_TRANSPORT` (stdio|http) + `QANTARA_MCP_COMMAND` / `QANTARA_MCP_URL` / `QANTARA_MCP_CHAT_TOOL` env config
+- [x] Setup page tile for "Any MCP server" with `tools/list` probe
+- [x] Reference preset configs in `docs/examples/mcp/` (HASS MCP, `claude mcp serve`, filesystem-MCP, hello-world fixture)
 - [ ] Known cancellation race with SDK #2416 worked around via task-cancel + assertion swallow
 
 **MCP server (expose voice as tools):**
@@ -466,9 +466,10 @@ Basic EN↔AR translation shipped in 0.2.5. This item extends it:
 0.2.4          ✅ Multilingual assistant + directional + live conversation translator (EN/AR/ES/FR/JA)
 0.2.5          ✅ Chatterbox TTS (expressive voice)
 0.2.6          ✅ PUBLIC LAUNCH — first public GitHub release
-0.2.7          ⬜ MCP client + server (postponed from 0.2.1)
-0.2.8          ⬜ Agent protocol v1 + tool-call formalization
-0.2.9          ⬜ pip install qantara
+0.2.7          ✅ Post-launch hardening patch
+0.2.8          🔄 MCP client + server (postponed from 0.2.1)
+0.2.9          ⬜ Agent protocol v1 + tool-call formalization
+0.2.10         ⬜ pip install qantara
 0.3.0          ⬜ Phase 2 complete
 0.3.1          ⬜ Home Assistant
 0.3.2          ⬜ Speech-native models

@@ -25,5 +25,8 @@ def create_adapter(config: AdapterConfig | None = None) -> RuntimeAdapter:
     if config.kind in {"openai", "openai_compatible", "openai-compatible"}:
         from adapters.openai_compatible import OpenAICompatibleAdapter
         return OpenAICompatibleAdapter(config)
+    if config.kind in {"mcp", "mcp_client", "mcp-client"}:
+        from adapters.mcp_client import MCPClientAdapter
+        return MCPClientAdapter(config)
 
     raise ValueError(f"unsupported adapter kind: {config.kind}")

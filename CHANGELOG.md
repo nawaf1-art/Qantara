@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- MCP client adapter for agent-style chat tools over stdio or streamable HTTP (`mcp==1.27.*`), including progress-to-`assistant_activity` forwarding.
+- Setup-page MCP backend tile with a protected `tools/list` probe for configured stdio servers and private/loopback HTTP MCP URLs.
+- Reference MCP config examples under `docs/examples/mcp/`.
+
+### Changed
+- Adapter activity events now flow through the gateway to the browser activity strip.
+- Docker Compose passes MCP client environment variables through to the gateway container.
+
 ## [0.2.7] - 2026-04-28
 
 ### Added

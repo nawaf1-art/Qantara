@@ -130,6 +130,13 @@ class GatewayRuntime:
                 os.environ.get("QANTARA_OLLAMA_MODEL", ""),
                 os.environ.get("QANTARA_OPENCLAW_AGENT_ID", ""),
             )
+        if kind == "mcp_client":
+            return (
+                "mcp",
+                os.environ.get("QANTARA_MCP_URL", "").rstrip("/"),
+                os.environ.get("QANTARA_MCP_CHAT_TOOL", "chat"),
+                os.environ.get("QANTARA_MCP_COMMAND", ""),
+            )
         return kind, "", "", ""
 
     def _create_initial_binding(self, config: AdapterConfig) -> str:
@@ -297,9 +304,20 @@ class GatewayRuntime:
         url: str = "",
         model: str = "",
         agent: str = "",
+        mcp_transport: str = "",
+        mcp_command: str = "",
+        mcp_chat_tool: str = "",
     ) -> BackendBinding:
         async with self._configure_lock:
-            binding = await self._create_binding(backend_type, url=url, model=model, agent=agent)
+            binding = await self._create_binding(
+                backend_type,
+                url=url,
+                model=model,
+                agent=agent,
+                mcp_transport=mcp_transport,
+                mcp_command=mcp_command,
+                mcp_chat_tool=mcp_chat_tool,
+            )
             self.default_binding_id = binding.binding_id
             self.prune_session_store()
             return binding
@@ -310,6 +328,9 @@ class GatewayRuntime:
         url: str = "",
         model: str = "",
         agent: str = "",
+        mcp_transport: str = "",
+        mcp_command: str = "",
+        mcp_chat_tool: str = "",
     ) -> BackendBinding:
         adapter_kind = "mock"
         env_overrides: dict[str, str] = {}
@@ -346,6 +367,22 @@ class GatewayRuntime:
             if not url:
                 raise ValueError("custom type requires 'url'")
             adapter_kind = "session_gateway_http"
+        elif backend_type in {"mcp", "mcp_client"}:
+            adapter_kind = "mcp_client"
+            backend_type = "mcp"
+            mcp_transport = (mcp_transport or os.environ.get("QANTARA_MCP_TRANSPORT", "stdio")).strip().lower()
+            mcp_chat_tool = (mcp_chat_tool or os.environ.get("QANTARA_MCP_CHAT_TOOL", "chat")).strip()
+            if mcp_transport == "http":
+                if not url:
+                    raise ValueError("mcp HTTP type requires 'url'")
+            elif mcp_transport == "stdio":
+                mcp_command = (mcp_command or os.environ.get("QANTARA_MCP_COMMAND", "")).strip()
+                if not mcp_command:
+                    raise ValueError("mcp stdio type requires QANTARA_MCP_COMMAND")
+            else:
+                raise ValueError(f"unknown MCP transport: {mcp_transport}")
+            model = mcp_chat_tool
+            agent = mcp_command
         else:
             raise ValueError(f"unknown type: {backend_type}")
 
@@ -354,6 +391,13 @@ class GatewayRuntime:
             config.options["base_url"] = url
         if adapter_kind == "openai_compatible" and model:
             config.options["model"] = model
+        if adapter_kind == "mcp_client":
+            config.options["transport"] = mcp_transport
+            config.options["chat_tool"] = mcp_chat_tool
+            if url:
+                config.options["url"] = url
+            if mcp_command:
+                config.options["command"] = mcp_command
 
         binding = BackendBinding(
             binding_id=str(uuid.uuid4()),

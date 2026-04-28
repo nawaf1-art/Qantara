@@ -632,6 +632,12 @@
         var models = b.models || [];
         return models.length + " model" + (models.length !== 1 ? "s" : "") + " \u2014 uses bridge process";
       }
+      if (b.type === "mcp") {
+        var tools = b.tools || [];
+        if (b.configured && b.chat_tool_found) return "Configured - " + tools.length + " tool" + (tools.length !== 1 ? "s" : "") + " detected";
+        if (b.configured && b.probe_error) return "Configured, probe failed";
+        return "Agent-style MCP chat tool";
+      }
       if (b.type === "openclaw") {
         var agents = b.agents || [];
         if (agents.length === 0) return "Advanced optional bridge - gateway detected";
@@ -661,6 +667,7 @@
         case "ollama": renderOllamaConfig(b); break;
         case "openclaw": renderOpenClawConfig(b); break;
         case "openai_compatible": renderOpenAIConfig(b); break;
+        case "mcp": renderMCPConfig(b); break;
         case "custom": renderCustomConfig(); break;
       }
       configEl.appendChild(renderTTSPicker());
@@ -1018,6 +1025,83 @@
       configEl.appendChild(group);
     }
 
+    function renderMCPConfig(b) {
+      var group = makeGroup("MCP server");
+      var note = document.createElement("div");
+      note.className = "config-note";
+      note.style.marginBottom = "8px";
+      note.style.fontStyle = "normal";
+      note.textContent = "Calls one MCP chat tool with each finalized voice transcript. Stdio commands must be set in the gateway environment.";
+
+      var transportLabel = document.createElement("label");
+      transportLabel.textContent = "Transport";
+      var transport = document.createElement("select");
+      transport.id = "cfg-mcp-transport";
+      ["http", "stdio"].forEach(function (value) {
+        var opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = value === "http" ? "Streamable HTTP" : "Stdio from QANTARA_MCP_COMMAND";
+        transport.appendChild(opt);
+      });
+      transport.value = (b.transport === "http") ? "http" : "stdio";
+
+      var urlRow = document.createElement("div");
+      urlRow.className = "url-row";
+      urlRow.style.marginTop = "8px";
+      var urlInput = document.createElement("input");
+      urlInput.type = "url";
+      urlInput.id = "cfg-mcp-url";
+      urlInput.placeholder = "http://localhost:8000/mcp";
+      urlInput.addEventListener("input", function () { startBtn.disabled = !isConfigValid(); });
+      var testBtn = document.createElement("button");
+      testBtn.className = "test-btn";
+      testBtn.textContent = "List tools";
+      testBtn.addEventListener("click", function () { testMCP(); });
+      urlRow.appendChild(urlInput);
+      urlRow.appendChild(testBtn);
+
+      var toolLabel = document.createElement("label");
+      toolLabel.textContent = "Chat tool";
+      toolLabel.style.display = "block";
+      toolLabel.style.marginTop = "10px";
+      var toolInput = document.createElement("input");
+      toolInput.type = "text";
+      toolInput.id = "cfg-mcp-tool";
+      toolInput.placeholder = "chat";
+      toolInput.value = b.chat_tool || "chat";
+      toolInput.addEventListener("input", function () { startBtn.disabled = !isConfigValid(); });
+
+      var stdioNote = document.createElement("div");
+      stdioNote.id = "mcp-stdio-note";
+      stdioNote.className = "config-note";
+      stdioNote.textContent = b.configured
+        ? "QANTARA_MCP_COMMAND is configured; the tool probe can run from the gateway process."
+        : "Set QANTARA_MCP_COMMAND before using stdio MCP from the browser setup page.";
+
+      function syncTransport() {
+        var isHTTP = transport.value === "http";
+        urlRow.style.display = isHTTP ? "flex" : "none";
+        stdioNote.style.display = isHTTP ? "none" : "block";
+        startBtn.disabled = !isConfigValid();
+      }
+      transport.addEventListener("change", syncTransport);
+
+      group.appendChild(note);
+      group.appendChild(transportLabel);
+      group.appendChild(transport);
+      group.appendChild(urlRow);
+      group.appendChild(stdioNote);
+      group.appendChild(toolLabel);
+      group.appendChild(toolInput);
+
+      var resultEl = document.createElement("div");
+      resultEl.id = "mcp-test-result";
+      resultEl.className = "test-result";
+      group.appendChild(resultEl);
+      configEl.appendChild(group);
+      syncTransport();
+    }
+
     window.testOpenAI = function testOpenAI(url) {
       if (!url) return;
       var el = document.getElementById("test-result");
@@ -1104,6 +1188,43 @@
         });
     }
 
+    function testMCP() {
+      var el = document.getElementById("mcp-test-result");
+      var transportEl = document.getElementById("cfg-mcp-transport");
+      var urlEl = document.getElementById("cfg-mcp-url");
+      var toolEl = document.getElementById("cfg-mcp-tool");
+      var payload = {
+        transport: transportEl ? transportEl.value : "stdio",
+        url: urlEl ? urlEl.value.trim() : "",
+        chat_tool: toolEl ? toolEl.value.trim() : "chat",
+      };
+      if (el) { el.textContent = "Listing tools\u2026"; el.className = "test-result"; }
+      fetch("/api/test-mcp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!el) return;
+          if (!data.ok) {
+            el.textContent = "\u2717 " + (data.error || "MCP probe failed");
+            el.className = "test-result fail";
+            return;
+          }
+          var tools = data.tools || [];
+          el.textContent = "\u2713 " + tools.length + " tool" + (tools.length !== 1 ? "s" : "") +
+            (data.chat_tool_found ? " - chat tool found" : " - chat tool not found");
+          el.className = data.chat_tool_found ? "test-result ok" : "test-result fail";
+        })
+        .catch(function () {
+          if (el) {
+            el.textContent = "\u2717 Cannot reach gateway.";
+            el.className = "test-result fail";
+          }
+        });
+    }
+
     function makeGroup(labelText) {
       var g = document.createElement("div");
       g.className = "config-group";
@@ -1124,6 +1245,14 @@
         } else if (s.type === "openai_compatible" && s.url) {
           var inp = document.getElementById("cfg-openai-url");
           if (inp) inp.value = s.url;
+        } else if (s.type === "mcp") {
+          var mcpTransport = document.getElementById("cfg-mcp-transport");
+          var mcpUrl = document.getElementById("cfg-mcp-url");
+          var mcpTool = document.getElementById("cfg-mcp-tool");
+          if (mcpTransport && s.mcp_transport) mcpTransport.value = s.mcp_transport;
+          if (mcpUrl && s.url) mcpUrl.value = s.url;
+          if (mcpTool && s.mcp_chat_tool) mcpTool.value = s.mcp_chat_tool;
+          if (mcpTransport) mcpTransport.dispatchEvent(new Event("change"));
         } else if (s.type === "custom" && s.url) {
           var inp2 = document.getElementById("cfg-url");
           if (inp2) inp2.value = s.url;
@@ -1144,6 +1273,17 @@
         case "openai_compatible":
           var inp = document.getElementById("cfg-openai-url");
           return inp && inp.value.trim().length > 0;
+        case "mcp":
+          var transportEl = document.getElementById("cfg-mcp-transport");
+          var toolEl = document.getElementById("cfg-mcp-tool");
+          var transport = transportEl ? transportEl.value : "stdio";
+          if (!toolEl || !toolEl.value.trim()) return false;
+          if (transport === "http") {
+            var mcpUrl = document.getElementById("cfg-mcp-url");
+            return mcpUrl && mcpUrl.value.trim().length > 0;
+          }
+          var mcpBackend = backends.find(function (x) { return x.type === "mcp"; });
+          return !!(mcpBackend && mcpBackend.configured);
         case "custom":
           var inp2 = document.getElementById("cfg-url");
           return inp2 && inp2.value.trim().length > 0;
@@ -1166,6 +1306,14 @@
           if (inp) payload.url = inp.value.trim();
           var modelSel = document.getElementById("cfg-openai-model");
           if (modelSel && modelSel.value) payload.model = modelSel.value;
+          break;
+        case "mcp":
+          var mcpTransport = document.getElementById("cfg-mcp-transport");
+          var mcpUrl = document.getElementById("cfg-mcp-url");
+          var mcpTool = document.getElementById("cfg-mcp-tool");
+          payload.mcp_transport = mcpTransport ? mcpTransport.value : "stdio";
+          if (payload.mcp_transport === "http" && mcpUrl) payload.url = mcpUrl.value.trim();
+          if (mcpTool) payload.mcp_chat_tool = mcpTool.value.trim();
           break;
         case "custom":
           var inp2 = document.getElementById("cfg-url");

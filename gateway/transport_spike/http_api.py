@@ -126,11 +126,54 @@ async def probe_openai_compatible() -> dict[str, Any]:
     return {"available": bool(servers), "servers": servers}
 
 
+async def probe_mcp() -> dict[str, Any]:
+    transport = os.environ.get("QANTARA_MCP_TRANSPORT", "stdio").strip().lower()
+    command = os.environ.get("QANTARA_MCP_COMMAND", "").strip()
+    url = os.environ.get("QANTARA_MCP_URL", "").strip().rstrip("/")
+    chat_tool = os.environ.get("QANTARA_MCP_CHAT_TOOL", "chat").strip()
+    configured = (transport == "stdio" and bool(command)) or (transport == "http" and bool(url))
+    result: dict[str, Any] = {
+        "available": configured,
+        "configured": configured,
+        "transport": transport,
+        "chat_tool": chat_tool,
+        "tools": [],
+    }
+    if not configured:
+        return result
+    try:
+        from adapters.base import AdapterConfig
+        from adapters.mcp_client import MCPClientAdapter
+
+        adapter = MCPClientAdapter(
+            AdapterConfig(
+                kind="mcp_client",
+                name="mcp",
+                options={
+                    "transport": transport,
+                    "command": command,
+                    "url": url,
+                    "chat_tool": chat_tool,
+                    "timeout_seconds": 10,
+                },
+            )
+        )
+        result["tools"] = await adapter.list_tools()
+        result["available"] = True
+        result["chat_tool_found"] = any(tool["name"] == chat_tool for tool in result["tools"])
+    except Exception as exc:
+        result["available"] = False
+        result["error"] = str(exc)
+    return result
+
+
 def _assemble_backends(
     ollama_result: dict[str, Any],
     openclaw_result: dict[str, Any],
     openai_result: dict[str, Any],
+    mcp_result: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    mcp_result = mcp_result or {"available": False, "configured": False}
     backends: list[dict[str, Any]] = []
     oai: dict[str, Any] = {"type": "openai_compatible", "name": "OpenAI-Compatible", "available": True}
     if openai_result["available"]:
@@ -154,6 +197,21 @@ def _assemble_backends(
             }
         )
     backends.append({"type": "ollama", "name": "Ollama (bridge)", "available": ollama_result["available"], "models": ollama_result.get("models", [])} if ollama_result["available"] else {"type": "ollama", "name": "Ollama (bridge)", "available": False})
+    backends.append(
+        {
+            "type": "mcp",
+            "name": "Any MCP server",
+            "available": True,
+            "advanced": True,
+            "description": "Agent-style MCP chat tool adapter",
+            "configured": mcp_result.get("configured", False),
+            "transport": mcp_result.get("transport", "stdio"),
+            "chat_tool": mcp_result.get("chat_tool", "chat"),
+            "tools": mcp_result.get("tools", []),
+            "chat_tool_found": mcp_result.get("chat_tool_found", False),
+            "probe_error": mcp_result.get("error"),
+        }
+    )
     backends.append({"type": "custom", "name": "Custom URL", "available": True})
     backends.append({"type": "mock", "name": "Demo", "available": True})
     return backends
@@ -163,8 +221,13 @@ async def api_backends_handler(request: web.Request) -> web.Response:
     auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
     if auth_error is not None:
         return auth_error
-    ollama_result, openclaw_result, openai_result = await asyncio.gather(probe_ollama(), probe_openclaw(), probe_openai_compatible())
-    return web.json_response({"backends": _assemble_backends(ollama_result, openclaw_result, openai_result)})
+    ollama_result, openclaw_result, openai_result, mcp_result = await asyncio.gather(
+        probe_ollama(),
+        probe_openclaw(),
+        probe_openai_compatible(),
+        probe_mcp(),
+    )
+    return web.json_response({"backends": _assemble_backends(ollama_result, openclaw_result, openai_result, mcp_result)})
 
 
 async def api_backends_stream_handler(request: web.Request) -> web.StreamResponse:
@@ -187,6 +250,7 @@ async def api_backends_stream_handler(request: web.Request) -> web.StreamRespons
         "ollama": ("Ollama", probe_ollama()),
         "openclaw": ("OpenClaw", probe_openclaw()),
         "openai_compatible": ("OpenAI-Compatible", probe_openai_compatible()),
+        "mcp": ("MCP", probe_mcp()),
     }
     tasks: dict[asyncio.Task, str] = {}
     try:
@@ -215,6 +279,7 @@ async def api_backends_stream_handler(request: web.Request) -> web.StreamRespons
             results.get("ollama", {"available": False}),
             results.get("openclaw", {"available": False}),
             results.get("openai_compatible", {"available": False}),
+            results.get("mcp", {"available": False, "configured": False}),
         )
         await send_event("done", {"backends": backends})
     except Exception as exc:
@@ -396,6 +461,61 @@ async def api_tts_handler(request: web.Request) -> web.Response:
     return web.json_response({"current": current, "engines": engines, "voices": voices})
 
 
+async def api_test_mcp_handler(request: web.Request) -> web.Response:
+    auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
+    if auth_error is not None:
+        return auth_error
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "invalid JSON"}, status=400)
+    transport = str(body.get("transport") or os.environ.get("QANTARA_MCP_TRANSPORT", "stdio")).strip().lower()
+    chat_tool = str(body.get("chat_tool") or os.environ.get("QANTARA_MCP_CHAT_TOOL", "chat")).strip()
+    command = os.environ.get("QANTARA_MCP_COMMAND", "").strip()
+    url = str(body.get("url") or os.environ.get("QANTARA_MCP_URL", "")).strip().rstrip("/")
+    if transport not in {"stdio", "http"}:
+        return web.json_response({"ok": False, "error": f"unsupported MCP transport: {transport}"}, status=400)
+    if transport == "stdio" and not command:
+        return web.json_response(
+            {"ok": False, "error": "stdio MCP probing requires QANTARA_MCP_COMMAND in the gateway environment"},
+            status=400,
+        )
+    if transport == "http":
+        if not url:
+            return web.json_response({"ok": False, "error": "missing MCP URL"}, status=400)
+        if not url.startswith(("http://", "https://")):
+            url = "http://" + url
+        if not is_safe_url(url):
+            return web.json_response({"ok": False, "error": "Only private network MCP URLs are allowed"}, status=403)
+    try:
+        from adapters.base import AdapterConfig
+        from adapters.mcp_client import MCPClientAdapter
+
+        adapter = MCPClientAdapter(
+            AdapterConfig(
+                kind="mcp_client",
+                name="mcp",
+                options={
+                    "transport": transport,
+                    "command": command,
+                    "url": url,
+                    "chat_tool": chat_tool,
+                    "timeout_seconds": 10,
+                },
+            )
+        )
+        tools = await adapter.list_tools()
+    except Exception as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=502)
+    return web.json_response(
+        {
+            "ok": True,
+            "tools": tools,
+            "chat_tool_found": any(tool["name"] == chat_tool for tool in tools),
+        }
+    )
+
+
 async def api_configure_handler(request: web.Request) -> web.Response:
     auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
     if auth_error is not None:
@@ -410,13 +530,18 @@ async def api_configure_handler(request: web.Request) -> web.Response:
     backend_type = str(body.get("type", "")).strip().lower()
     if not backend_type:
         return web.json_response({"error": "missing 'type' field"}, status=400)
-    if backend_type not in {"mock", "custom", "openai_compatible", "openai", "ollama", "openclaw"}:
+    if backend_type not in {"mock", "custom", "openai_compatible", "openai", "ollama", "openclaw", "mcp", "mcp_client"}:
         return web.json_response({"error": f"unknown type: {backend_type}"}, status=400)
     raw_url = str(body.get("url", "")).strip().rstrip("/")
-    if (
+    mcp_transport = str(body.get("mcp_transport") or os.environ.get("QANTARA_MCP_TRANSPORT", "stdio")).strip().lower()
+    if backend_type in {"mcp", "mcp_client"} and mcp_transport == "stdio":
+        raw_url = ""
+    requires_safe_url = (
         backend_type in {"custom", "openai_compatible", "openai", "ollama"}
-        and raw_url
-        and not is_safe_url(raw_url if raw_url.startswith(("http://", "https://")) else f"http://{raw_url}")
+        or (backend_type in {"mcp", "mcp_client"} and mcp_transport == "http")
+    )
+    if requires_safe_url and raw_url and not is_safe_url(
+        raw_url if raw_url.startswith(("http://", "https://")) else f"http://{raw_url}"
     ):
         return web.json_response({"error": "Only private network URLs are allowed"}, status=403)
     await unload_previous_model(runtime)
@@ -426,6 +551,9 @@ async def api_configure_handler(request: web.Request) -> web.Response:
             url=raw_url,
             model=str(body.get("model", "")).strip(),
             agent=str(body.get("agent", "")).strip(),
+            mcp_transport=mcp_transport,
+            mcp_command=os.environ.get("QANTARA_MCP_COMMAND", "").strip(),
+            mcp_chat_tool=str(body.get("mcp_chat_tool") or os.environ.get("QANTARA_MCP_CHAT_TOOL", "chat")).strip(),
         )
     except ValueError as exc:
         return web.json_response({"error": str(exc)}, status=400)
@@ -605,6 +733,7 @@ def mount_static_routes(app: web.Application) -> None:
     app.router.add_post("/api/configure", api_configure_handler)
     app.router.add_post("/api/warmup", api_warmup_handler)
     app.router.add_post("/api/test-url", api_test_url_handler)
+    app.router.add_post("/api/test-mcp", api_test_mcp_handler)
     app.router.add_get("/api/mesh/peers", api_mesh_peers_handler)
     app.router.add_get("/api/mesh/status", api_mesh_status_handler)
     app.router.add_get("/setup", setup_handler)

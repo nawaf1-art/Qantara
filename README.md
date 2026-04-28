@@ -4,7 +4,7 @@
 
 Qantara lets you talk by voice to Ollama, local LLM servers, and local AI agents through your browser. It handles microphone capture, speech recognition, turn-taking, interruption, text-to-speech, and the live connection to whichever local backend you choose — all running on your local network with no cloud dependency for speech processing.
 
-> Version `0.2.6` — First public release. Multi-device mesh + Wyoming + expressive voice + multilingual assistant + live translator are included in the public launch.
+> Version `0.2.7` — post-launch hardening patch. `0.2.6` was the first public release.
 
 
 ## Why Qantara
@@ -116,6 +116,7 @@ When you open Qantara, the setup page auto-detects available backends:
 - **OpenAI-Compatible** (recommended) — connects directly to any `/v1/chat/completions` server. Covers Ollama, llama.cpp, vLLM, LiteLLM, Jan, LM Studio. Fastest path.
 - **Ollama (bridge)** — uses a session bridge process. Works but slower than the direct OpenAI path.
 - **OpenClaw** (advanced, optional) — shown only when the host CLI and gateway are healthy. Use it when you already want Qantara to speak through existing OpenClaw agents.
+- **Any MCP server** (advanced) — calls a configured MCP chat tool over stdio or streamable HTTP.
 - **Custom URL** — point at any server implementing the Qantara session contract.
 - **Demo** — no backend needed, test the voice interface.
 
@@ -151,6 +152,7 @@ After selecting a backend, Qantara shows a full-screen dark voice mode:
 
 ### Backend Adapters
 - **OpenAI-compatible** — direct `/v1/chat/completions`, voice-optimized system prompt, conversation history, SSE streaming
+- **MCP client** — agent-style chat tool adapter over stdio or streamable HTTP
 - **Session HTTP** — Qantara's own session contract (used by Ollama and optional OpenClaw bridges)
 - **Mock** — synthetic responses for testing
 
@@ -247,7 +249,8 @@ qantara/
 | 0.2.4 | ✅ Done | Multilingual assistant + directional + live conversation translator (EN/AR/ES/FR/JA) |
 | 0.2.5 | ✅ Done | Chatterbox TTS (expressive voice) |
 | 0.2.6 | ✅ Released | **Public launch** |
-| 0.2.7 | Planned | MCP voice client + server |
+| 0.2.7 | ✅ Released | Post-launch hardening patch |
+| 0.2.8 | In progress | MCP voice client + server |
 | 0.3.2 | Planned | Speech-native adapter (OpenAI Realtime, Gemini Live, MiniCPM-o) |
 | 0.3.4 | Planned | Identity-aware sessions (voice fingerprinting) |
 | 0.3.5 | Planned | Screenshot + voice multimodal |
@@ -272,6 +275,7 @@ Start with the [documentation map](docs/README.md). The main public guides are:
 - [Installation and first run](docs/INSTALLATION_AND_FIRST_RUN_GUIDE.md)
 - [Configuration](docs/CONFIGURATION.md)
 - [Architecture](ARCHITECTURE.md)
+- [MCP bridge](docs/MCP.md)
 - [Developer onboarding](docs/DEVELOPER_ONBOARDING.md)
 - [Release checklist](docs/RELEASE_CHECKLIST.md)
 - [Publishing readiness audit](docs/PUBLISHING_READINESS_AUDIT.md)

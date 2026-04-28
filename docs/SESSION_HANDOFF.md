@@ -188,11 +188,23 @@ One warning appeared during the unit run:
 
 ## Current Risk Register
 
-Blockers before tagging another public release:
+Recent checkpoint on 2026-04-28:
 
-1. Decide whether the untracked `docs/audits/` report should stay local, be sanitized, or be removed before a future public commit.
-2. Tag and push the post-`v0.2.6` hardening release as `v0.2.7`. The `v0.2.6` tag already exists at the original launch commit and must not be moved. MCP has been moved forward to `0.2.8`.
-3. Optional: run a physical microphone/browser test on another device over HTTPS. The automated auth/WebSocket/TTS path and setup-page load already passed.
+- `v0.2.7` hardening release was tagged, pushed, and published.
+- CI cleanup moved GitHub Actions to `actions/checkout@v6` and `actions/setup-python@v6`; GitHub Actions passed.
+- MCP `0.2.8` client slice started:
+  - `adapters/mcp_client.py` implements an agent-style MCP chat-tool adapter over stdio and streamable HTTP.
+  - `QANTARA_MCP_TRANSPORT`, `QANTARA_MCP_COMMAND`, `QANTARA_MCP_URL`, and `QANTARA_MCP_CHAT_TOOL` configure the adapter.
+  - Adapter progress notifications forward as `assistant_activity` events and final text flows into the normal TTS path.
+  - Setup now includes an "Any MCP server" tile with a protected `tools/list` probe. Browser-driven stdio commands are intentionally not accepted; set `QANTARA_MCP_COMMAND` in the gateway environment.
+  - Reference configs live in `docs/examples/mcp/`.
+
+Blockers before tagging a future MCP public release:
+
+1. Implement the MCP server side honestly. `voice_speak` needs a gateway control endpoint that can address active browser sessions.
+2. Validate against at least one real external MCP server, not only the local stdio fixture.
+3. Decide whether the raw `docs/audits/` report should stay local, be sanitized, or be removed before any future public commit.
+4. Optional: run a physical microphone/browser test on another device over HTTPS. The automated auth/WebSocket/TTS path and setup-page load already passed.
 
 Non-blocking but important:
 
@@ -204,12 +216,12 @@ Non-blocking but important:
 
 ## Recommended Next Steps
 
-1. Push the `v0.2.7` release commit and tag.
-2. Keep the raw `docs/audits/` report local-only unless a sanitized version is deliberately prepared later.
-3. Start MCP work under the roadmap's `0.2.8` section after the patch release is out.
+1. Add the MCP server/control-plane slice: `mcp_server.py`, `voice_get_status`, and the minimum gateway endpoint needed for `voice_speak`.
+2. Validate the client adapter against a real MCP target such as `claude mcp serve` or a Home Assistant MCP endpoint.
+3. Keep the raw `docs/audits/` report local-only unless a sanitized version is deliberately prepared later.
 
 ## Current Readiness
 
-Status: hardening update pushed and CI passed. Fresh local validation on 2026-04-28 passed, including Docker build, setup/auth smoke, Docker WebSocket/backend/TTS smoke, unit tests, lint, compileall, smoke test, doctor, and benchmark refresh.
+Status: hardening release is published and the first MCP client slice is locally validated. Fresh local validation on 2026-04-28 passed for the MCP slice: `ruff check .`, `make test` (166 tests), `compileall`, `git diff --check`, and `docker compose config -q`.
 
 Score: 97 / 100.

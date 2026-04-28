@@ -9,6 +9,7 @@ This directory is the public documentation entry point. It is organized for new 
 - [Troubleshooting](TROUBLESHOOTING.md)
 - [Home Assistant / Wyoming](HOMEASSISTANT.md)
 - [Multi-device mesh](MESH.md)
+- [MCP bridge](MCP.md)
 - [Supply chain and model downloads](SUPPLY_CHAIN.md)
 
 ## Project Understanding

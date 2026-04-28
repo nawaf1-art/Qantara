@@ -1,0 +1,9 @@
+{
+  "description": "Streamable HTTP MCP server on loopback",
+  "environment": {
+    "QANTARA_ADAPTER": "mcp_client",
+    "QANTARA_MCP_TRANSPORT": "http",
+    "QANTARA_MCP_URL": "http://127.0.0.1:8000/mcp",
+    "QANTARA_MCP_CHAT_TOOL": "chat"
+  }
+}

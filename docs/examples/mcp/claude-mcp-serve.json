@@ -1,0 +1,13 @@
+{
+  "description": "Local Claude MCP server over stdio",
+  "environment": {
+    "QANTARA_ADAPTER": "mcp_client",
+    "QANTARA_MCP_TRANSPORT": "stdio",
+    "QANTARA_MCP_COMMAND": "claude mcp serve",
+    "QANTARA_MCP_CHAT_TOOL": "chat"
+  },
+  "notes": [
+    "Verify the exposed tool name with the setup page tools/list probe.",
+    "If the server exposes a different chat tool, set QANTARA_MCP_CHAT_TOOL to that exact name."
+  ]
+}

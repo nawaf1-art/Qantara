@@ -1,0 +1,12 @@
+{
+  "description": "Filesystem MCP server example; useful for validating tools/list, not a full chat agent by itself",
+  "environment": {
+    "QANTARA_MCP_TRANSPORT": "stdio",
+    "QANTARA_MCP_COMMAND": "npx -y @modelcontextprotocol/server-filesystem /tmp",
+    "QANTARA_MCP_CHAT_TOOL": "chat"
+  },
+  "notes": [
+    "A filesystem MCP server usually exposes file tools rather than a chat tool.",
+    "Qantara 0.2.8's first MCP client slice expects an agent-style chat tool."
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "description": "Minimal local stdio MCP chat-tool fixture",
+  "environment": {
+    "QANTARA_ADAPTER": "mcp_client",
+    "QANTARA_MCP_TRANSPORT": "stdio",
+    "QANTARA_MCP_COMMAND": "python tests/fixtures/mcp_chat_server.py",
+    "QANTARA_MCP_CHAT_TOOL": "voice_chat"
+  }
+}

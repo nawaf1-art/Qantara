@@ -1,0 +1,13 @@
+{
+  "description": "Home Assistant MCP server over streamable HTTP",
+  "environment": {
+    "QANTARA_ADAPTER": "mcp_client",
+    "QANTARA_MCP_TRANSPORT": "http",
+    "QANTARA_MCP_URL": "http://127.0.0.1:8123/mcp",
+    "QANTARA_MCP_CHAT_TOOL": "chat"
+  },
+  "notes": [
+    "Keep the MCP endpoint on loopback or a private LAN address.",
+    "Use the setup page tools/list probe to confirm the actual chat tool name before starting voice mode."
+  ]
+}
