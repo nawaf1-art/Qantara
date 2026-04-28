@@ -197,7 +197,7 @@ class MCPClientAdapter(RuntimeAdapter):
 
         read_timeout = timedelta(seconds=self.timeout_seconds)
         if self.transport == "stdio":
-            parts = shlex.split(self.command)
+            parts = self._split_command(self.command)
             if not parts:
                 raise RuntimeError("QANTARA_MCP_COMMAND is required for stdio MCP transport")
             params = StdioServerParameters(command=parts[0], args=parts[1:])
@@ -290,3 +290,14 @@ class MCPClientAdapter(RuntimeAdapter):
         if self.transport == "http":
             return "QANTARA_MCP_URL and QANTARA_MCP_CHAT_TOOL are required for HTTP MCP"
         return f"unsupported MCP transport: {self.transport}"
+
+    @staticmethod
+    def _split_command(command: str, *, windows: bool | None = None) -> list[str]:
+        is_windows = os.name == "nt" if windows is None else windows
+        parts = shlex.split(command, posix=not is_windows)
+        if not is_windows:
+            return parts
+        return [
+            part[1:-1] if len(part) >= 2 and part[0] == part[-1] and part[0] in {"'", '"'} else part
+            for part in parts
+        ]

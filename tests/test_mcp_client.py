@@ -28,6 +28,21 @@ class MCPClientAdapterTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+    def test_stdio_command_split_preserves_windows_paths(self) -> None:
+        command = r"C:\hostedtoolcache\windows\Python\3.11.9\x64\python.exe D:\a\Qantara\tests\fixtures\mcp_chat_server.py"
+
+        parts = MCPClientAdapter._split_command(command, windows=True)
+
+        self.assertEqual(parts[0], r"C:\hostedtoolcache\windows\Python\3.11.9\x64\python.exe")
+        self.assertEqual(parts[1], r"D:\a\Qantara\tests\fixtures\mcp_chat_server.py")
+
+    def test_stdio_command_split_unquotes_windows_executable_with_spaces(self) -> None:
+        command = r'"C:\Program Files\Python\python.exe" D:\agent\server.py'
+
+        parts = MCPClientAdapter._split_command(command, windows=True)
+
+        self.assertEqual(parts, [r"C:\Program Files\Python\python.exe", r"D:\agent\server.py"])
+
     async def test_stdio_adapter_lists_tools_and_reports_health(self) -> None:
         adapter = self._adapter()
 
