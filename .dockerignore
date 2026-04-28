@@ -13,3 +13,4 @@ dist
 build
 *.log
 docs/internal
+docs/audits

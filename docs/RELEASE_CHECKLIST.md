@@ -1,10 +1,12 @@
 # Release Checklist
 
-Use this before making the repository public and before tagging `v0.2.6`.
+Use this before tagging a public release.
 
 ## Latest Validation Note
 
-Docker fresh-clone validation passed on 2026-04-25 after regenerating `ops/docker/requirements.txt` from `ops/docker/requirements.in`. Keep the checklist below as the repeatable release checklist for future tags.
+Local release checkpoint passed on 2026-04-28 from `public-main` plus the local language-catalog fix. The fast native checks, benchmark snapshot, Docker build, Docker setup page, authenticated backend discovery, language catalog check, and Docker WebSocket/backend/TTS smoke all passed. Docker was published on `127.0.0.1:9877` because a separate local `python3` process was already listening on port `8765`.
+
+The `v0.2.6` tag already exists at the original public-launch commit. Do not move it. The post-launch hardening work is being tagged as `v0.2.7`; MCP moved forward to `0.2.8`.
 
 ## Automated Checks
 
@@ -62,7 +64,7 @@ Before publishing:
 
 ## Tag and Release
 
-Recommended first public tag:
+First public tag, already created:
 
 ```text
 v0.2.6
@@ -80,3 +82,5 @@ gh release create v0.2.6 \
 ```
 
 Do not run these until the blockers in `docs/PUBLISHING_READINESS_AUDIT.md` are resolved or explicitly accepted.
+
+For the post-launch hardening release, do not reuse `v0.2.6`. Use `v0.2.7`, and keep `VERSION`, `pyproject.toml`, `CHANGELOG.md`, and `ROADMAP.md` aligned in the release commit.

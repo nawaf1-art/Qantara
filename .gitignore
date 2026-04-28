@@ -15,6 +15,7 @@ venv/
 ops/certs/
 models/piper/*.onnx
 models/piper/*.onnx.json
+docs/audits/
 *.riv
 rive-test.html
 .claude/

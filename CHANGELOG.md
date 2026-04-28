@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-04-28
+
 ### Added
 - Browser-friendly auth unlock flow for `QANTARA_AUTH_TOKEN` using `/api/auth/status`, `/api/auth/login`, `/api/auth/logout`, and an HttpOnly local session cookie.
 - Docker Compose pass-through for `QANTARA_AUTH_TOKEN`, `QANTARA_ADMIN_TOKEN`, mesh, and Wyoming variables.
@@ -22,6 +24,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - `QANTARA_AUTH_TOKEN` comparison now uses constant-time comparison and rejects configured tokens shorter than 24 characters.
 - `QANTARA_AUTH_TOKEN` now protects warmup, test URL probing, backend discovery, LAN discovery scan, and mesh status endpoints in addition to WebSocket and configuration endpoints.
 - `/api/test-url` now connects to resolved private/loopback addresses while preserving the original Host header, reducing DNS-rebinding exposure during setup probing.
+- Launch-language TTS availability now selects voices by matching locale, so English Kokoro voices no longer advertise Japanese TTS availability.
 
 ## [0.2.6] - 2026-04-24
 

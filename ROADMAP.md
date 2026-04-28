@@ -1,6 +1,6 @@
 # Roadmap
 
-Current version: `0.2.6` (first public release)
+Current version: `0.2.7` (post-launch hardening release)
 
 This roadmap is the single source of truth for what to build and in what order. It is designed to be read by humans, Claude Code, and Codex alike.
 
@@ -274,7 +274,25 @@ This is the version we announce. Everything from 0.2.1 through 0.2.5 merged, tes
 **Effort:** 3-4 days
 **Ship when:** all prior 0.2.x items merged, CI green on all three OSes, benchmarks refreshed, and launch copy is ready
 
-#### `0.2.7` — MCP voice client + server (postponed from 0.2.1)
+#### `0.2.7` — Post-launch hardening patch — DONE
+
+Small patch release after the first public tag. This keeps the public launch tag immutable and ships the security/defaults cleanup as a distinct version.
+
+- [x] Browser-friendly token unlock flow for setup, voice, and translator clients
+- [x] Constant-time auth token comparison and minimum token length enforcement
+- [x] Auth-gated warmup, backend discovery, test URL probing, LAN scan, mesh status, and WebSocket endpoints when `QANTARA_AUTH_TOKEN` is configured
+- [x] DNS-rebinding reduction for `/api/test-url` by resolving once and connecting to private/loopback IP literals
+- [x] Mesh and Wyoming default to loopback; LAN exposure requires explicit host env vars
+- [x] Docker Compose healthcheck and auth/admin/mesh/Wyoming env pass-through
+- [x] Docker uses multilingual `small` Whisper by default to match launch language claims
+- [x] Kokoro docs no longer imply direct ONNX runtime usage
+- [x] Launch-language TTS availability selects voices by matching locale
+- [x] Raw external audit directory kept local-only via git and Docker ignores
+
+**Files:** `gateway/transport_spike/auth.py`, `gateway/transport_spike/http_api.py`, `gateway/transport_spike/server.py`, `gateway/transport_spike/languages_catalog.py`, `gateway/transport_spike/speech.py`, `client/setup/index.html`, `client/transport-spike/index.html`, `client/translate/index.html`, `docker-compose.yml`, docs, tests
+**Ship when:** release commit is tagged and pushed as `v0.2.7`.
+
+#### `0.2.8` — MCP voice client + server (postponed from 0.2.1)
 
 Landed together post-launch as a single MCP release. **Client:** talk to any MCP-enabled agent (HASS MCP, `claude mcp serve`, custom tool servers). **Server:** expose Qantara's own voice capabilities as MCP tools so any MCP-compatible agent elsewhere can drive Qantara remotely.
 
@@ -292,13 +310,13 @@ Landed together post-launch as a single MCP release. **Client:** talk to any MCP
 - [ ] Resources: `qantara://voices`, `qantara://avatars`, `qantara://sessions/{id}/status`, `qantara://mesh/peers`
 - [ ] Streamable HTTP transport for remote agents; stdio for local. Audio stays on WS — MCP is control-plane only
 
-**Deferred to later (not in 0.2.7):** the LLM+toolbox composition pattern where an existing LLM adapter is augmented with MCP tool-use routing. Needs 0.2.3 voice-as-API event flow finalized first. Targeted at 0.3.x.
+**Deferred to later (not in 0.2.8):** the LLM+toolbox composition pattern where an existing LLM adapter is augmented with MCP tool-use routing. Needs 0.2.3 voice-as-API event flow finalized first. Targeted at 0.3.x.
 
 **Files:** `adapters/mcp_client.py` (new), `mcp_server.py` (new), `adapters/factory.py`, `gateway/transport_spike/runtime.py`, `client/setup/index.html`, `docs/examples/mcp/*.json` (new), `tests/test_mcp_client.py` (new), `tests/test_mcp_server.py` (new)
 **Effort:** 2-3 weeks
 **Ship when:** (1) a conversation with a locally-running MCP server (HASS MCP or `claude mcp serve`) works end-to-end, with tool-call progress rendering as `assistant_activity` events; (2) Claude Desktop can connect to Qantara's MCP server, start a session, and make it speak
 
-#### `0.2.8` — Agent protocol v1 and tool-call formalization
+#### `0.2.9` — Agent protocol v1 and tool-call formalization
 
 - [ ] Protocol spec document (`protocols/agent.md`) — formalizes `assistant_activity` / `session_state_changed` / `turn_interrupted` events introduced across 0.2.1-0.2.2
 - [ ] Adapter base class extensions for richer tool-call metadata (progress, confidence, parameters)
@@ -307,7 +325,7 @@ Landed together post-launch as a single MCP release. **Client:** talk to any MCP
 **Files:** `protocols/agent.md` (new), `adapters/base.py`, `client/transport-spike/index.html`
 **Effort:** 3-4 days
 
-#### `0.2.9` — Python SDK (`pip install qantara`)
+#### `0.2.10` — Python SDK (`pip install qantara`)
 
 - [ ] Package structure with `pyproject.toml`
 - [ ] `from qantara import VoiceGateway` works

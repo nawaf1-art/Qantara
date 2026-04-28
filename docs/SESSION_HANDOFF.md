@@ -1,12 +1,12 @@
 # Session Handoff
 
-Date: 2026-04-26
+Date: 2026-04-28
 
 ## Current State
 
 Qantara is public on GitHub at `https://github.com/nawaf1-art/Qantara` from the clean `public-main` history. Do not publish the old private git history.
 
-This handoff covers the original public-release readiness pass plus the 2026-04-26 post-public hardening pass based on the read-only external audit in `docs/audits/QANTARA-end-to-end-readonly-audit-2026-04-25.md`.
+This handoff covers the original public-release readiness pass, the 2026-04-26 post-public hardening pass based on the read-only external audit in `docs/audits/QANTARA-end-to-end-readonly-audit-2026-04-25.md`, and the 2026-04-28 local release checkpoint.
 
 Hardening update pushed to GitHub `main`: `6d2e028 fix: harden auth and LAN defaults`.
 
@@ -15,11 +15,12 @@ GitHub Actions for that commit passed:
 - `Tests`: passed across Ubuntu, macOS, and Windows on Python 3.11 and 3.12
 - `Release Drafter`: passed
 
-Current local Docker demo stack is running:
+Latest local Docker validation stack:
 
-- LAN URL: `http://192.168.68.69:9876`
-- token file for this local smoke stack: `/tmp/qantara-smoke-token`
+- loopback URL: `http://127.0.0.1:9877`
+- started with a disposable 24-character test token
 - services: `qantara-ollama`, `qantara-backend`, and `qantara-gateway` are healthy
+- host port `8765` was already occupied by a separate local `python3` process, so this checkpoint used `QANTARA_PORT=9877`
 
 Important: `docs/audits/` is currently untracked and contains local-machine details from the external audit. Do not add it to a public commit unless it is deliberately sanitized first.
 
@@ -97,8 +98,58 @@ The project objective is unchanged:
   - Kokoro is described as running through the `kokoro` Python package, not direct ONNX runtime
   - avatar wording now says amplitude-driven mouth motion, not phoneme lipsync
   - mesh/Wyoming docs state the plaintext trusted-LAN boundary
+- Fixed launch-language TTS availability and voice routing to select voices by matching locale. Kokoro English voices now advertise English availability, not Japanese availability.
 
 ## Validation Run
+
+Passed on 2026-04-28 from `public-main` commit `c1fe21875b7aac106924a4c5d6a959ade8478874` plus the local language-catalog fix:
+
+```bash
+make test
+/home/nawaf/.local/bin/ruff check .
+git diff --check
+./.venv/bin/python -m compileall -q adapters gateway providers scripts tests cli.py config.py discovery
+make smoke-test
+make doctor
+./.venv/bin/python scripts/bench_launch.py --arabic
+docker compose config -q
+QANTARA_AUTH_TOKEN=<24-char-test-token> QANTARA_PORT=9877 docker compose up --build -d
+curl http://127.0.0.1:9877/api/status
+curl http://127.0.0.1:9877/setup/index.html
+curl -o /tmp/qantara-unauth-backends.json -w '%{http_code}' http://127.0.0.1:9877/api/backends
+curl -c /tmp/qantara-cookie \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"<24-char-test-token>"}' \
+  http://127.0.0.1:9877/api/auth/login
+curl -b /tmp/qantara-cookie http://127.0.0.1:9877/api/backends
+curl http://127.0.0.1:9877/api/tts
+curl http://127.0.0.1:9877/api/languages
+```
+
+Results:
+
+- `ruff`: passed
+- unit tests: 162 passed
+- compileall: passed
+- whitespace check: passed
+- smoke test: passed
+- doctor: ready; warned only that port `8765` is in use
+- benchmark snapshot: barge-in median `0.12 ms`, Piper English median `1532.32 ms`, Piper Arabic median `1770.37 ms`
+- Docker Compose config: passed
+- Docker build: passed using cached layers
+- Docker stack health: `qantara-ollama`, `qantara-backend`, and `qantara-gateway` healthy
+- setup page: loaded and rendered the auth panel plus Start Talking UI
+- auth smoke: unauthenticated `/api/backends` returned `401`, login returned `200`, authenticated `/api/backends` returned backend options
+- `/api/status`, `/api/tts`, and `/api/languages`: returned valid JSON
+- `/api/languages`: after the local language-catalog fix, Kokoro reports English available through `af_heart` and Japanese unavailable until a real Japanese voice is installed
+- Docker WebSocket/backend/TTS smoke: passed through `ws://127.0.0.1:9877/ws`; a real backend turn returned TTS status, final assistant text, and idle state
+- publication safety: no tracked cert/model weights; token grep found only documented command examples and roadmap text, not real secrets
+
+One warning appeared during the unit run:
+
+- PyTorch warned that the installed NVIDIA driver is too old for CUDA initialization. Tests still passed. This is local environment noise, not a Qantara regression.
+
+Prior validation:
 
 Passed on 2026-04-26:
 
@@ -140,7 +191,8 @@ One warning appeared during the unit run:
 Blockers before tagging another public release:
 
 1. Decide whether the untracked `docs/audits/` report should stay local, be sanitized, or be removed before a future public commit.
-2. Optional: run a physical microphone/browser test on another device over HTTPS. The automated LAN auth/WebSocket/TTS path and headless Chromium setup-page load already passed.
+2. Tag and push the post-`v0.2.6` hardening release as `v0.2.7`. The `v0.2.6` tag already exists at the original launch commit and must not be moved. MCP has been moved forward to `0.2.8`.
+3. Optional: run a physical microphone/browser test on another device over HTTPS. The automated auth/WebSocket/TTS path and setup-page load already passed.
 
 Non-blocking but important:
 
@@ -152,12 +204,12 @@ Non-blocking but important:
 
 ## Recommended Next Steps
 
-1. Keep the next release notes under `CHANGELOG.md` `[Unreleased]` until a version number is chosen.
-2. For a manual browser demo from another device, use the current LAN stack at `http://192.168.68.69:9876` or restart with HTTPS for microphone access.
-3. Before a tagged hardening release, decide whether this should remain part of `0.2.6`, become `0.2.7`, or use another pre-1.0 patch version. The existing roadmap currently reserves `0.2.7` for MCP work, so choose deliberately.
+1. Push the `v0.2.7` release commit and tag.
+2. Keep the raw `docs/audits/` report local-only unless a sanitized version is deliberately prepared later.
+3. Start MCP work under the roadmap's `0.2.8` section after the patch release is out.
 
 ## Current Readiness
 
-Status: hardening update pushed and CI passed. Fresh Docker rebuild, LAN auth smoke, LAN WebSocket/TTS smoke, and headless Chromium setup-page smoke passed.
+Status: hardening update pushed and CI passed. Fresh local validation on 2026-04-28 passed, including Docker build, setup/auth smoke, Docker WebSocket/backend/TTS smoke, unit tests, lint, compileall, smoke test, doctor, and benchmark refresh.
 
-Score: 96 / 100.
+Score: 97 / 100.

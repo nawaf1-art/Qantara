@@ -245,17 +245,6 @@ def _build_transform_status(session: Session, resolved_voice, active_rate: float
     }, ignored
 
 
-def _available_voice_ids(session: Session) -> set[str]:
-    try:
-        return {
-            str(voice.get("voice_id"))
-            for voice in session.runtime.tts.list_available_voices()
-            if voice.get("voice_id")
-        }
-    except Exception:
-        return set()
-
-
 def _available_voice_catalog(session: Session) -> dict[str, dict]:
     try:
         return {
@@ -268,10 +257,14 @@ def _available_voice_catalog(session: Session) -> dict[str, dict]:
 
 
 def _voice_matches_language(voice: dict | None, language: str) -> bool:
-    if not voice:
-        return False
-    locale = str(voice.get("locale") or "").strip().lower()
-    return locale == language.lower() or locale.startswith(f"{language.lower()}-")
+    try:
+        from gateway.transport_spike.languages_catalog import voice_matches_language
+        return voice_matches_language(voice, language)
+    except Exception:
+        if not voice:
+            return False
+        locale = str(voice.get("locale") or "").strip().lower()
+        return locale == language.lower() or locale.startswith(f"{language.lower()}-")
 
 
 def resolve_turn_voice_id(session: Session, output_language: str | None) -> str | None:
@@ -282,11 +275,11 @@ def resolve_turn_voice_id(session: Session, output_language: str | None) -> str 
         if candidate and _voice_matches_language(catalog.get(candidate), output_language):
             return candidate
     try:
-        from gateway.transport_spike.languages_catalog import PREFERRED_VOICE_PER_LANGUAGE
-        preferred = PREFERRED_VOICE_PER_LANGUAGE.get(output_language)
+        from gateway.transport_spike.languages_catalog import select_voice_for_language
+        preferred = select_voice_for_language(list(catalog.values()), output_language)
     except Exception:
         preferred = None
-    if preferred and preferred in _available_voice_ids(session):
+    if preferred:
         return preferred
     return session.voice_id
 
