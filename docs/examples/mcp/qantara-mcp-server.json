@@ -1,0 +1,20 @@
+{
+  "description": "Expose Qantara's active browser voice session as an MCP server",
+  "environment": {
+    "QANTARA_GATEWAY_URL": "http://127.0.0.1:8765",
+    "QANTARA_GATEWAY_TOKEN": "${QANTARA_AUTH_TOKEN}",
+    "QANTARA_MCP_SERVER_TRANSPORT": "stdio"
+  },
+  "command": "python mcp_server.py",
+  "tools": [
+    "voice_get_status",
+    "voice_speak",
+    "voice_interrupt",
+    "voice_set_voice"
+  ],
+  "notes": [
+    "Open Qantara in a browser first so there is an active voice session.",
+    "Use voice_get_status to find session_id or client_session_id when multiple browsers are connected.",
+    "For streamable HTTP, set QANTARA_MCP_SERVER_TRANSPORT=streamable-http and QANTARA_MCP_SERVER_PORT=8766."
+  ]
+}

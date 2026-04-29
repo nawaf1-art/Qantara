@@ -1,6 +1,6 @@
 # MCP Bridge
 
-Qantara's first MCP slice is an agent-style client adapter. The browser voice loop still owns microphone capture, STT, turn-taking, TTS, and playback. The MCP adapter calls one configured MCP chat tool with each finalized transcript and speaks the returned text.
+Qantara's MCP bridge has two directions. The client adapter lets Qantara speak to an MCP-backed agent. The server exposes Qantara's own browser voice session as MCP tools. In both directions the browser voice loop still owns microphone capture, STT, turn-taking, TTS, and playback. MCP is control-plane only.
 
 ## Client Adapter
 
@@ -45,4 +45,32 @@ MCP progress notifications are forwarded to the browser as `assistant_activity` 
 
 ## Server Side
 
-The MCP server side is still the next `0.2.8` slice. It needs a gateway control endpoint that can address active browser sessions before tools like `voice_speak` can honestly make Qantara speak.
+Run Qantara's MCP server over stdio:
+
+```bash
+QANTARA_GATEWAY_URL=http://127.0.0.1:8765 \
+QANTARA_GATEWAY_TOKEN="$QANTARA_AUTH_TOKEN" \
+python mcp_server.py
+```
+
+For streamable HTTP:
+
+```bash
+QANTARA_GATEWAY_URL=http://127.0.0.1:8765 \
+QANTARA_GATEWAY_TOKEN="$QANTARA_AUTH_TOKEN" \
+QANTARA_MCP_SERVER_TRANSPORT=streamable-http \
+QANTARA_MCP_SERVER_HOST=127.0.0.1 \
+QANTARA_MCP_SERVER_PORT=8766 \
+python mcp_server.py
+```
+
+The server exposes:
+
+- `voice_get_status` — returns active browser sessions and playback/session state
+- `voice_speak` — queues text into an active browser session and lets Qantara synthesize/play it
+- `voice_interrupt` — clears current playback/generation for a targeted browser session
+- `voice_set_voice` — changes the playback voice for a targeted browser session
+
+When there is exactly one active browser session, tools can omit `session_id` and `client_session_id`. With multiple active sessions, pass one of those IDs from `voice_get_status`.
+
+The gateway side is exposed through protected local endpoints under `/api/control/voice/*`. If `QANTARA_AUTH_TOKEN` is set on the gateway, MCP callers must send the same token through `QANTARA_GATEWAY_TOKEN`.

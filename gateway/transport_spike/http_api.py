@@ -461,6 +461,131 @@ async def api_tts_handler(request: web.Request) -> web.Response:
     return web.json_response({"current": current, "engines": engines, "voices": voices})
 
 
+def _control_target_error(runtime: GatewayRuntime) -> web.Response:
+    count = len(runtime.active_voice_sessions())
+    if count == 0:
+        return web.json_response({"ok": False, "error": "no active browser voice session"}, status=404)
+    return web.json_response(
+        {"ok": False, "error": "multiple active sessions; provide session_id or client_session_id", "active_session_count": count},
+        status=409,
+    )
+
+
+def _resolve_control_session(runtime: GatewayRuntime, body: dict[str, Any]):
+    session_id = str(body.get("session_id") or "").strip() or None
+    client_session_id = str(body.get("client_session_id") or "").strip() or None
+    return runtime.resolve_active_session(session_id=session_id, client_session_id=client_session_id)
+
+
+async def api_voice_control_status_handler(request: web.Request) -> web.Response:
+    auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
+    if auth_error is not None:
+        return auth_error
+    runtime: GatewayRuntime = request.app[APP_RUNTIME_KEY]
+    sessions = runtime.active_voice_sessions()
+    return web.json_response({"ok": True, "active_session_count": len(sessions), "sessions": sessions})
+
+
+async def api_voice_control_speak_handler(request: web.Request) -> web.Response:
+    auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
+    if auth_error is not None:
+        return auth_error
+    runtime: GatewayRuntime = request.app[APP_RUNTIME_KEY]
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "invalid JSON body"}, status=400)
+    if not isinstance(body, dict):
+        return web.json_response({"ok": False, "error": "invalid JSON body"}, status=400)
+    text = str(body.get("text") or "").strip()
+    if not text:
+        return web.json_response({"ok": False, "error": "missing text"}, status=400)
+    max_chars = int(os.environ.get("QANTARA_CONTROL_MAX_SPEAK_CHARS", "4000"))
+    if len(text) > max_chars:
+        return web.json_response({"ok": False, "error": f"text exceeds {max_chars} characters"}, status=413)
+    session = _resolve_control_session(runtime, body)
+    if session is None:
+        return _control_target_error(runtime)
+    voice_id = str(body.get("voice_id") or "").strip() or None
+    interrupt = bool(body.get("interrupt", False))
+    if interrupt:
+        from gateway.transport_spike.speech import cancel_active_turn
+
+        session.playback_generation += 1
+        session.speech_generation += 1
+        await session.emit("playback_queue_cleared", "control", {"reason": "voice_speak_interrupt"})
+        await cancel_active_turn(session, "voice_speak_interrupt")
+    from gateway.transport_spike.speech import enqueue_control_speech
+
+    generation = session.speech_generation
+    enqueue_control_speech(session, text, frozen_generation=generation, voice_id=voice_id)
+    await session.emit("voice_speak_queued", "control", {"char_count": len(text), "voice_id": voice_id, "generation": generation})
+    return web.json_response(
+        {
+            "ok": True,
+            "status": "queued",
+            "session": runtime._session_control_payload(session, include_binding=True),
+            "generation": generation,
+        }
+    )
+
+
+async def api_voice_control_interrupt_handler(request: web.Request) -> web.Response:
+    auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
+    if auth_error is not None:
+        return auth_error
+    runtime: GatewayRuntime = request.app[APP_RUNTIME_KEY]
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    session = _resolve_control_session(runtime, body)
+    if session is None:
+        return _control_target_error(runtime)
+    from gateway.transport_spike.speech import cancel_active_turn, safe_send_str
+
+    session.playback_generation += 1
+    session.speech_generation += 1
+    await session.emit("playback_queue_cleared", "control", {"reason": "voice_interrupt"})
+    await cancel_active_turn(session, "voice_interrupt")
+    await safe_send_str(session, {"type": "playback_cleared", "generation": session.playback_generation, "source": "control"})
+    if session.state in {"speaking", "thinking", "interrupted"}:
+        await session.set_state("idle", reason="voice_interrupt")
+    return web.json_response(
+        {
+            "ok": True,
+            "status": "interrupted",
+            "session": runtime._session_control_payload(session, include_binding=True),
+        }
+    )
+
+
+async def api_voice_control_voice_handler(request: web.Request) -> web.Response:
+    auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
+    if auth_error is not None:
+        return auth_error
+    runtime: GatewayRuntime = request.app[APP_RUNTIME_KEY]
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "invalid JSON body"}, status=400)
+    if not isinstance(body, dict):
+        return web.json_response({"ok": False, "error": "invalid JSON body"}, status=400)
+    session = _resolve_control_session(runtime, body)
+    if session is None:
+        return _control_target_error(runtime)
+    voice_id = str(body.get("voice_id") or "").strip()
+    if not voice_id:
+        return web.json_response({"ok": False, "error": "missing voice_id"}, status=400)
+    from gateway.transport_spike.speech import apply_voice_selection
+
+    details = apply_voice_selection(session, voice_id)
+    await session.emit("session_updated", "control", details)
+    return web.json_response({"ok": True, "session": runtime._session_control_payload(session, include_binding=True), **details})
+
+
 async def api_test_mcp_handler(request: web.Request) -> web.Response:
     auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
     if auth_error is not None:
@@ -729,6 +854,10 @@ def mount_static_routes(app: web.Application) -> None:
     app.router.add_get("/api/admin/runtime", api_admin_runtime_handler)
     app.router.add_get("/api/tts", api_tts_handler)
     app.router.add_get("/api/languages", api_languages_handler)
+    app.router.add_get("/api/control/voice/status", api_voice_control_status_handler)
+    app.router.add_post("/api/control/voice/speak", api_voice_control_speak_handler)
+    app.router.add_post("/api/control/voice/interrupt", api_voice_control_interrupt_handler)
+    app.router.add_post("/api/control/voice/set_voice", api_voice_control_voice_handler)
     app.router.add_post("/api/translation_mode", api_translation_mode_handler)
     app.router.add_post("/api/configure", api_configure_handler)
     app.router.add_post("/api/warmup", api_warmup_handler)

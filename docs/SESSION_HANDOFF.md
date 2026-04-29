@@ -198,13 +198,16 @@ Recent checkpoint on 2026-04-28:
   - Adapter progress notifications forward as `assistant_activity` events and final text flows into the normal TTS path.
   - Setup now includes an "Any MCP server" tile with a protected `tools/list` probe. Browser-driven stdio commands are intentionally not accepted; set `QANTARA_MCP_COMMAND` in the gateway environment.
   - Reference configs live in `docs/examples/mcp/`.
+- MCP server/control-plane slice landed:
+  - `/api/control/voice/status`, `/api/control/voice/speak`, `/api/control/voice/interrupt`, and `/api/control/voice/set_voice` target active browser sessions.
+  - `mcp_server.py` exposes `voice_get_status`, `voice_speak`, `voice_interrupt`, and `voice_set_voice` over stdio or streamable HTTP.
+  - Tests validate no-active-browser handling, auth, browser speech queueing, and a real MCP stdio client calling `voice_speak` through the gateway.
 
 Blockers before tagging a future MCP public release:
 
-1. Implement the MCP server side honestly. `voice_speak` needs a gateway control endpoint that can address active browser sessions.
-2. Validate against at least one real external MCP server, not only the local stdio fixture.
-3. Decide whether the raw `docs/audits/` report should stay local, be sanitized, or be removed before any future public commit.
-4. Optional: run a physical microphone/browser test on another device over HTTPS. The automated auth/WebSocket/TTS path and setup-page load already passed.
+1. Validate against a real external MCP server/client outside the unit-test fixture path, such as Claude Desktop or Home Assistant MCP.
+2. Decide whether the raw `docs/audits/` report should stay local, be sanitized, or be removed before any future public commit.
+3. Optional: run a physical microphone/browser test on another device over HTTPS. The automated auth/WebSocket/TTS path and setup-page load already passed.
 
 Non-blocking but important:
 
@@ -216,12 +219,12 @@ Non-blocking but important:
 
 ## Recommended Next Steps
 
-1. Add the MCP server/control-plane slice: `mcp_server.py`, `voice_get_status`, and the minimum gateway endpoint needed for `voice_speak`.
+1. Validate the MCP server with a real desktop/client integration and one physical browser voice session.
 2. Validate the client adapter against a real MCP target such as `claude mcp serve` or a Home Assistant MCP endpoint.
 3. Keep the raw `docs/audits/` report local-only unless a sanitized version is deliberately prepared later.
 
 ## Current Readiness
 
-Status: hardening release is published and the first MCP client slice is locally validated. Fresh local validation on 2026-04-28 passed for the MCP slice: `ruff check .`, `make test` (166 tests), `compileall`, `git diff --check`, and `docker compose config -q`.
+Status: hardening release is published and the MCP client plus server/control-plane slices are locally validated. Fresh local validation on 2026-04-29 passed: `ruff check .`, `make test` (173 tests), `compileall`, `git diff --check`, `docker compose config -q`, stdio MCP client-to-server tool call, and streamable HTTP MCP tools/list smoke.
 
 Score: 97 / 100.

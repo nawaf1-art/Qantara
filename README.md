@@ -156,6 +156,9 @@ After selecting a backend, Qantara shows a full-screen dark voice mode:
 - **Session HTTP** — Qantara's own session contract (used by Ollama and optional OpenClaw bridges)
 - **Mock** — synthetic responses for testing
 
+### MCP Server
+`mcp_server.py` exposes Qantara browser voice control as MCP tools. A local MCP client can call `voice_get_status`, `voice_speak`, `voice_interrupt`, and `voice_set_voice`; Qantara still handles TTS and browser playback over its WebSocket path.
+
 ### Language Voices
 `scripts/fetch_piper_voices.sh` downloads the launch Piper voices for English, Arabic, Spanish, and French. The voice registry reports installed voices through `/api/tts`; the language catalog reports launch-language TTS availability through `/api/languages`.
 

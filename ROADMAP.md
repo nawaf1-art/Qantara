@@ -305,10 +305,12 @@ Planned together post-launch as a single MCP release. **Client:** talk to any MC
 - [ ] Known cancellation race with SDK #2416 worked around via task-cancel + assertion swallow
 
 **MCP server (expose voice as tools):**
-- [ ] `mcp_server.py` using the same SDK
-- [ ] Tools: `voice_session_start`, `voice_speak`, `voice_interrupt`, `voice_set_voice`, `voice_get_status`, `voice_get_transcript`, `voice_set_translation_mode`
+- [x] Gateway control endpoints can address active browser sessions for status, speak, interrupt, and voice changes
+- [x] `mcp_server.py` using the same SDK
+- [x] Tools: `voice_speak`, `voice_interrupt`, `voice_set_voice`, `voice_get_status`
+- [ ] Tools: `voice_session_start`, `voice_get_transcript`, `voice_set_translation_mode`
 - [ ] Resources: `qantara://voices`, `qantara://avatars`, `qantara://sessions/{id}/status`, `qantara://mesh/peers`
-- [ ] Streamable HTTP transport for remote agents; stdio for local. Audio stays on WS — MCP is control-plane only
+- [x] Streamable HTTP transport for remote agents; stdio for local. Audio stays on WS — MCP is control-plane only
 
 **Deferred to later (not in 0.2.8):** the LLM+toolbox composition pattern where an existing LLM adapter is augmented with MCP tool-use routing. Needs 0.2.3 voice-as-API event flow finalized first. Targeted at 0.3.x.
 

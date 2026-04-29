@@ -87,6 +87,7 @@ class GatewayRuntime:
         self._bindings: dict[str, BackendBinding] = {}
         self._session_store: dict[str, SessionSnapshot] = {}
         self._active_sessions: dict[str, str] = {}
+        self._active_session_refs: dict[str, Any] = {}
         self._next_bridge_port = MANAGED_BRIDGE_PORT
         self._configure_lock = asyncio.Lock()
         self.mesh_controller: MeshController | None = None
@@ -193,7 +194,11 @@ class GatewayRuntime:
                 for binding in self._bindings.values()
             ],
             "active_sessions": [
-                {"session_id": session_id, "binding_id": binding_id}
+                {
+                    "session_id": session_id,
+                    "binding_id": binding_id,
+                    **self._session_control_payload(self._active_session_refs.get(session_id)),
+                }
                 for session_id, binding_id in self._active_sessions.items()
             ],
             "stored_sessions": [
@@ -250,6 +255,7 @@ class GatewayRuntime:
             session.translation_target = self.default_translation_target
         session.binding = binding
         self._active_sessions[session.session_id] = binding.binding_id
+        self._active_session_refs[session.session_id] = session
         self.save_session_state(session)
 
     def save_session_state(self, session: Session) -> None:
@@ -275,8 +281,61 @@ class GatewayRuntime:
 
     def release_session(self, session: Session) -> None:
         self._active_sessions.pop(session.session_id, None)
+        self._active_session_refs.pop(session.session_id, None)
         self.save_session_state(session)
         self.prune_session_store()
+
+    def active_voice_sessions(self) -> list[dict[str, Any]]:
+        self.prune_session_store()
+        return [
+            self._session_control_payload(session, include_binding=True)
+            for session in self._active_session_refs.values()
+            if session is not None
+        ]
+
+    def resolve_active_session(
+        self,
+        *,
+        session_id: str | None = None,
+        client_session_id: str | None = None,
+    ) -> Any | None:
+        self.prune_session_store()
+        if session_id:
+            return self._active_session_refs.get(session_id)
+        if client_session_id:
+            for session in self._active_session_refs.values():
+                if getattr(session, "client_session_id", None) == client_session_id:
+                    return session
+            return None
+        if len(self._active_session_refs) == 1:
+            return next(iter(self._active_session_refs.values()))
+        return None
+
+    @staticmethod
+    def _session_control_payload(session: Any | None, *, include_binding: bool = False) -> dict[str, Any]:
+        if session is None:
+            return {}
+        payload = {
+            "session_id": session.session_id,
+            "client_session_id": session.client_session_id,
+            "client_name": session.client_name,
+            "state": session.state,
+            "voice_id": session.voice_id,
+            "requested_voice_id": session.requested_voice_id,
+            "speech_rate": session.speech_rate,
+            "primary_language": session.primary_language,
+            "translation_mode": session.translation_mode,
+            "translation_source": session.translation_source,
+            "translation_target": session.translation_target,
+            "frames_in": session.frames_in,
+            "frames_out": session.frames_out,
+            "turns_completed": session.turns_completed,
+            "playback_generation": session.playback_generation,
+        }
+        if include_binding and session.binding is not None:
+            payload["binding_id"] = session.binding.binding_id
+            payload["adapter_kind"] = session.binding.adapter_kind
+        return payload
 
     def prune_session_store(self) -> None:
         now = self._now_ms()

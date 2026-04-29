@@ -566,6 +566,48 @@ def enqueue_speech(
     session.speech_task = asyncio.create_task(_run_speech_segment(previous_task, session, text, generation, voice_id))
 
 
+async def _run_control_speech_segment(
+    previous_task: asyncio.Task | None,
+    session: Session,
+    text: str,
+    expected_generation: int,
+    voice_id: str | None = None,
+) -> None:
+    if previous_task is not None:
+        try:
+            await previous_task
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            return
+    if expected_generation != session.speech_generation:
+        return
+    await session.set_state("speaking", reason="control_voice_speak")
+    await session.emit("assistant_output_started", "control", {"kind": "voice_speak", "char_count": len(text)})
+    await safe_send_str(session, {"type": "assistant_text_final", "text": text, "source": "control"})
+    try:
+        await speak_text(session, text, expected_generation=expected_generation, voice_id=voice_id)
+    finally:
+        await session.emit("assistant_output_completed", "control", {"kind": "voice_speak", "char_count": len(text)})
+        if session.state == "speaking":
+            await session.set_state("idle", reason="control_voice_speak_completed")
+
+
+def enqueue_control_speech(
+    session: Session,
+    text: str,
+    frozen_generation: int | None = None,
+    voice_id: str | None = None,
+) -> None:
+    if not text.strip():
+        return
+    previous_task = session.speech_task
+    generation = frozen_generation if frozen_generation is not None else session.speech_generation
+    session.speech_task = asyncio.create_task(
+        _run_control_speech_segment(previous_task, session, text, generation, voice_id)
+    )
+
+
 async def stream_assistant_turn(session: Session, transcript: str) -> None:
     await ensure_adapter_session(session)
     session.turn_id = __import__("uuid").uuid4().hex

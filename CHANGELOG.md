@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Added
 - MCP client adapter for agent-style chat tools over stdio or streamable HTTP (`mcp==1.27.*`), including progress-to-`assistant_activity` forwarding.
+- MCP server (`mcp_server.py`) exposing Qantara browser voice control tools over stdio or streamable HTTP.
+- Protected gateway control endpoints under `/api/control/voice/*` for active-session status, speaking text, interrupting playback, and changing voice.
 - Setup-page MCP backend tile with a protected `tools/list` probe for configured stdio servers and private/loopback HTTP MCP URLs.
 - Reference MCP config examples under `docs/examples/mcp/`.
 
