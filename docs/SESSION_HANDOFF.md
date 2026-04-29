@@ -202,10 +202,11 @@ Recent checkpoint on 2026-04-28:
   - `/api/control/voice/status`, `/api/control/voice/speak`, `/api/control/voice/interrupt`, and `/api/control/voice/set_voice` target active browser sessions.
   - `mcp_server.py` exposes `voice_get_status`, `voice_speak`, `voice_interrupt`, and `voice_set_voice` over stdio or streamable HTTP.
   - Tests validate no-active-browser handling, auth, browser speech queueing, and a real MCP stdio client calling `voice_speak` through the gateway.
+  - A separate-process streamable HTTP smoke on 2026-04-29 validated MCP tools/list, `voice_get_status`, and `voice_speak` against an authenticated gateway with an active WebSocket voice session. The browser-side WebSocket received `assistant_text_final` from `source: control`.
 
 Blockers before tagging a future MCP public release:
 
-1. Validate against a real external MCP server/client outside the unit-test fixture path, such as Claude Desktop or Home Assistant MCP.
+1. Validate against a real desktop MCP client, such as Claude Desktop or Home Assistant MCP, and one physical browser voice session.
 2. Decide whether the raw `docs/audits/` report should stay local, be sanitized, or be removed before any future public commit.
 3. Optional: run a physical microphone/browser test on another device over HTTPS. The automated auth/WebSocket/TTS path and setup-page load already passed.
 
@@ -225,6 +226,6 @@ Non-blocking but important:
 
 ## Current Readiness
 
-Status: hardening release is published and the MCP client plus server/control-plane slices are locally validated. Fresh local validation on 2026-04-29 passed: `ruff check .`, `make test` (173 tests), `compileall`, `git diff --check`, `docker compose config -q`, stdio MCP client-to-server tool call, and streamable HTTP MCP tools/list smoke.
+Status: hardening release is published and the MCP client plus server/control-plane slices are locally validated. Fresh local validation on 2026-04-29 passed: `ruff check .`, `make test` (173 tests), `compileall`, `git diff --check`, `docker compose config -q`, stdio MCP client-to-server tool call, streamable HTTP MCP tools/list smoke, and a separate-process streamable HTTP MCP `voice_speak` smoke into an active browser WebSocket session.
 
 Score: 97 / 100.
