@@ -584,6 +584,7 @@ async def _run_control_speech_segment(
         return
     await session.set_state("speaking", reason="control_voice_speak")
     await session.emit("assistant_output_started", "control", {"kind": "voice_speak", "char_count": len(text)})
+    session.record_transcript_item(role="assistant", text=text, source="control", turn_id=None)
     await safe_send_str(session, {"type": "assistant_text_final", "text": text, "source": "control"})
     try:
         await speak_text(session, text, expected_generation=expected_generation, voice_id=voice_id)
@@ -615,6 +616,7 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
     turn_speech_generation = session.speech_generation
     await emit_turn_state(session, "active")
     await session.set_state("thinking", reason="turn_submit_started")
+    session.record_transcript_item(role="user", text=transcript, source="browser", turn_id=session.turn_id)
     await session.emit("turn_submit_started", "adapter", {"turn_id": session.turn_id, "transcript": transcript})
     # Compose translation directive for the active mode (assistant by default
     # if any translation mode is configured on the session; else empty).
@@ -683,6 +685,7 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                     spoken_so_far = buffered
             elif event_type == "assistant_text_final":
                 saw_final = True
+                session.record_transcript_item(role="assistant", text=event["text"], source="adapter", turn_id=session.turn_id)
                 await session.emit("assistant_output_completed", "adapter", {"turn_handle": turn_handle, "final_chars": len(event["text"])})
                 if not await safe_send_str(session, {"type": "assistant_text_final", "text": event["text"]}):
                     return
@@ -711,6 +714,7 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                 session.turns_completed += 1
                 await session.emit("assistant_output_completed", "adapter", {"turn_handle": turn_handle, "completed_via": "turn_completed"})
         if not saw_final and buffered:
+            session.record_transcript_item(role="assistant", text=buffered, source="adapter", turn_id=session.turn_id)
             await session.emit("assistant_output_completed", "adapter", {"turn_handle": turn_handle, "final_chars": len(buffered), "completed_via": "buffer_flush"})
             await safe_send_str(session, {"type": "assistant_text_final", "text": buffered})
             remaining = buffered[len(spoken_so_far):] if buffered.startswith(spoken_so_far) else buffered

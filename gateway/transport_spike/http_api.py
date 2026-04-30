@@ -401,8 +401,6 @@ async def api_warmup_handler(request: web.Request) -> web.Response:
 async def api_translation_mode_handler(request: web.Request) -> web.Response:
     from dataclasses import replace
 
-    from gateway.transport_spike.prompts import LANGUAGE_NAMES
-
     auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
     if auth_error is not None:
         return auth_error
@@ -416,6 +414,33 @@ async def api_translation_mode_handler(request: web.Request) -> web.Response:
     if not client_session_id:
         return web.json_response({"error": "missing client_session_id"}, status=400)
 
+    translation = _validate_translation_mode(body)
+    if isinstance(translation, web.Response):
+        return translation
+    mode, source, target = translation
+
+    snapshot = runtime.snapshot_for(client_session_id)
+    if snapshot is None:
+        return web.json_response({"error": "unknown client_session_id"}, status=404)
+
+    active_session = runtime.resolve_active_session(client_session_id=client_session_id)
+    if active_session is not None:
+        _apply_session_translation(active_session, mode, source, target)
+
+    runtime._session_store[client_session_id] = replace(
+        snapshot,
+        translation_mode=mode,
+        translation_source=source,
+        translation_target=target,
+        updated_monotonic_ms=runtime._now_ms(),
+    )
+
+    return web.json_response({"mode": mode, "source": source, "target": target})
+
+
+def _validate_translation_mode(body: dict[str, Any]) -> tuple[str | None, str | None, str | None] | web.Response:
+    from gateway.transport_spike.prompts import LANGUAGE_NAMES
+
     mode = body.get("mode")
     if mode not in {"assistant", "directional", "live", None}:
         return web.json_response({"error": f"invalid mode: {mode}"}, status=400)
@@ -428,20 +453,19 @@ async def api_translation_mode_handler(request: web.Request) -> web.Response:
         for code in (source, target):
             if code not in LANGUAGE_NAMES:
                 return web.json_response({"error": f"unsupported language: {code}"}, status=400)
+    return mode, source, target
 
-    snapshot = runtime.snapshot_for(client_session_id)
-    if snapshot is None:
-        return web.json_response({"error": "unknown client_session_id"}, status=404)
 
-    runtime._session_store[client_session_id] = replace(
-        snapshot,
-        translation_mode=mode,
-        translation_source=source,
-        translation_target=target,
-        updated_monotonic_ms=runtime._now_ms(),
-    )
-
-    return web.json_response({"mode": mode, "source": source, "target": target})
+def _apply_session_translation(
+    session: Any,
+    mode: str | None,
+    source: str | None,
+    target: str | None,
+) -> None:
+    session.translation_mode = mode
+    session.translation_source = source
+    session.translation_target = target
+    session.runtime.save_session_state(session)
 
 
 async def api_languages_handler(request: web.Request) -> web.Response:
@@ -477,6 +501,44 @@ def _resolve_control_session(runtime: GatewayRuntime, body: dict[str, Any]):
     return runtime.resolve_active_session(session_id=session_id, client_session_id=client_session_id)
 
 
+async def api_voice_control_session_start_handler(request: web.Request) -> web.Response:
+    auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
+    if auth_error is not None:
+        return auth_error
+    runtime: GatewayRuntime = request.app[APP_RUNTIME_KEY]
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    session = _resolve_control_session(runtime, body)
+    if session is not None:
+        return web.json_response(
+            {
+                "ok": True,
+                "status": "active",
+                "session": runtime._session_control_payload(session, include_binding=True),
+            }
+        )
+    sessions = runtime.active_voice_sessions()
+    if not body.get("session_id") and not body.get("client_session_id") and sessions:
+        return _control_target_error(runtime)
+    browser_url = str(body.get("browser_url") or "/spike").strip() or "/spike"
+    requested_client_session_id = str(body.get("client_session_id") or "").strip() or None
+    return web.json_response(
+        {
+            "ok": True,
+            "status": "waiting_for_browser_session",
+            "client_session_id": requested_client_session_id,
+            "browser_url": browser_url,
+            "message": "Open Qantara in a browser and connect a voice session; MCP cannot create microphone capture by itself.",
+            "active_session_count": len(sessions),
+        },
+        status=202,
+    )
+
+
 async def api_voice_control_status_handler(request: web.Request) -> web.Response:
     auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
     if auth_error is not None:
@@ -484,6 +546,26 @@ async def api_voice_control_status_handler(request: web.Request) -> web.Response
     runtime: GatewayRuntime = request.app[APP_RUNTIME_KEY]
     sessions = runtime.active_voice_sessions()
     return web.json_response({"ok": True, "active_session_count": len(sessions), "sessions": sessions})
+
+
+async def api_voice_control_transcript_handler(request: web.Request) -> web.Response:
+    auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
+    if auth_error is not None:
+        return auth_error
+    runtime: GatewayRuntime = request.app[APP_RUNTIME_KEY]
+    if request.method == "GET":
+        body = dict(request.query)
+    else:
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+    session = _resolve_control_session(runtime, body)
+    if session is None:
+        return _control_target_error(runtime)
+    return web.json_response({"ok": True, **runtime.session_transcript_payload(session)})
 
 
 async def api_voice_control_speak_handler(request: web.Request) -> web.Response:
@@ -584,6 +666,43 @@ async def api_voice_control_voice_handler(request: web.Request) -> web.Response:
     details = apply_voice_selection(session, voice_id)
     await session.emit("session_updated", "control", details)
     return web.json_response({"ok": True, "session": runtime._session_control_payload(session, include_binding=True), **details})
+
+
+async def api_voice_control_translation_handler(request: web.Request) -> web.Response:
+    auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
+    if auth_error is not None:
+        return auth_error
+    runtime: GatewayRuntime = request.app[APP_RUNTIME_KEY]
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "invalid JSON body"}, status=400)
+    if not isinstance(body, dict):
+        return web.json_response({"ok": False, "error": "invalid JSON body"}, status=400)
+    session = _resolve_control_session(runtime, body)
+    if session is None:
+        return _control_target_error(runtime)
+    translation = _validate_translation_mode(body)
+    if isinstance(translation, web.Response):
+        return translation
+    mode, source, target = translation
+    _apply_session_translation(session, mode, source, target)
+    details = {
+        "translation_mode": mode,
+        "translation_source": source,
+        "translation_target": target,
+    }
+    from gateway.transport_spike.speech import safe_send_str
+
+    await session.emit("session_updated", "control", details)
+    await safe_send_str(session, {"type": "session_updated", **details})
+    return web.json_response(
+        {
+            "ok": True,
+            "session": runtime._session_control_payload(session, include_binding=True),
+            **details,
+        }
+    )
 
 
 async def api_test_mcp_handler(request: web.Request) -> web.Response:
@@ -854,10 +973,14 @@ def mount_static_routes(app: web.Application) -> None:
     app.router.add_get("/api/admin/runtime", api_admin_runtime_handler)
     app.router.add_get("/api/tts", api_tts_handler)
     app.router.add_get("/api/languages", api_languages_handler)
+    app.router.add_post("/api/control/voice/session_start", api_voice_control_session_start_handler)
     app.router.add_get("/api/control/voice/status", api_voice_control_status_handler)
+    app.router.add_get("/api/control/voice/transcript", api_voice_control_transcript_handler)
+    app.router.add_post("/api/control/voice/transcript", api_voice_control_transcript_handler)
     app.router.add_post("/api/control/voice/speak", api_voice_control_speak_handler)
     app.router.add_post("/api/control/voice/interrupt", api_voice_control_interrupt_handler)
     app.router.add_post("/api/control/voice/set_voice", api_voice_control_voice_handler)
+    app.router.add_post("/api/control/voice/set_translation_mode", api_voice_control_translation_handler)
     app.router.add_post("/api/translation_mode", api_translation_mode_handler)
     app.router.add_post("/api/configure", api_configure_handler)
     app.router.add_post("/api/warmup", api_warmup_handler)

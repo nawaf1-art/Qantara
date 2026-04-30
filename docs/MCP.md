@@ -67,9 +67,22 @@ python mcp_server.py
 The server exposes:
 
 - `voice_get_status` — returns active browser sessions and playback/session state
+- `voice_session_start` — returns a matching active browser session or a browser-open instruction when no mic session exists yet
 - `voice_speak` — queues text into an active browser session and lets Qantara synthesize/play it
+- `voice_get_transcript` — returns the recent transcript items and event timeline for a browser session
 - `voice_interrupt` — clears current playback/generation for a targeted browser session
 - `voice_set_voice` — changes the playback voice for a targeted browser session
+- `voice_set_translation_mode` — sets assistant, directional, live, or disabled translation mode for a targeted browser session
+
+The server also exposes read-only MCP resources:
+
+- `qantara://voices`
+- `qantara://languages`
+- `qantara://avatars`
+- `qantara://sessions`
+- `qantara://sessions/{session_id}/status`
+- `qantara://sessions/{session_id}/transcript`
+- `qantara://mesh/peers`
 
 When there is exactly one active browser session, tools can omit `session_id` and `client_session_id`. With multiple active sessions, pass one of those IDs from `voice_get_status`.
 

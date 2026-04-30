@@ -33,6 +33,8 @@ _BRIDGE_SCRIPTS: dict[str, str] = {
 LOGGER = logging.getLogger(__name__)
 
 SESSION_STATES = {"idle", "listening", "thinking", "speaking", "interrupted"}
+SESSION_TIMELINE_LIMIT = int(os.environ.get("QANTARA_SESSION_TIMELINE_LIMIT", "200"))
+SESSION_TRANSCRIPT_LIMIT = int(os.environ.get("QANTARA_SESSION_TRANSCRIPT_LIMIT", "80"))
 
 
 @dataclass(slots=True)
@@ -310,6 +312,13 @@ class GatewayRuntime:
         if len(self._active_session_refs) == 1:
             return next(iter(self._active_session_refs.values()))
         return None
+
+    def session_transcript_payload(self, session: Any) -> dict[str, Any]:
+        return {
+            **self._session_control_payload(session, include_binding=True),
+            "transcript": list(getattr(session, "transcript_items", [])),
+            "timeline": list(getattr(session, "event_timeline", [])),
+        }
 
     @staticmethod
     def _session_control_payload(session: Any | None, *, include_binding: bool = False) -> dict[str, Any]:
@@ -654,6 +663,8 @@ class Session:
         self.current_turn_buffered_text: str = ""
         self.current_turn_phase: str | None = None
         self.mesh_should_respond: bool = True
+        self.event_timeline: list[dict[str, Any]] = []
+        self.transcript_items: list[dict[str, Any]] = []
 
     async def set_state(self, new_state: str, reason: str | None = None) -> None:
         if new_state not in SESSION_STATES:
@@ -690,7 +701,37 @@ class Session:
             "source": source,
             "payload": payload,
         }
+        self._record_event(record)
         self.runtime.event_sink(record)
+
+    def _record_event(self, record: dict[str, Any]) -> None:
+        self.event_timeline.append(record)
+        if len(self.event_timeline) > SESSION_TIMELINE_LIMIT:
+            del self.event_timeline[:len(self.event_timeline) - SESSION_TIMELINE_LIMIT]
+
+    def record_transcript_item(
+        self,
+        *,
+        role: str,
+        text: str,
+        source: str,
+        turn_id: str | None = None,
+    ) -> None:
+        clean = (text or "").strip()
+        if not clean:
+            return
+        self.transcript_items.append(
+            {
+                "role": role,
+                "text": clean,
+                "source": source,
+                "turn_id": turn_id or self.turn_id,
+                "ts_monotonic_ms": round(time.monotonic() * 1000, 3),
+                "ts_wall_time": utc_now(),
+            }
+        )
+        if len(self.transcript_items) > SESSION_TRANSCRIPT_LIMIT:
+            del self.transcript_items[:len(self.transcript_items) - SESSION_TRANSCRIPT_LIMIT]
 
 
 async def health_check_bridge(url: str, retries: int = 30, delay: float = 0.3) -> dict[str, Any]:

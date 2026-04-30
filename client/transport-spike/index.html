@@ -838,6 +838,11 @@
       </div>
 
       <div class="panel" style="margin-top: 12px; padding: 14px;">
+        <span class="stat-label">Assistant Activity</span>
+        <div id="assistantActivityList" style="min-height: 28px; line-height: 1.45; color: rgba(92, 105, 130, 0.92); font-size: 0.9rem;"></div>
+      </div>
+
+      <div class="panel" style="margin-top: 12px; padding: 14px;">
         <span class="stat-label">Transcript Result</span>
         <div id="transcriptText" style="min-height: 48px; line-height: 1.5;"></div>
         <div id="partialTranscriptText" style="min-height: 18px; line-height: 1.4; color: rgba(120, 130, 160, 0.85); font-style: italic; margin-top: 4px;"></div>
@@ -1487,15 +1492,28 @@
 
     function showAssistantActivity(activityType, summary, progress) {
       const strip = document.getElementById("vcActivityStrip");
-      if (!strip || !summary) return;
+      if (!summary) return;
       const icon = {
         tool_call: "🔧",
         reading_files: "📄",
         searching: "🔍",
         thinking: "💭",
       }[activityType] || "•";
+      const progressText = typeof progress === "number" ? ` (${Math.round(progress * 100)}%)` : "";
+      const text = `${icon} ${summary}${progressText}`;
+      const debugList = document.getElementById("assistantActivityList");
+      if (debugList) {
+        const debugLine = document.createElement("div");
+        debugLine.textContent = text;
+        debugLine.style.cssText = "padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;";
+        debugList.prepend(debugLine);
+        while (debugList.childNodes.length > 5) {
+          debugList.removeChild(debugList.lastChild);
+        }
+      }
+      if (!strip) return;
       const line = document.createElement("div");
-      line.textContent = `${icon} ${summary}`;
+      line.textContent = text;
       line.style.cssText = "padding: 2px 0; opacity: 0; transition: opacity 200ms ease;";
       strip.appendChild(line);
       // Fade in, auto-fade after 3.5s

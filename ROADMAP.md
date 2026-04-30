@@ -178,8 +178,8 @@ Still category-of-one vs the monolith competitors (ShayneP/local-voice-ai, KokoD
 - [ ] Benchmark harness: cut-off-mid-sentence test that fails today on livekit-agents and pipecat — ours must pass. Recording of this comparison links from the README at launch.
 
 **`assistant_activity` event (foundation for 0.2.7 MCP):**
-- [ ] Schema in `schemas/EVENT_TIMELINE.md` — fields: `activity_type` (`tool_call` / `reading_files` / `searching` / `thinking`), `summary` (string, one-sentence), `progress` (optional 0..1)
-- [ ] Non-spoken strip in the UI, capped at last N activities per turn. Adapters can emit these today (no-op for mock/ollama/openclaw/openai; becomes useful when MCP lands at 0.2.7)
+- [x] Schema in `schemas/EVENT_TIMELINE.md` — fields: `activity_type` (`tool_call` / `reading_files` / `searching` / `thinking`), `summary` (string, one-sentence), `progress` (optional 0..1)
+- [x] Non-spoken strip in the UI, capped at last N activities per turn. Adapters can emit these today (no-op for mock/ollama/openclaw/openai; becomes useful when MCP lands at 0.2.7)
 
 **Files:** `providers/stt/base.py`, `providers/stt/faster_whisper.py`, `gateway/transport_spike/speech.py`, `gateway/transport_spike/runtime.py` (state machine on Session), `gateway/transport_spike/websocket_api.py`, `schemas/EVENT_TIMELINE.md`, `client/transport-spike/index.html`, `tests/test_partial_transcripts.py` (new), `tests/test_session_state.py` (new), `tests/test_interruption.py` (new)
 **Effort:** 1 week
@@ -308,8 +308,8 @@ Planned together post-launch as a single MCP release. **Client:** talk to any MC
 - [x] Gateway control endpoints can address active browser sessions for status, speak, interrupt, and voice changes
 - [x] `mcp_server.py` using the same SDK
 - [x] Tools: `voice_speak`, `voice_interrupt`, `voice_set_voice`, `voice_get_status`
-- [ ] Tools: `voice_session_start`, `voice_get_transcript`, `voice_set_translation_mode`
-- [ ] Resources: `qantara://voices`, `qantara://avatars`, `qantara://sessions/{id}/status`, `qantara://mesh/peers`
+- [x] Tools: `voice_session_start`, `voice_get_transcript`, `voice_set_translation_mode`
+- [x] Resources: `qantara://voices`, `qantara://avatars`, `qantara://sessions/{id}/status`, `qantara://mesh/peers`
 - [x] Streamable HTTP transport for remote agents; stdio for local. Audio stays on WS — MCP is control-plane only
 
 **Deferred to later (not in 0.2.8):** the LLM+toolbox composition pattern where an existing LLM adapter is augmented with MCP tool-use routing. Needs 0.2.3 voice-as-API event flow finalized first. Targeted at 0.3.x.

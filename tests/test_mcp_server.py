@@ -10,6 +10,7 @@ from unittest.mock import patch
 from aiohttp.test_utils import TestClient, TestServer
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.types import AnyUrl
 
 from adapters.base import AdapterConfig
 from gateway.transport_spike.runtime import GatewayRuntime
@@ -33,6 +34,14 @@ def _tool_payload(result) -> dict:
         if text:
             return json.loads(text)
     raise AssertionError("tool returned no JSON payload")
+
+
+def _resource_payload(result) -> dict:
+    for item in getattr(result, "contents", []) or []:
+        text = getattr(item, "text", None)
+        if text:
+            return json.loads(text)
+    raise AssertionError("resource returned no JSON payload")
 
 
 class MCPServerControlTests(unittest.IsolatedAsyncioTestCase):
@@ -119,6 +128,53 @@ class MCPServerControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(seen_tts)
         await ws.close()
 
+    async def test_control_transcript_records_control_speech(self) -> None:
+        ws = await self._connect_voice_session("transcript-client")
+
+        resp = await self.client.post(
+            "/api/control/voice/speak",
+            json={"client_session_id": "transcript-client", "text": "remember this"},
+        )
+        self.assertEqual(resp.status, 200)
+        for _ in range(10):
+            msg = await ws.receive_json()
+            if msg.get("type") == "assistant_text_final":
+                break
+
+        transcript = await self.client.post(
+            "/api/control/voice/transcript",
+            json={"client_session_id": "transcript-client"},
+        )
+        body = await transcript.json()
+
+        self.assertEqual(transcript.status, 200)
+        self.assertTrue(body["ok"])
+        self.assertTrue(any(item["text"] == "remember this" for item in body["transcript"]))
+        self.assertTrue(any(event["event_name"] == "assistant_output_started" for event in body["timeline"]))
+        await ws.close()
+
+    async def test_control_translation_mode_updates_active_session(self) -> None:
+        ws = await self._connect_voice_session("translation-client")
+
+        resp = await self.client.post(
+            "/api/control/voice/set_translation_mode",
+            json={
+                "client_session_id": "translation-client",
+                "mode": "directional",
+                "source": "en",
+                "target": "ar",
+            },
+        )
+        body = await resp.json()
+
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(body["translation_mode"], "directional")
+        self.assertEqual(body["session"]["translation_target"], "ar")
+        update = await ws.receive_json()
+        self.assertEqual(update["type"], "session_updated")
+        self.assertEqual(update["translation_target"], "ar")
+        await ws.close()
+
     async def test_control_requires_auth_when_gateway_auth_is_configured(self) -> None:
         await self.client.close()
         self.env_patch.stop()
@@ -165,10 +221,30 @@ class MCPServerControlTests(unittest.IsolatedAsyncioTestCase):
                 tools = await session.list_tools()
                 tool_names = {tool.name for tool in tools.tools}
                 self.assertIn("voice_get_status", tool_names)
+                self.assertIn("voice_session_start", tool_names)
                 self.assertIn("voice_speak", tool_names)
+                self.assertIn("voice_get_transcript", tool_names)
+                self.assertIn("voice_set_translation_mode", tool_names)
 
                 status = _tool_payload(await session.call_tool("voice_get_status", arguments={}))
                 self.assertEqual(status["active_session_count"], 1)
+                active = _tool_payload(
+                    await session.call_tool(
+                        "voice_session_start",
+                        arguments={"client_session_id": "mcp-stdio-client"},
+                    )
+                )
+                self.assertEqual(active["status"], "active")
+                translation = _tool_payload(
+                    await session.call_tool(
+                        "voice_set_translation_mode",
+                        arguments={
+                            "client_session_id": "mcp-stdio-client",
+                            "mode": "assistant",
+                        },
+                    )
+                )
+                self.assertEqual(translation["translation_mode"], "assistant")
                 spoken = _tool_payload(
                     await session.call_tool(
                         "voice_speak",
@@ -188,6 +264,69 @@ class MCPServerControlTests(unittest.IsolatedAsyncioTestCase):
                 seen_final = True
                 break
         self.assertTrue(seen_final)
+
+        params = StdioServerParameters(
+            command=sys.executable,
+            args=[str(MCP_SERVER)],
+            cwd=str(REPO_ROOT),
+            env={
+                **os.environ,
+                "QANTARA_GATEWAY_URL": str(self.server.make_url("")).rstrip("/"),
+                "QANTARA_MCP_SERVER_TRANSPORT": "stdio",
+                "QANTARA_MCP_SERVER_LOG_LEVEL": "ERROR",
+            },
+        )
+
+        async with stdio_client(params) as (read_stream, write_stream):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                transcript = _tool_payload(
+                    await session.call_tool(
+                        "voice_get_transcript",
+                        arguments={"client_session_id": "mcp-stdio-client"},
+                    )
+                )
+                self.assertTrue(any(item["text"] == "spoken through MCP server" for item in transcript["transcript"]))
+        await ws.close()
+
+    async def test_qantara_mcp_server_exposes_resources(self) -> None:
+        ws = await self._connect_voice_session("mcp-resource-client")
+        session_id = None
+        params = StdioServerParameters(
+            command=sys.executable,
+            args=[str(MCP_SERVER)],
+            cwd=str(REPO_ROOT),
+            env={
+                **os.environ,
+                "QANTARA_GATEWAY_URL": str(self.server.make_url("")).rstrip("/"),
+                "QANTARA_MCP_SERVER_TRANSPORT": "stdio",
+                "QANTARA_MCP_SERVER_LOG_LEVEL": "ERROR",
+            },
+        )
+
+        async with stdio_client(params) as (read_stream, write_stream):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+                resources = await session.list_resources()
+                resource_uris = {str(resource.uri) for resource in resources.resources}
+                self.assertIn("qantara://voices", resource_uris)
+                self.assertIn("qantara://sessions", resource_uris)
+                templates = await session.list_resource_templates()
+                template_uris = {str(template.uriTemplate) for template in templates.resourceTemplates}
+                self.assertIn("qantara://sessions/{session_id}/status", template_uris)
+                sessions = _resource_payload(await session.read_resource(AnyUrl("qantara://sessions")))
+                self.assertEqual(sessions["active_session_count"], 1)
+                session_id = sessions["sessions"][0]["session_id"]
+                status = _resource_payload(
+                    await session.read_resource(AnyUrl(f"qantara://sessions/{session_id}/status"))
+                )
+                self.assertTrue(status["ok"])
+                self.assertEqual(status["session"]["client_session_id"], "mcp-resource-client")
+                voices = _resource_payload(await session.read_resource(AnyUrl("qantara://voices")))
+                self.assertIn("voices", voices)
+                avatars = _resource_payload(await session.read_resource(AnyUrl("qantara://avatars")))
+                self.assertIn("presets", avatars)
+
         await ws.close()
 
 

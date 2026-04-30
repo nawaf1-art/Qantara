@@ -199,8 +199,10 @@ Recent checkpoint on 2026-04-28:
   - Setup now includes an "Any MCP server" tile with a protected `tools/list` probe. Browser-driven stdio commands are intentionally not accepted; set `QANTARA_MCP_COMMAND` in the gateway environment.
   - Reference configs live in `docs/examples/mcp/`.
 - MCP server/control-plane slice landed:
-  - `/api/control/voice/status`, `/api/control/voice/speak`, `/api/control/voice/interrupt`, and `/api/control/voice/set_voice` target active browser sessions.
-  - `mcp_server.py` exposes `voice_get_status`, `voice_speak`, `voice_interrupt`, and `voice_set_voice` over stdio or streamable HTTP.
+  - `/api/control/voice/status`, `/api/control/voice/session_start`, `/api/control/voice/speak`, `/api/control/voice/transcript`, `/api/control/voice/interrupt`, `/api/control/voice/set_voice`, and `/api/control/voice/set_translation_mode` target active browser sessions.
+  - `mcp_server.py` exposes `voice_get_status`, `voice_session_start`, `voice_speak`, `voice_get_transcript`, `voice_interrupt`, `voice_set_voice`, and `voice_set_translation_mode` over stdio or streamable HTTP.
+  - MCP resources expose voices, languages, avatars, active sessions, per-session status/transcript, and mesh peers.
+  - The browser client now renders non-spoken `assistant_activity` events in the debug view and voice-mode overlay.
   - Tests validate no-active-browser handling, auth, browser speech queueing, and a real MCP stdio client calling `voice_speak` through the gateway.
   - A separate-process streamable HTTP smoke on 2026-04-29 validated MCP tools/list, `voice_get_status`, and `voice_speak` against an authenticated gateway with an active WebSocket voice session. The browser-side WebSocket received `assistant_text_final` from `source: control`.
 
@@ -228,6 +230,6 @@ Non-blocking but important:
 
 ## Current Readiness
 
-Status: hardening release is published and the MCP client plus server/control-plane slices are locally validated. Fresh local validation on 2026-04-29 passed: `ruff check .`, `make test` (173 tests), `compileall`, `git diff --check`, `docker compose config -q`, stdio MCP client-to-server tool call, streamable HTTP MCP tools/list smoke, and a separate-process streamable HTTP MCP `voice_speak` smoke into an active browser WebSocket session.
+Status: hardening release is published and the MCP client plus server/control-plane slices are locally validated. Fresh local validation on 2026-04-29 passed: `ruff check .`, `make test` (173 tests), `compileall`, `git diff --check`, `docker compose config -q`, stdio MCP client-to-server tool call, streamable HTTP MCP tools/list smoke, and a separate-process streamable HTTP MCP `voice_speak` smoke into an active browser WebSocket session. On 2026-04-30, focused MCP server tests passed for the expanded tools/resources, transcript reads, and translation-mode control.
 
 Score: 97 / 100.
