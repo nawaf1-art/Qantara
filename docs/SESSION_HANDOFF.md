@@ -206,6 +206,8 @@ Recent checkpoint on 2026-04-28:
 
 Blockers before tagging a future MCP public release:
 
+Reminder for the user: they plan to test the real desktop MCP client and physical browser voice session later. Bring this up before tagging or publishing the next MCP release.
+
 1. Validate against a real desktop MCP client, such as Claude Desktop or Home Assistant MCP, and one physical browser voice session.
 2. Decide whether the raw `docs/audits/` report should stay local, be sanitized, or be removed before any future public commit.
 3. Optional: run a physical microphone/browser test on another device over HTTPS. The automated auth/WebSocket/TTS path and setup-page load already passed.
