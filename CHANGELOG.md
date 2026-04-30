@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-04-30
+
 ### Added
 - MCP client adapter for agent-style chat tools over stdio or streamable HTTP (`mcp==1.27.*`), including progress-to-`assistant_activity` forwarding.
 - MCP server (`mcp_server.py`) exposing Qantara browser voice control tools over stdio or streamable HTTP.
@@ -153,5 +155,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - 39 lint issues surfaced by ruff: unused imports, deprecated typing imports, missing `raise … from`, unused variables, import ordering.
 - Version references aligned on `0.1.9-pre` across `VERSION`, `AGENTS.md`, `README.md`, and `ROADMAP.md`.
 
-[Unreleased]: https://github.com/nawaf1-art/Qantara/compare/v0.2.6...HEAD
+[Unreleased]: https://github.com/nawaf1-art/Qantara/compare/v0.2.8...HEAD
+[0.2.8]: https://github.com/nawaf1-art/Qantara/compare/v0.2.7...v0.2.8
+[0.2.7]: https://github.com/nawaf1-art/Qantara/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/nawaf1-art/Qantara/releases/tag/v0.2.6

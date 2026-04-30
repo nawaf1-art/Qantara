@@ -4,7 +4,7 @@
 
 Qantara lets you talk by voice to Ollama, local LLM servers, and local AI agents through your browser. It handles microphone capture, speech recognition, turn-taking, interruption, text-to-speech, and the live connection to whichever local backend you choose — all running on your local network with no cloud dependency for speech processing.
 
-> Version `0.2.7` — post-launch hardening patch. `0.2.6` was the first public release.
+> Version `0.2.8` — MCP voice client + server. `0.2.6` was the first public release.
 
 
 ## Why Qantara
@@ -253,7 +253,7 @@ qantara/
 | 0.2.5 | ✅ Done | Chatterbox TTS (expressive voice) |
 | 0.2.6 | ✅ Released | **Public launch** |
 | 0.2.7 | ✅ Released | Post-launch hardening patch |
-| 0.2.8 | In progress | MCP voice client + server |
+| 0.2.8 | ✅ Released | MCP voice client + server |
 | 0.3.2 | Planned | Speech-native adapter (OpenAI Realtime, Gemini Live, MiniCPM-o) |
 | 0.3.4 | Planned | Identity-aware sessions (voice fingerprinting) |
 | 0.3.5 | Planned | Screenshot + voice multimodal |
