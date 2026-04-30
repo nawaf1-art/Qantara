@@ -7,6 +7,7 @@
 - [ ] `make test` passes locally
 - [ ] Added tests for new behavior (if applicable)
 - [ ] Ran the gateway end-to-end against a real backend (if touching gateway/adapter paths)
+- [ ] Updated README/docs and feature status labels when public behavior changed
 
 **Checklist**
 
@@ -15,3 +16,4 @@
 - [ ] Type hints on new function signatures
 - [ ] No new cloud-only dependencies
 - [ ] No JS build tooling added
+- [ ] New claims are accurate and do not describe planned work as implemented

@@ -1,11 +1,32 @@
 # Qantara
 
-**Local-first, real-time voice gateway for Ollama, local LLMs, and local AI agents.**
+[![Tests](https://github.com/nawaf1-art/Qantara/actions/workflows/test.yml/badge.svg)](https://github.com/nawaf1-art/Qantara/actions/workflows/test.yml)
+[![Latest release](https://img.shields.io/github/v/release/nawaf1-art/Qantara?sort=semver)](https://github.com/nawaf1-art/Qantara/releases)
+[![License](https://img.shields.io/github/license/nawaf1-art/Qantara)](LICENSE)
+[![Security policy](https://img.shields.io/badge/security-policy-green)](SECURITY.md)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![Docker](https://img.shields.io/badge/docker-compose-blue)
+![Local-first](https://img.shields.io/badge/local--first-privacy--focused-brightgreen)
+
+**Turn local LLMs and AI agents into real-time browser voice assistants.**
 
 Qantara lets you talk by voice to Ollama, local LLM servers, and local AI agents through your browser. It handles microphone capture, speech recognition, turn-taking, interruption, text-to-speech, and the live connection to whichever local backend you choose — all running on your local network with no cloud dependency for speech processing.
 
 > Version `0.2.8` — MCP voice client + server. `0.2.6` was the first public release.
 
+> Demo media needed: the README is ready for a 30-second GIF showing Docker startup, browser setup, an Ollama conversation, and barge-in. See [docs/DEMO_PLAN.md](docs/DEMO_PLAN.md).
+
+## Try It In 5 Minutes
+
+```bash
+git clone https://github.com/nawaf1-art/Qantara.git
+cd Qantara
+docker compose up
+```
+
+Open **http://localhost:8765**. Use **Demo** to test the browser voice UI without a backend, or choose **OpenAI-Compatible** for Ollama, llama.cpp, LM Studio, Jan, vLLM, LiteLLM, and similar local `/v1/chat/completions` servers.
+
+First Docker startup downloads and builds local speech dependencies, so expect roughly 5-10 minutes and 8-10 GB of disk on a fresh machine. Subsequent starts are much faster. For the full install path, see [docs/QUICKSTART.md](docs/QUICKSTART.md).
 
 ## Why Qantara
 
@@ -18,6 +39,39 @@ Most voice interfaces are push-to-talk wrappers. Qantara is built for **full-dup
 
 Qantara is a voice *channel*, not a replacement for the local LLM or agent runtime behind it.
 
+## Feature Status At A Glance
+
+| Area | Status | Notes |
+|---|---|---|
+| Browser microphone voice UI | Stable | Vanilla JS/WebAudio client, no build step |
+| WebSocket PCM voice pipeline | Stable | PCM16 mono 16 kHz audio path |
+| Local STT/TTS | Stable | faster-whisper STT; Piper/Kokoro provider paths |
+| Barge-in / interruption | Stable | Playback cancel path and active-turn handling |
+| OpenAI-compatible local backends | Stable | Recommended path for Ollama, llama.cpp, LM Studio, Jan, LiteLLM, vLLM |
+| MCP client and MCP voice server | Experimental | New in `0.2.8`; automated smoke coverage exists, real desktop client testing is still recommended |
+| OpenClaw bridge | Advanced | Optional local-agent bridge, host setup required |
+| Home Assistant / Wyoming | Experimental | LAN satellite path; validate in your own HA environment |
+| Screenshot + voice multimodal | Planned | Not implemented yet |
+
+See the complete [feature matrix](docs/FEATURES.md) for status labels and limitations.
+
+## Use Cases
+
+Qantara is for developers building:
+
+- A local AI voice assistant for Ollama.
+- A private voice interface for local LLMs and OpenAI-compatible servers.
+- A browser voice gateway for AI agents and MCP-backed workflows.
+- A voice layer for OpenClaw-style local agent systems.
+- A home or lab AI assistant that stays on the LAN.
+- A developer testbed for real-time voice-agent behavior, including barge-in.
+
+See [docs/USE_CASES.md](docs/USE_CASES.md) for practical workflows.
+
+## Who Should Not Use This Yet?
+
+Qantara is early and pre-1.0. It is not the right fit yet for production call centers, medical or emergency use, fully managed cloud hosting, non-technical users expecting a polished commercial app, or environments that require audited enterprise compliance.
+
 ### Your voice stays on your machines
 
 Qantara ships with **no telemetry, no analytics, and no outbound connections to Qantara-controlled servers**. Audio frames, transcripts, and conversation history never leave the machines you configure. The gateway connects only to the backends you select and to the HuggingFace / model-download endpoints the first time you use an STT or TTS model. There is no account, no key, no phone-home.
@@ -28,7 +82,7 @@ Defaults reflect this: no analytics SDKs in the browser client, no Google Fonts 
 
 Two other shapes of project exist in this space:
 
-- **Speech-native models** (OpenAI Realtime, Gemini Live, MiniCPM-o, Moshi) — these *are* the model; audio in, audio out, no separate STT/TTS. They replace the brain, not the transport. Qantara can host them as a backend via their text or (in `0.3.x`) audio interfaces.
+- **Speech-native models** (OpenAI Realtime, Gemini Live, MiniCPM-o, Moshi) — these *are* the model; audio in, audio out, no separate STT/TTS. They replace the brain, not the transport. Qantara can use text interfaces today; direct speech-native audio adapters are planned for a later `0.3.x` line.
 - **Heavy frameworks** (Pipecat, LiveKit Agents) — vendor-agnostic orchestration with dozens of provider integrations and WebRTC infrastructure. Powerful, but many days to wire up.
 
 Qantara's niche is the middle: **a real full-duplex voice stack for local LLMs and agents that you can read, run, and ship in an afternoon**. One `docker compose up`, no cloud accounts, no build step.
@@ -148,7 +202,7 @@ After selecting a backend, Qantara shows a full-screen dark voice mode:
 
 ### Multi-device + Home Assistant
 - **Multi-device mesh** — run Qantara on multiple devices; the closest-mic node answers. See [docs/MESH.md](docs/MESH.md).
-- **Home Assistant** — Qantara is a Wyoming satellite, auto-discovered by HA's Assist pipeline. See [docs/HOMEASSISTANT.md](docs/HOMEASSISTANT.md).
+- **Home Assistant** — experimental Wyoming satellite path for HA Assist workflows. See [docs/HOMEASSISTANT.md](docs/HOMEASSISTANT.md).
 
 ### Backend Adapters
 - **OpenAI-compatible** — direct `/v1/chat/completions`, voice-optimized system prompt, conversation history, SSE streaming

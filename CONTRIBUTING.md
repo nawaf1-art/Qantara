@@ -1,6 +1,6 @@
 # Contributing to Qantara
 
-Qantara is in pre-launch (`0.2.6-dev.1`). Early contributions are welcome, especially for small documentation, provider, adapter, and test improvements listed in [ROADMAP.md](ROADMAP.md). This guide covers how to file issues, propose changes, and submit patches.
+Qantara is public and pre-1.0. Early contributions are welcome, especially for small documentation, provider, adapter, integration, and test improvements listed in [ROADMAP.md](ROADMAP.md) and [docs/GOOD_FIRST_ISSUES.md](docs/GOOD_FIRST_ISSUES.md). This guide covers how to file issues, propose changes, and submit patches.
 
 If you're here to understand the codebase conventions, read [AGENTS.md](AGENTS.md) first — it's the definitive guide for both humans and AI coding agents.
 

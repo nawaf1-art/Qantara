@@ -4,9 +4,11 @@ This directory is the public documentation entry point. It is organized for new 
 
 ## User Guides
 
+- [Quickstart](QUICKSTART.md)
 - [Installation and first run](INSTALLATION_AND_FIRST_RUN_GUIDE.md)
 - [Configuration](CONFIGURATION.md)
 - [Troubleshooting](TROUBLESHOOTING.md)
+- [FAQ](FAQ.md)
 - [Home Assistant / Wyoming](HOMEASSISTANT.md)
 - [Multi-device mesh](MESH.md)
 - [MCP bridge](MCP.md)
@@ -14,7 +16,9 @@ This directory is the public documentation entry point. It is organized for new 
 
 ## Project Understanding
 
-- [Architecture](../ARCHITECTURE.md)
+- [Architecture](ARCHITECTURE.md)
+- [Feature matrix](FEATURES.md)
+- [Use cases](USE_CASES.md)
 - [Benchmarks](BENCHMARKS.md)
 - [Roadmap](../ROADMAP.md)
 - [Changelog](../CHANGELOG.md)
@@ -22,8 +26,14 @@ This directory is the public documentation entry point. It is organized for new 
 ## Contributor and Maintainer Guides
 
 - [Developer onboarding](DEVELOPER_ONBOARDING.md)
+- [Good first issue ideas](GOOD_FIRST_ISSUES.md)
 - [Release checklist](RELEASE_CHECKLIST.md)
 - [First public release notes draft](FIRST_PUBLIC_RELEASE_NOTES_DRAFT.md)
+
+## Launch and Demo Materials
+
+- [Demo plan](DEMO_PLAN.md)
+- [Marketing copy](MARKETING.md)
 
 ## Publication Audit Package
 

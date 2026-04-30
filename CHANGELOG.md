@@ -20,6 +20,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Adapter activity events now flow through the gateway to the browser activity strip.
 - Docker Compose passes MCP client environment variables through to the gateway container.
 
+### Upgrade and Test Notes
+- Upgrade from a prior checkout with `git pull`, then rebuild Docker with `docker compose up --build` or refresh the native virtualenv requirements.
+- Test the stable path by opening `http://localhost:8765`, choosing Demo or OpenAI-Compatible, granting microphone access, and confirming playback plus barge-in.
+- MCP support is new in this release. Automated stdio and streamable-HTTP smoke tests passed, but a real desktop MCP client and physical browser voice session should still be validated in each target environment.
+- See [docs/QUICKSTART.md](docs/QUICKSTART.md), [docs/FEATURES.md](docs/FEATURES.md), and [docs/MCP.md](docs/MCP.md).
+
 ## [0.2.7] - 2026-04-28
 
 ### Added
