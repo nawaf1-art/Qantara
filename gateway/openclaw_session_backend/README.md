@@ -13,6 +13,8 @@ Environment:
 export QANTARA_OPENCLAW_AGENT_ID=main
 export QANTARA_REAL_BACKEND_HOST=127.0.0.1
 export QANTARA_REAL_BACKEND_PORT=19120
+# Optional: set to deep only when you explicitly want /health to run an agent turn.
+export QANTARA_OPENCLAW_HEALTH_MODE=shallow
 ```
 
 Run:
@@ -28,5 +30,7 @@ Current bridge behavior:
   client session id
 - passes Qantara voice turn context into OpenClaw, including language,
   translation mode, voice id, and speech-rate metadata
+- keeps `/health` shallow by default, so routine health checks do not create
+  OpenClaw sessions or cold-start agents
 - runs each CLI turn in its own process group so barge-in cancellation can
   terminate the full subprocess tree cleanly

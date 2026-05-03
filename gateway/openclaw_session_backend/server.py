@@ -26,6 +26,7 @@ OPENCLAW_TIMEOUT_SECONDS = float(os.environ.get("QANTARA_OPENCLAW_TIMEOUT", "300
 OPENCLAW_THINKING = os.environ.get("QANTARA_OPENCLAW_THINKING", "").strip()
 OPENCLAW_CANCEL_GRACE_SECONDS = float(os.environ.get("QANTARA_OPENCLAW_CANCEL_GRACE", "2"))
 OPENCLAW_SUBPROCESS_TIMEOUT_BUFFER_SECONDS = float(os.environ.get("QANTARA_OPENCLAW_TIMEOUT_BUFFER", "30"))
+OPENCLAW_HEALTH_MODE = os.environ.get("QANTARA_OPENCLAW_HEALTH_MODE", "shallow").strip().lower()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 LOG = logging.getLogger("qantara.openclaw")
@@ -245,6 +246,16 @@ async def _run_openclaw_turn(
 
 async def health_handler(_: web.Request) -> web.Response:
     detail = f"openclaw session backend ready ({OPENCLAW_AGENT_ID})"
+    if OPENCLAW_HEALTH_MODE not in {"deep", "agent"}:
+        return web.json_response(
+            {
+                "status": "ok",
+                "detail": detail,
+                "agent_id": OPENCLAW_AGENT_ID,
+                "mode": "shallow",
+            }
+        )
+
     try:
         process = await asyncio.create_subprocess_exec(
             OPENCLAW_BIN,
@@ -264,7 +275,10 @@ async def health_handler(_: web.Request) -> web.Response:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=25)
         if process.returncode != 0:
             message = (stderr or stdout).decode("utf-8", errors="replace").strip()
-            return web.json_response({"status": "degraded", "detail": f"{detail}; {message}"}, status=200)
+            return web.json_response(
+                {"status": "degraded", "detail": f"{detail}; {message}", "mode": "deep"},
+                status=200,
+            )
         payload = json.loads(stdout.decode("utf-8", errors="replace"))
         result = payload.get("result") or {}
         meta = result.get("meta") or {}
@@ -273,9 +287,12 @@ async def health_handler(_: web.Request) -> web.Response:
             or payload.get("name")
             or OPENCLAW_AGENT_ID
         )
-        return web.json_response({"status": "ok", "detail": f"{detail}; agent={agent_name}"})
+        return web.json_response({"status": "ok", "detail": f"{detail}; agent={agent_name}", "mode": "deep"})
     except Exception as exc:
-        return web.json_response({"status": "degraded", "detail": f"{detail}; {exc}"}, status=200)
+        return web.json_response(
+            {"status": "degraded", "detail": f"{detail}; {exc}", "mode": "deep"},
+            status=200,
+        )
 
 
 async def create_session_handler(request: web.Request) -> web.Response:

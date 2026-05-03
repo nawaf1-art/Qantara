@@ -67,6 +67,7 @@ Advanced optional OpenClaw path:
 | `QANTARA_OPENCLAW_BIN` | `openclaw` | CLI binary |
 | `QANTARA_OPENCLAW_AGENT_ID` | `main` | Agent id to call |
 | `QANTARA_OPENCLAW_TIMEOUT` | `300` | Per-turn timeout |
+| `QANTARA_OPENCLAW_HEALTH_MODE` | `shallow` | Health endpoint mode. Keep `shallow` for normal use so health checks do not run agent turns; set `deep` only for explicit diagnostics. |
 
 OpenClaw is hidden from setup unless the host gateway is healthy. It is not the default local LLM path.
 

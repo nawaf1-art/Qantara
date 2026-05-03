@@ -142,6 +142,48 @@ class BackendContractTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 await client.close()
 
+    async def test_openclaw_health_is_shallow_by_default(self) -> None:
+        with patch("gateway.openclaw_session_backend.server.asyncio.create_subprocess_exec") as create_proc:
+            server = TestServer(create_openclaw_backend_app())
+            client = TestClient(server)
+            await client.start_server()
+            try:
+                health_resp = await client.get("/health")
+                health_data = await health_resp.json()
+                self.assertEqual(health_data["status"], "ok")
+                self.assertEqual(health_data["mode"], "shallow")
+                create_proc.assert_not_called()
+            finally:
+                await client.close()
+
+    async def test_openclaw_deep_health_is_explicit(self) -> None:
+        payload = {
+            "result": {
+                "payloads": [{"text": "hello from openclaw"}],
+                "meta": {"agentMeta": {"name": "Spectra"}},
+            }
+        }
+
+        async def fake_create_subprocess_exec(*args, **kwargs):
+            return FakeProc(json.dumps(payload).encode("utf-8"))
+
+        with (
+            patch("gateway.openclaw_session_backend.server.OPENCLAW_HEALTH_MODE", "deep"),
+            patch("gateway.openclaw_session_backend.server.asyncio.create_subprocess_exec", side_effect=fake_create_subprocess_exec) as create_proc,
+        ):
+            server = TestServer(create_openclaw_backend_app())
+            client = TestClient(server)
+            await client.start_server()
+            try:
+                health_resp = await client.get("/health")
+                health_data = await health_resp.json()
+                self.assertEqual(health_data["status"], "ok")
+                self.assertEqual(health_data["mode"], "deep")
+                self.assertIn("agent=Spectra", health_data["detail"])
+                create_proc.assert_called_once()
+            finally:
+                await client.close()
+
     async def test_openclaw_backend_injects_qantara_turn_context(self) -> None:
         payload = {
             "result": {
