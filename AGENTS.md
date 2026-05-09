@@ -1,3 +1,21 @@
+## Agents HQ Linkage
+
+Agents HQ is the shared operational memory and index for Nawaf's agents, projects, machines, model resources, and OpenClaw work.
+
+Before working on Qantara, read:
+
+1. `/home/nawaf/agents-hq/00_START_HERE.md`
+2. `/home/nawaf/agents-hq/context-packs/MINIMAL_BOOT.md`
+3. `/home/nawaf/agents-hq/projects/QANTARA.md`
+4. this repo's `README.md`
+5. this repo's existing `AGENTS.md`
+
+Qantara is a LAN-first voice/gateway project. Do not change microphone, audio, certificates, HTTPS/WSS, LAN exposure, adapters, Docker, runtime services, or OpenClaw integration behavior unless explicitly asked.
+
+Do not read secrets, `.env`, private keys, cert private keys, credentials, tokens, model files, audio captures, logs, or browser profiles.
+
+After meaningful work, update `/home/nawaf/agents-hq/projects/QANTARA.md` and append to `/home/nawaf/agents-hq/RUN_LOG.md`.
+
 # Qantara — Agent Guide
 
 This file is for AI coding agents (Claude Code, Codex, Cursor, etc.) working on this repo. Read this before making any changes.
