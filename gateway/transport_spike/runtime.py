@@ -14,8 +14,6 @@ from aiohttp import web
 
 from adapters.base import AdapterConfig
 from adapters.factory import create_adapter, load_adapter_config
-from gateway.mesh.controller import MeshController, MeshControllerConfig
-from gateway.mesh.wyoming_bridge import WyomingBridge
 from gateway.transport_spike.common import (
     DEFAULT_SPEECH_RATE,
     MANAGED_BRIDGE_PORT,
@@ -92,8 +90,8 @@ class GatewayRuntime:
         self._active_session_refs: dict[str, Any] = {}
         self._next_bridge_port = MANAGED_BRIDGE_PORT
         self._configure_lock = asyncio.Lock()
-        self.mesh_controller: MeshController | None = None
-        self.wyoming_bridge: WyomingBridge | None = None
+        self.mesh_controller: Any | None = None
+        self.wyoming_bridge: Any | None = None
         # Defaults picked up by new sessions (populated via /api/configure).
         self.default_primary_language: str = "en"
         self.default_translation_mode: str | None = None
@@ -348,10 +346,15 @@ class GatewayRuntime:
 
     def prune_session_store(self) -> None:
         now = self._now_ms()
+        active_client_session_ids = {
+            getattr(session, "client_session_id", None)
+            for session in self._active_session_refs.values()
+            if session is not None
+        }
         expired_clients = [
             client_session_id
             for client_session_id, snapshot in self._session_store.items()
-            if client_session_id not in self._active_sessions
+            if client_session_id not in active_client_session_ids
             and now - snapshot.updated_monotonic_ms > SESSION_STORE_TTL_MS
         ]
         for client_session_id in expired_clients:
@@ -563,6 +566,12 @@ class GatewayRuntime:
             return
         if self.mesh_controller is not None:
             return
+        try:
+            from gateway.mesh.controller import MeshController, MeshControllerConfig
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "QANTARA_MESH_ROLE is enabled, but mesh dependencies are not installed"
+            ) from exc
         node_id = os.environ.get("QANTARA_MESH_NODE_ID", f"qantara-{uuid.uuid4().hex[:8]}")
         mesh_port = int(os.environ.get("QANTARA_MESH_PORT", "8901"))
         mesh_host = os.environ.get("QANTARA_MESH_HOST", "127.0.0.1")
@@ -592,6 +601,12 @@ class GatewayRuntime:
             return
         if self.wyoming_bridge is not None:
             return
+        try:
+            from gateway.mesh.wyoming_bridge import WyomingBridge
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "QANTARA_WYOMING_ENABLED is set, but Wyoming dependencies are not installed"
+            ) from exc
         wyoming_port = int(os.environ.get("QANTARA_WYOMING_PORT", "10700"))
         wyoming_host = os.environ.get("QANTARA_WYOMING_HOST", "127.0.0.1")
         wyoming_node_name = os.environ.get("QANTARA_WYOMING_NODE_NAME", "qantara")

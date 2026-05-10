@@ -67,6 +67,17 @@ class BackendSwitchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(returning.speech_rate, 1.2)
         self.assertEqual(returning.client_name, "kitchen-speaker")
 
+    async def test_prune_keeps_active_client_session_snapshot(self) -> None:
+        runtime = _make_runtime()
+        session = Session(DummyWebSocket(), runtime)
+        session.client_session_id = "active-client"
+        runtime.register_session(session)
+
+        runtime._session_store["active-client"].updated_monotonic_ms = 0
+        runtime.prune_session_store()
+
+        self.assertIsNotNone(runtime.snapshot_for("active-client"))
+
 
 if __name__ == "__main__":
     unittest.main()

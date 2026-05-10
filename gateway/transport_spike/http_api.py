@@ -306,8 +306,8 @@ async def api_admin_runtime_handler(request: web.Request) -> web.Response:
     return web.json_response(runtime.admin_payload())
 
 
-async def unload_previous_model(runtime: GatewayRuntime) -> None:
-    binding = runtime.default_binding()
+async def unload_previous_model(runtime: GatewayRuntime, binding: Any | None = None) -> None:
+    binding = binding or runtime.default_binding()
     if not binding.url or not binding.model:
         return
     timeout = _aiohttp.ClientTimeout(total=5)
@@ -788,7 +788,7 @@ async def api_configure_handler(request: web.Request) -> web.Response:
         raw_url if raw_url.startswith(("http://", "https://")) else f"http://{raw_url}"
     ):
         return web.json_response({"error": "Only private network URLs are allowed"}, status=403)
-    await unload_previous_model(runtime)
+    previous_binding = runtime.default_binding()
     try:
         binding = await runtime.configure_backend(
             backend_type,
@@ -801,6 +801,7 @@ async def api_configure_handler(request: web.Request) -> web.Response:
         )
     except ValueError as exc:
         return web.json_response({"error": str(exc)}, status=400)
+    await unload_previous_model(runtime, previous_binding)
     tts_engine = body.get("tts_engine", "").strip()
     if tts_engine and tts_engine in {"piper", "kokoro", "chatterbox"}:
         # TTS live-swap is deferred — persist the preference into process env

@@ -216,11 +216,13 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
         turn_handle: str,
     ) -> AsyncIterator[dict[str, Any]]:
         if not self.available:
+            self._cleanup_turn(turn_handle)
             raise RuntimeError("OpenAI-compatible backend URL is not configured")
 
         messages = self._sessions.get(session_handle, [])
         if not messages:
             self._rollback_user_message(session_handle)
+            self._cleanup_turn(turn_handle)
             yield {"type": "turn_failed", "message": "no session found"}
             return
 
@@ -242,6 +244,7 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
         model = self.model or await self._auto_detect_model()
         if not model:
             self._rollback_user_message(session_handle)
+            self._cleanup_turn(turn_handle)
             yield {"type": "turn_failed", "message": "no model configured or detected"}
             return
 
@@ -275,7 +278,7 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
                         body = await resp.text()
                         error_msg = _normalize_error(body)
                         self._rollback_user_message(session_handle)
-                        self._active_responses.pop(turn_handle, None)
+                        self._cleanup_turn(turn_handle)
                         yield {"type": "turn_failed", "message": error_msg}
                         return
 
@@ -356,6 +359,7 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
 
         except aiohttp.ClientConnectorError:
             self._rollback_user_message(session_handle)
+            self._cleanup_turn(turn_handle)
             yield {
                 "type": "turn_failed",
                 "message": f"Cannot reach server at {self.base_url}. Is it running?",
@@ -363,6 +367,7 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
             return
         except aiohttp.ServerTimeoutError:
             self._rollback_user_message(session_handle)
+            self._cleanup_turn(turn_handle)
             yield {
                 "type": "turn_failed",
                 "message": "Server not responding. The model may be loading — try again.",
@@ -370,6 +375,7 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
             return
         except Exception as exc:
             self._rollback_user_message(session_handle)
+            self._cleanup_turn(turn_handle)
             yield {
                 "type": "turn_failed",
                 "message": str(exc),
@@ -377,10 +383,8 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
             return
 
         # Clean up turn tracking
-        self._active_responses.pop(turn_handle, None)
         was_cancelled = not self._active_turns.get(turn_handle, False)
-        self._active_turns.pop(turn_handle, None)
-        self._turn_sessions.pop(turn_handle, None)
+        self._cleanup_turn(turn_handle)
 
         if was_cancelled:
             # Cancelled turn: emit cancel_acknowledged, do NOT save partial response
@@ -403,6 +407,13 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
         messages = self._sessions.get(session_handle, [])
         if messages and messages[-1].get("role") == "user":
             messages.pop()
+
+    def _cleanup_turn(self, turn_handle: str) -> None:
+        """Drop per-turn state after completion, cancellation, or failure."""
+        self._active_responses.pop(turn_handle, None)
+        self._active_turns.pop(turn_handle, None)
+        self._turn_sessions.pop(turn_handle, None)
+        self._turn_context_prompts.pop(turn_handle, None)
 
     async def cancel_turn(
         self,

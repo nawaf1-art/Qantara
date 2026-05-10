@@ -215,6 +215,17 @@ class GatewayHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["error"], "invalid JSON body")
         unload.assert_not_awaited()
 
+    async def test_configure_rejects_missing_required_url_before_unload(self) -> None:
+        with patch("gateway.transport_spike.http_api.unload_previous_model", new_callable=AsyncMock) as unload:
+            resp = await self.client.post(
+                "/api/configure",
+                json={"type": "custom"},
+            )
+        body = await resp.json()
+        self.assertEqual(resp.status, 400)
+        self.assertEqual(body["error"], "custom type requires 'url'")
+        unload.assert_not_awaited()
+
     async def test_configure_endpoint_auth_token_behavior(self) -> None:
         allowed = await self.client.post(
             "/api/configure",
