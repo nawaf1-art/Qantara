@@ -233,3 +233,14 @@ Non-blocking but important:
 Status: hardening release is published and the MCP client plus server/control-plane slices are locally validated. Fresh local validation on 2026-04-29 passed: `ruff check .`, `make test` (173 tests), `compileall`, `git diff --check`, `docker compose config -q`, stdio MCP client-to-server tool call, streamable HTTP MCP tools/list smoke, and a separate-process streamable HTTP MCP `voice_speak` smoke into an active browser WebSocket session. On 2026-04-30, focused MCP server tests passed for the expanded tools/resources, transcript reads, and translation-mode control.
 
 Score: 97 / 100.
+
+## 2026-05-11 Ship Checkpoint
+
+Local lifecycle cleanup commit `f15dc73 Fix Qantara lifecycle cleanup regressions` is ready to publish from `public-main` to `origin/main`. It covers:
+
+- OpenAI-compatible adapter per-turn cleanup on early failure and completion paths.
+- Active browser session snapshot pruning by `client_session_id`.
+- `/api/configure` model unload after the replacement backend binding is accepted.
+- Lazy mesh/Wyoming imports for default mesh-disabled runtime paths on Windows-safe environments.
+
+Windows-safe focused verification previously passed for `tests.test_adapter_translation_directive`, `tests.test_backend_switch`, and `tests.test_gateway_http`. Full Docker, Linux virtualenv, Ollama/OpenClaw, mesh/Wyoming, browser microphone, HTTPS/WSS, and physical MCP-client checks still require LinuxHost/runtime verification.

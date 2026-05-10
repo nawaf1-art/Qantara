@@ -6,6 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+- Cleaned up Qantara lifecycle regressions around OpenAI-compatible adapter turn bookkeeping, active browser session snapshot pruning, and backend reconfiguration model unload ordering.
+
 ## [0.2.8] - 2026-04-30
 
 ### Added
