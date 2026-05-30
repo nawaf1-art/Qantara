@@ -729,8 +729,10 @@ async def api_test_mcp_handler(request: web.Request) -> web.Response:
             return web.json_response({"ok": False, "error": "missing MCP URL"}, status=400)
         if not url.startswith(("http://", "https://")):
             url = "http://" + url
-        if not is_safe_url(url):
+        pinned_mcp_url = _safe_outbound_url(url)
+        if pinned_mcp_url is None:
             return web.json_response({"ok": False, "error": "Only private network MCP URLs are allowed"}, status=403)
+        url = pinned_mcp_url
     try:
         from adapters.base import AdapterConfig
         from adapters.mcp_client import MCPClientAdapter
@@ -784,10 +786,11 @@ async def api_configure_handler(request: web.Request) -> web.Response:
         backend_type in {"custom", "openai_compatible", "openai", "ollama"}
         or (backend_type in {"mcp", "mcp_client"} and mcp_transport == "http")
     )
-    if requires_safe_url and raw_url and not is_safe_url(
-        raw_url if raw_url.startswith(("http://", "https://")) else f"http://{raw_url}"
-    ):
-        return web.json_response({"error": "Only private network URLs are allowed"}, status=403)
+    if requires_safe_url and raw_url:
+        pinned_url = _safe_outbound_url(raw_url)
+        if pinned_url is None:
+            return web.json_response({"error": "Only private network URLs are allowed"}, status=403)
+        raw_url = pinned_url
     previous_binding = runtime.default_binding()
     try:
         binding = await runtime.configure_backend(
@@ -826,6 +829,27 @@ async def api_configure_handler(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "type": backend_type, "adapter_kind": binding.adapter_kind, "url": binding.url, "health": binding.health, "managed_bridge": binding.managed_bridge_type, "binding_id": binding.binding_id, "tts_engine_pref": tts_engine or None})
 
 
+def _is_lan_ip(addr: Any) -> bool:
+    """True only for addresses that are genuinely on a private LAN / loopback.
+
+    ``ipaddress.is_private`` is NOT a safe allowlist: it reports True for the
+    link-local range (169.254.0.0/16, which includes the cloud metadata
+    endpoint 169.254.169.254, plus fe80::/10) and for the unspecified address
+    (0.0.0.0 / ::, which routes to localhost on Linux). Reject those classes
+    explicitly, unwrap IPv4-mapped IPv6 so ::ffff:169.254.169.254 cannot smuggle
+    a metadata IP past the guard, and treat loopback as always safe (IPv6 ::1 is
+    flagged is_reserved, so it must be allowed before the reserved check).
+    """
+    mapped = getattr(addr, "ipv4_mapped", None)
+    if mapped is not None:
+        addr = mapped
+    if addr.is_loopback:
+        return True
+    if addr.is_unspecified or addr.is_link_local or addr.is_multicast or addr.is_reserved:
+        return False
+    return addr.is_private
+
+
 def is_safe_url(url: str) -> bool:
     return _resolve_safe_url(url) is not None
 
@@ -849,7 +873,7 @@ def _resolve_safe_url(url: str) -> tuple[str, str] | None:
                 return None
             resolved = _sock.getaddrinfo(host, port, _sock.AF_UNSPEC, _sock.SOCK_STREAM)
             candidates = [_ipa.ip_address(sockaddr[0]) for _, _, _, _, sockaddr in resolved]
-        if not candidates or not all(addr.is_private or addr.is_loopback for addr in candidates):
+        if not candidates or not all(_is_lan_ip(addr) for addr in candidates):
             return None
         selected = candidates[0]
         selected_host = selected.compressed
@@ -860,6 +884,63 @@ def _resolve_safe_url(url: str) -> tuple[str, str] | None:
         return parsed._replace(netloc=selected_host).geturl(), parsed.netloc
     except Exception:
         return None
+
+
+def _safe_outbound_url(raw_url: str) -> str | None:
+    """SSRF-validate ``raw_url`` and return it with the resolved IP pinned into
+    the netloc, or ``None`` if it is not a private/loopback target.
+
+    Pinning the validated IP (rather than forwarding the original hostname)
+    closes the DNS-rebinding window: ``/api/configure`` and ``/api/test-mcp``
+    previously validated a hostname and then handed the *hostname* to the
+    adapter, which re-resolved it at connect time — letting a hostname that
+    first resolves private flip to a public/metadata IP on the real request.
+    """
+    candidate = raw_url if raw_url.startswith(("http://", "https://")) else f"http://{raw_url}"
+    resolved = _resolve_safe_url(candidate)
+    return resolved[0] if resolved is not None else None
+
+
+_ORIGIN_PROTECTED_PATHS = frozenset({"/ws", "/api/discovery/scan"})
+_ORIGIN_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def _request_host(request: web.Request) -> str:
+    host_header = request.headers.get("Host", "")
+    raw = host_header.rsplit(":", 1)[0] if host_header else (request.url.host or "")
+    return raw.strip("[]").lower()
+
+
+def _origin_allowed(request: web.Request) -> bool:
+    """Reject cross-site requests that carry a browser Origin which does not
+    match the host the request was sent to.
+
+    This blocks cross-site WebSocket hijacking and cross-site POSTs that ride on
+    the HttpOnly auth cookie. Requests with no Origin header are allowed:
+    non-browser API clients (which authenticate with a Bearer token) omit it,
+    and browsers reliably send Origin on the dangerous cross-origin cases
+    (WebSocket handshakes always, cross-origin fetch always). An explicit
+    allowlist can be set via QANTARA_ALLOWED_ORIGINS (comma-separated).
+    """
+    origin = request.headers.get("Origin")
+    if not origin:
+        return True
+    configured = os.environ.get("QANTARA_ALLOWED_ORIGINS", "").strip()
+    if configured:
+        allowed = {o.strip().rstrip("/").lower() for o in configured.split(",") if o.strip()}
+        return origin.rstrip("/").lower() in allowed
+    from urllib.parse import urlparse
+
+    origin_host = (urlparse(origin).hostname or "").lower()
+    return bool(origin_host) and origin_host == _request_host(request)
+
+
+@web.middleware
+async def origin_guard_middleware(request: web.Request, handler: Any) -> web.StreamResponse:
+    needs_check = request.method not in _ORIGIN_SAFE_METHODS or request.path in _ORIGIN_PROTECTED_PATHS
+    if needs_check and not _origin_allowed(request):
+        return web.json_response({"error": "cross-origin request rejected"}, status=403)
+    return await handler(request)
 
 
 def _safe_model_probe_base(raw_url: str) -> tuple[str, dict[str, str]] | None:
@@ -898,7 +979,12 @@ async def api_test_url_handler(request: web.Request) -> web.Response:
     for prefix in ("/v1", ""):
         try:
             async with _aiohttp.ClientSession(timeout=timeout) as cs:
-                async with cs.get(f"{base}{prefix}/models", headers=headers) as resp:
+                # allow_redirects=False: the probed server is only IP-validated
+                # at this URL; following a 302 would let it redirect us to a
+                # public/metadata host and defeat the SSRF guard.
+                async with cs.get(
+                    f"{base}{prefix}/models", headers=headers, allow_redirects=False
+                ) as resp:
                     if resp.status < 400:
                         data = await resp.json()
                         models = [m.get("id", "") for m in data.get("data", []) if m.get("id")]

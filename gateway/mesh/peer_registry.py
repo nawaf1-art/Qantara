@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 
 @dataclass(slots=True)
@@ -41,6 +41,13 @@ class PeerRegistry:
     def upsert_peer(self, record: PeerRecord) -> None:
         if record.node_id == self._local_node_id:
             return
+        # A TCP Hello knows only the inbound socket's ephemeral source port and
+        # upserts port=0. Don't let that wipe a real host/port the mDNS browser
+        # already resolved (outbound reconnect would target port 0 forever).
+        if record.port == 0:
+            existing = self._peers.get(record.node_id)
+            if existing is not None and existing.port:
+                record = replace(record, host=existing.host, port=existing.port)
         self._peers[record.node_id] = record
 
     def remove_peer(self, node_id: str) -> None:
@@ -57,9 +64,17 @@ class PeerRegistry:
             session_id=session_id, rms=rms, monotonic_ms=monotonic_ms
         )
 
-    def latest_rms(self, node_id: str, session_id: str) -> float | None:
+    def latest_rms(self, node_id: str, now_ms: float) -> float | None:
+        """Return the peer's most recent RMS if it is still fresh.
+
+        Freshness is by recency (TTL), NOT by session id: every node uses its
+        own per-connection session id, so a session-id match never succeeded
+        across nodes and the election always ran blind (split-brain). A stale
+        observation older than the TTL is ignored so a peer that spoke seconds
+        ago cannot win or be yielded to in a later election.
+        """
         obs = self._rms.get(node_id)
-        if obs is None or obs.session_id != session_id:
+        if obs is None or (now_ms - obs.monotonic_ms) > self._rms_ttl_ms:
             return None
         return obs.rms
 

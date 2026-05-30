@@ -184,8 +184,9 @@ class MeshController:
         await asyncio.sleep(window_ms / 1000.0)
         peer_rms = {}
         peer_roles = {}
+        self._registry.expire_stale(now_ms)
         for peer in self._registry.list_peers():
-            rms = self._registry.latest_rms(node_id=peer.node_id, session_id=session_id)
+            rms = self._registry.latest_rms(node_id=peer.node_id, now_ms=now_ms)
             if rms is not None:
                 peer_rms[peer.node_id] = rms
                 peer_roles[peer.node_id] = peer.role

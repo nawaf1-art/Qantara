@@ -203,6 +203,95 @@ class GatewayHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["error"], "Only private network URLs are allowed")
         unload.assert_not_awaited()
 
+    async def test_configure_pins_resolved_ip_against_dns_rebinding(self) -> None:
+        from types import SimpleNamespace
+
+        captured: dict[str, str] = {}
+
+        async def fake_configure(backend_type: str, *, url: str, **kwargs: object):
+            captured["url"] = url
+            return SimpleNamespace(
+                adapter_kind="session_gateway_http",
+                url=url,
+                health={"status": "ok"},
+                managed_bridge_type=None,
+                binding_id="bid-1",
+            )
+
+        getaddr = [(2, 1, 6, "", ("192.168.1.50", 8080))]
+        with patch(
+            "gateway.transport_spike.http_api.unload_previous_model", new_callable=AsyncMock
+        ), patch(
+            "gateway.transport_spike.http_api._sock.getaddrinfo", return_value=getaddr
+        ), patch.object(self.runtime, "configure_backend", side_effect=fake_configure):
+            resp = await self.client.post(
+                "/api/configure",
+                json={"type": "custom", "url": "http://printer.local:8080"},
+            )
+        self.assertEqual(resp.status, 200)
+        # The rebindable hostname must be pinned to the validated IP before being
+        # forwarded to the backend, so a later DNS flip cannot redirect the gateway.
+        self.assertTrue(
+            captured["url"].startswith("http://192.168.1.50:8080"),
+            f"expected pinned IP, got {captured['url']!r}",
+        )
+
+    async def test_test_url_probe_does_not_follow_redirects(self) -> None:
+        from aiohttp import web as _web
+
+        leaked = {"hit": False}
+
+        async def models(_request: _web.Request) -> _web.Response:
+            raise _web.HTTPFound("/leaked")
+
+        async def leaked_handler(_request: _web.Request) -> _web.Response:
+            leaked["hit"] = True
+            return _web.json_response({"data": [{"id": "LEAKED"}]})
+
+        malicious = _web.Application()
+        malicious.router.add_get("/v1/models", models)
+        malicious.router.add_get("/models", models)
+        malicious.router.add_get("/leaked", leaked_handler)
+        backend = TestServer(malicious)
+        await backend.start_server()
+        try:
+            resp = await self.client.post(
+                "/api/test-url", json={"url": f"http://127.0.0.1:{backend.port}"}
+            )
+            body = await resp.json()
+        finally:
+            await backend.close()
+        # A redirect from the probed server must NOT be followed — otherwise the
+        # IP-pinning is defeated by a 302 to a public/metadata host.
+        self.assertFalse(leaked["hit"], "probe followed a redirect to a second endpoint")
+        self.assertNotIn("LEAKED", body.get("models", []))
+
+    async def test_ws_rejects_cross_origin_handshake(self) -> None:
+        with self.assertRaises(WSServerHandshakeError) as ctx:
+            await self.client.ws_connect("/ws", headers={"Origin": "http://evil.example"})
+        self.assertEqual(ctx.exception.status, 403)
+
+    async def test_configure_rejects_cross_origin_post(self) -> None:
+        resp = await self.client.post(
+            "/api/configure",
+            json={"type": "mock"},
+            headers={"Origin": "http://evil.example"},
+        )
+        self.assertEqual(resp.status, 403)
+
+    async def test_configure_allows_same_origin_post(self) -> None:
+        base = self.client.make_url("")
+        origin = f"{base.scheme}://{base.host}:{base.port}"
+        with patch(
+            "gateway.transport_spike.http_api.unload_previous_model", new_callable=AsyncMock
+        ):
+            resp = await self.client.post(
+                "/api/configure",
+                json={"type": "mock"},
+                headers={"Origin": origin},
+            )
+        self.assertEqual(resp.status, 200)
+
     async def test_configure_rejects_invalid_json_before_unload(self) -> None:
         with patch("gateway.transport_spike.http_api.unload_previous_model", new_callable=AsyncMock) as unload:
             resp = await self.client.post(

@@ -250,10 +250,44 @@ async def qantara_mesh_peers() -> str:
     return _json_resource(await _gateway_request("GET", "/api/mesh/peers"))
 
 
+def _is_loopback_host(host: str) -> bool:
+    host = (host or "").strip().strip("[]")
+    if host in {"127.0.0.1", "::1", "localhost", ""}:
+        return True
+    try:
+        import ipaddress
+
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _require_safe_http_binding(transport: str, host: str) -> None:
+    """Refuse to expose the MCP control plane on a non-loopback interface.
+
+    The MCP HTTP/streamable-http transport serves voice control tools
+    (voice_speak, voice_interrupt, voice_set_voice, ...) with no inbound
+    authentication, so binding it to a LAN-reachable address lets any device on
+    the network drive the user's live microphone session. Require an explicit
+    QANTARA_MCP_SERVER_ALLOW_INSECURE=1 opt-in for that configuration.
+    """
+    if transport in {"http", "streamable-http"} and not _is_loopback_host(host):
+        opt_in = os.environ.get("QANTARA_MCP_SERVER_ALLOW_INSECURE", "").strip().lower()
+        if opt_in not in {"1", "true", "yes", "on"}:
+            raise SystemExit(
+                f"Refusing to start MCP {transport!r} transport on non-loopback host {host!r}: "
+                "the MCP server exposes voice control (speak/interrupt/set_voice) with no inbound "
+                "authentication. Bind QANTARA_MCP_SERVER_HOST to 127.0.0.1, or set "
+                "QANTARA_MCP_SERVER_ALLOW_INSECURE=1 to override on a trusted network."
+            )
+
+
 def main() -> None:
     transport = os.environ.get("QANTARA_MCP_SERVER_TRANSPORT", "stdio").strip().lower()
     if transport not in {"stdio", "streamable-http", "http"}:
         raise SystemExit(f"unsupported QANTARA_MCP_SERVER_TRANSPORT: {transport}")
+    host = os.environ.get("QANTARA_MCP_SERVER_HOST", "127.0.0.1")
+    _require_safe_http_binding(transport, host)
     mcp.run("streamable-http" if transport == "http" else transport)
 
 

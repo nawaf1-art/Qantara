@@ -26,7 +26,11 @@ from gateway.transport_spike.common import (  # noqa: E402
     TLS_CERT_FILE,
     TLS_KEY_FILE,
 )
-from gateway.transport_spike.http_api import cleanup_bridge, mount_static_routes  # noqa: E402
+from gateway.transport_spike.http_api import (  # noqa: E402
+    cleanup_bridge,
+    mount_static_routes,
+    origin_guard_middleware,
+)
 from gateway.transport_spike.runtime import APP_RUNTIME_KEY, GatewayRuntime, Session  # noqa: E402
 from gateway.transport_spike.speech import (  # noqa: E402
     apply_speech_rate,
@@ -62,6 +66,7 @@ __all__ = [
 
 def create_app(runtime: GatewayRuntime | None = None) -> web.Application:
     app = web.Application()
+    app.middlewares.append(origin_guard_middleware)
     app[APP_RUNTIME_KEY] = runtime or GatewayRuntime()
     auth_token = load_auth_token("QANTARA_AUTH_TOKEN")
     app[AUTH_TOKEN_KEY] = auth_token

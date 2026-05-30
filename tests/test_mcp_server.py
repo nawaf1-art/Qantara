@@ -330,5 +330,43 @@ class MCPServerControlTests(unittest.IsolatedAsyncioTestCase):
         await ws.close()
 
 
+class McpServerBindingGuardTests(unittest.TestCase):
+    """The MCP server exposes voice control (speak/interrupt) with no inbound
+    auth, so it must refuse to serve HTTP on a non-loopback interface unless the
+    operator explicitly opts in."""
+
+    def _import(self):
+        try:
+            import mcp_server
+        except ModuleNotFoundError:  # pragma: no cover - path fallback
+            sys.path.insert(0, str(REPO_ROOT))
+            import mcp_server
+        return mcp_server
+
+    def test_http_on_non_loopback_without_optin_refuses(self) -> None:
+        mod = self._import()
+        env = {k: v for k, v in os.environ.items() if k != "QANTARA_MCP_SERVER_ALLOW_INSECURE"}
+        with patch.dict(os.environ, env, clear=True):
+            with self.assertRaises(SystemExit):
+                mod._require_safe_http_binding("http", "0.0.0.0")
+            with self.assertRaises(SystemExit):
+                mod._require_safe_http_binding("streamable-http", "192.168.1.5")
+
+    def test_http_on_loopback_is_allowed(self) -> None:
+        mod = self._import()
+        mod._require_safe_http_binding("http", "127.0.0.1")
+        mod._require_safe_http_binding("streamable-http", "::1")
+        mod._require_safe_http_binding("http", "localhost")
+
+    def test_stdio_transport_is_always_allowed(self) -> None:
+        mod = self._import()
+        mod._require_safe_http_binding("stdio", "0.0.0.0")
+
+    def test_explicit_optin_allows_non_loopback_http(self) -> None:
+        mod = self._import()
+        with patch.dict(os.environ, {"QANTARA_MCP_SERVER_ALLOW_INSECURE": "1"}):
+            mod._require_safe_http_binding("http", "0.0.0.0")
+
+
 if __name__ == "__main__":
     unittest.main()
