@@ -103,6 +103,44 @@ class WyomingPipelineTests(unittest.IsolatedAsyncioTestCase):
 
 
 class WyomingEndToEndTests(unittest.IsolatedAsyncioTestCase):
+    async def test_oversized_payload_length_is_rejected(self) -> None:
+        # Wyoming can bind 0.0.0.0, so a LAN client must not be able to declare a
+        # multi-GB payload_length and force readexactly to buffer it (OOM DoS).
+        # The bounded server should drop the connection rather than block.
+        from gateway.mesh.wyoming_bridge import WyomingBridge
+
+        port = 10796
+        bridge = WyomingBridge(
+            node_name="nodeD",
+            area="lab",
+            port=port,
+            version="1.0",
+            has_vad=True,
+            register_zeroconf=False,
+        )
+        await bridge.start()
+        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+        try:
+            header = (
+                json.dumps(
+                    {"type": "audio-chunk", "data": {"rate": 16000}, "payload_length": 10**12}
+                ).encode()
+                + b"\n"
+            )
+            writer.write(header)
+            await writer.drain()
+            # With the size bound, the server rejects the frame and closes, so
+            # the read returns EOF promptly instead of hanging on a 1 TB read.
+            leftover = await asyncio.wait_for(reader.read(), timeout=2.0)
+            self.assertEqual(leftover, b"")
+        finally:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+            await bridge.stop()
+
     async def test_audio_stop_triggers_synthesis_response(self) -> None:
         import struct
 

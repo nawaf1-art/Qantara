@@ -14,6 +14,12 @@ from gateway.transport_spike.common import TARGET_SAMPLE_RATE
 
 LOGGER = logging.getLogger(__name__)
 
+# Wyoming frames come from untrusted LAN clients (the satellite can bind 0.0.0.0
+# with no auth). Cap declared data/payload sizes so a forged header can't force
+# readexactly() to buffer gigabytes (memory-exhaustion DoS). Audio chunks are
+# small; 16 MB is well above any legitimate frame.
+_MAX_WYOMING_FRAME_BYTES = 16 * 1024 * 1024
+
 
 @dataclass(slots=True)
 class PipelineContext:
@@ -187,6 +193,20 @@ class WyomingBridge:
                         break
                     data_length = int(header.get("data_length") or 0)
                     payload_length = int(header.get("payload_length") or 0)
+                    if (
+                        data_length < 0
+                        or payload_length < 0
+                        or data_length > _MAX_WYOMING_FRAME_BYTES
+                        or payload_length > _MAX_WYOMING_FRAME_BYTES
+                    ):
+                        # Untrusted LAN peer: refuse to buffer an absurd frame
+                        # (memory-exhaustion DoS) and drop the connection.
+                        LOGGER.warning(
+                            "wyoming: frame size out of bounds (data=%d payload=%d); closing",
+                            data_length,
+                            payload_length,
+                        )
+                        break
                     data_extra = b""
                     if data_length > 0:
                         data_extra = await reader.readexactly(data_length)

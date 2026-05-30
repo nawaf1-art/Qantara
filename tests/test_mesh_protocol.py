@@ -68,6 +68,41 @@ class MeshMessageTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             decode_message({"type": "ping_of_death"})
 
+    def test_rejects_non_finite_rms(self) -> None:
+        from gateway.mesh.protocol import decode_message
+
+        # json.loads accepts Infinity/NaN by default, so a hostile LAN peer can
+        # send them; they must not be allowed to win/poison an election.
+        for bad in (float("inf"), float("nan")):
+            with self.assertRaises(ValueError):
+                decode_message({"type": "rms_update", "node_id": "a", "rms": bad,
+                                "session_id": "s", "monotonic_ms": 1.0})
+
+    def test_rejects_non_numeric_or_negative_rms(self) -> None:
+        from gateway.mesh.protocol import decode_message
+
+        for bad in ("loud", -1.0, True):
+            with self.assertRaises(ValueError):
+                decode_message({"type": "rms_update", "node_id": "a", "rms": bad,
+                                "session_id": "s", "monotonic_ms": 1.0})
+
+    def test_rejects_oversized_identifiers(self) -> None:
+        from gateway.mesh.protocol import decode_message
+
+        with self.assertRaises(ValueError):
+            decode_message({"type": "hello", "node_id": "x" * 100000, "role": "full"})
+        with self.assertRaises(ValueError):
+            decode_message({"type": "rms_update", "node_id": "a", "rms": 0.5,
+                            "session_id": "s" * 100000, "monotonic_ms": 1.0})
+
+    def test_valid_rms_update_still_decodes(self) -> None:
+        from gateway.mesh.protocol import RmsUpdate, decode_message
+
+        msg = decode_message({"type": "rms_update", "node_id": "a", "rms": 0.0,
+                              "session_id": "s", "monotonic_ms": 1.0})
+        self.assertIsInstance(msg, RmsUpdate)
+        self.assertEqual(msg.rms, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
