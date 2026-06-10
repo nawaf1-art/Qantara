@@ -12,6 +12,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Changed
 - `providers.tts` and `providers.stt` package imports no longer eagerly import concrete providers (and their heavy optional dependencies such as numpy); provider selection was already lazy in the factory.
 
+## [Unreleased]
+
+### Added
+- Voice-as-API (roadmap `0.2.3`, shipped as `0.2.11`): `POST /api/v1/speak` (text → WAV/PCM audio), `POST /api/v1/transcribe` (WAV or raw-PCM16 audio → text + language), and `POST /api/v1/converse` (text turn → SSE stream of agent-protocol events, with optional `session_id` continuity). Auth via `QANTARA_AUTH_TOKEN`, per-request audit logging, runnable shell/Python/Node examples in `docs/examples/clients/`, and a new [docs/VOICE_API.md](docs/VOICE_API.md) guide.
+
+### Fixed
+- Mesh server shutdown no longer hangs while peers are still connected (found during real-network verification of `QANTARA_MESH_TOKEN`).
+
 ## [0.2.9] - 2026-06-10
 
 ### Added

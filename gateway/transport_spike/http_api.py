@@ -21,6 +21,7 @@ from gateway.transport_spike.auth import (
 )
 from gateway.transport_spike.common import CLIENT_SETUP_DIR, CLIENT_SPIKE_DIR, CLIENT_TRANSLATE_DIR, IDENTITY_DIR
 from gateway.transport_spike.runtime import APP_RUNTIME_KEY, GatewayRuntime
+from gateway.transport_spike.voice_api import mount_voice_api
 
 _TEST_URL_RATE_LIMIT_WINDOW_S = 10.0
 _TEST_URL_RATE_LIMIT_MAX_CALLS = 8
@@ -1050,6 +1051,7 @@ async def api_mesh_status_handler(request: web.Request) -> web.Response:
 
 
 def mount_static_routes(app: web.Application) -> None:
+    mount_voice_api(app)
     app.router.add_get("/", index_handler)
     app.router.add_get("/api/auth/status", api_auth_status_handler)
     app.router.add_post("/api/auth/login", api_auth_login_handler)
