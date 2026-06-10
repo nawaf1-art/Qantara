@@ -12,7 +12,7 @@
 
 Qantara lets you talk by voice to Ollama, local LLM servers, and local AI agents through your browser. It handles microphone capture, speech recognition, turn-taking, interruption, text-to-speech, and the live connection to whichever local backend you choose — all running on your local network with no cloud dependency for speech processing.
 
-> Version `0.2.9` — agent protocol v1 + tool-call metadata. `0.2.6` was the first public release.
+> Version `0.2.10` — Python SDK (`pip install qantara`). `0.2.6` was the first public release.
 
 > Demo media needed: the README is ready for a 30-second GIF showing Docker startup, browser setup, an Ollama conversation, and barge-in. See [docs/DEMO_PLAN.md](docs/DEMO_PLAN.md).
 
@@ -139,6 +139,21 @@ Then open `http://<your-lan-ip>:8765` and enter that token on the setup page.
 > **First-run note.** The initial `docker compose up` downloads the Ollama image, a ~2 GB LLM (`qwen2.5:3b`), and builds the Qantara image with Python/ML speech dependencies. Expect **5–10 minutes and roughly 8–10 GB of disk** on the first run, plus extra temporary Docker build cache. Subsequent runs start in seconds.
 >
 > **Docker supports Ollama and OpenAI-compatible backends out of the box.** OpenClaw is an advanced optional bridge that requires the `openclaw` CLI on your host, so it is not available inside the container. Use the Manual install path only if you already run OpenClaw agents.
+
+### Python SDK
+
+```bash
+pip install qantara
+```
+
+```python
+from qantara import VoiceGateway
+
+gateway = VoiceGateway(host="127.0.0.1", port=8765)
+gateway.run()
+```
+
+Open **http://127.0.0.1:8765** and start talking. The base install ships the gateway and browser client with the demo backend; add local speech with `pip install "qantara[speech]"`, multi-device mesh / Home Assistant with `qantara[mesh]`, and MCP support with `qantara[mcp]`. Backend selection and everything else is configured through the same `QANTARA_*` environment variables — see [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 ### Manual
 

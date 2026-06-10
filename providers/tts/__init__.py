@@ -1,5 +1,7 @@
+# Only the dependency-free base contract is re-exported here. Concrete
+# providers (Kokoro, Piper, Chatterbox) import heavy optional dependencies,
+# so they are imported lazily by providers/factory.py — never at package
+# import time. Import them from their own modules if you need them directly.
 from providers.tts.base import TTSProvider, VoiceSpec
-from providers.tts.kokoro import KokoroTTSProvider
-from providers.tts.piper import PiperTTSProvider, PiperVoiceSpec
 
-__all__ = ["VoiceSpec", "PiperVoiceSpec", "TTSProvider", "PiperTTSProvider", "KokoroTTSProvider"]
+__all__ = ["TTSProvider", "VoiceSpec"]
