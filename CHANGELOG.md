@@ -4,10 +4,16 @@ All notable changes to Qantara are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reaches `1.0.0`. Until then, minor versions may include breaking changes — see the release notes on each tag.
 
-## [Unreleased]
+## [0.2.9] - 2026-06-10
 
 ### Added
+- Agent protocol v1 spec at `protocols/agent.md`, formalizing the adapter/gateway/browser event contract (`assistant_activity`, `session_state_changed`, `turn_interrupted`, and the adapter stream events).
+- Richer tool-call metadata on `assistant_activity`: optional `tool_name`, `parameters`, and `confidence` fields, built via `adapters.base.make_activity_event()`, re-validated by the gateway before forwarding, and shown by the browser as an inline tooltip on hover. The MCP adapter now reports its chat tool name.
 - Optional mesh frame authentication via `QANTARA_MESH_TOKEN`: when set, every mesh frame carries an HMAC-SHA256 signature and nodes drop unsigned, tampered, or wrong-token frames. See [docs/MESH.md](docs/MESH.md).
+
+### Security
+- Hardened the security boundary from the 2026-05-30 audit: SSRF allowlist now rejects link-local/unspecified/reserved/multicast addresses and unwraps IPv4-mapped IPv6; DNS-rebinding pinning for `/api/configure` and `/api/test-mcp`; `/api/test-url` no longer follows redirects; Origin/CSRF guard middleware on `/ws` and state-changing requests (`QANTARA_ALLOWED_ORIGINS`); the MCP server refuses non-loopback HTTP binding without `QANTARA_MCP_SERVER_ALLOW_INSECURE=1`.
+- Mesh election now matches peer RMS by node and recency instead of session id (fixes the split-brain where every node claimed every utterance), and untrusted LAN frames are validated (bounded ids, finite RMS, bounded Wyoming payload lengths).
 
 ### Fixed
 - Cleaned up Qantara lifecycle regressions around OpenAI-compatible adapter turn bookkeeping, active browser session snapshot pruning, and backend reconfiguration model unload ordering.

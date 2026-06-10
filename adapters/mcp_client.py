@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Any
 
-from adapters.base import AdapterConfig, AdapterHealth, RuntimeAdapter
+from adapters.base import AdapterConfig, AdapterHealth, RuntimeAdapter, make_activity_event
 
 MAX_TURNS_PER_SESSION = 24
 
@@ -280,8 +280,8 @@ class MCPClientAdapter(RuntimeAdapter):
             return json.dumps(structured, ensure_ascii=False)
         return ""
 
-    @staticmethod
     def _activity_event(
+        self,
         summary: str | None,
         progress: float | None,
         total: float | None,
@@ -291,14 +291,12 @@ class MCPClientAdapter(RuntimeAdapter):
             ratio = max(0.0, min(1.0, progress / total))
         elif progress is not None and 0 <= progress <= 1:
             ratio = progress
-        event: dict[str, Any] = {
-            "type": "assistant_activity",
-            "activity_type": "tool_call",
-            "summary": summary or "MCP tool activity",
-        }
-        if ratio is not None:
-            event["progress"] = ratio
-        return event
+        return make_activity_event(
+            activity_type="tool_call",
+            summary=summary or "MCP tool activity",
+            progress=ratio,
+            tool_name=self.chat_tool or None,
+        )
 
     def _missing_config_detail(self) -> str:
         if self.transport == "stdio":

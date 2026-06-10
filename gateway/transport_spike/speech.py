@@ -8,6 +8,7 @@ import re
 import time
 import unicodedata
 
+from adapters.base import make_activity_event
 from gateway.transport_spike.common import (
     FRAME_SAMPLES,
     PCM_KIND,
@@ -716,12 +717,18 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                 if remaining:
                     enqueue_speech(session, remaining, turn_speech_generation, turn_voice_id)
             elif event_type == "assistant_activity":
-                payload = {
-                    "activity_type": event.get("activity_type", "other"),
-                    "summary": event.get("summary", ""),
-                }
-                if event.get("progress") is not None:
-                    payload["progress"] = event["progress"]
+                # Re-validate through the protocol-v1 builder: adapter events
+                # cross a trust boundary into the browser, so malformed
+                # tool-call metadata is dropped here, not rendered.
+                normalized = make_activity_event(
+                    activity_type=event.get("activity_type", "other"),
+                    summary=event.get("summary", ""),
+                    progress=event.get("progress"),
+                    tool_name=event.get("tool_name"),
+                    parameters=event.get("parameters") if isinstance(event.get("parameters"), dict) else None,
+                    confidence=event.get("confidence"),
+                )
+                payload = {k: v for k, v in normalized.items() if k != "type"}
                 await session.emit("assistant_activity", "adapter", payload)
                 if not await safe_send_str(session, {"type": "assistant_activity", **payload}):
                     return
