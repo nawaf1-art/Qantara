@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "qantara"
 version = "0.2.9"
@@ -7,6 +11,16 @@ requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Qantara maintainers" }]
 keywords = ["voice-ai", "local-first", "local-llm", "ai-agents", "speech-to-text", "text-to-speech", "ollama", "websocket"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+    "aiohttp>=3.9",
+]
 
 [project.urls]
 Homepage = "https://github.com/nawaf1-art/Qantara"
@@ -14,7 +28,43 @@ Repository = "https://github.com/nawaf1-art/Qantara"
 Issues = "https://github.com/nawaf1-art/Qantara/issues"
 
 [project.optional-dependencies]
+# Local STT/TTS. Piper needs the external `piper` binary on PATH; Kokoro
+# pulls PyTorch transitively. Without this extra the gateway still runs with
+# the demo backend and synthetic audio.
+speech = ["faster-whisper>=1.0", "kokoro>=0.7", "numpy>=1.26"]
+# Multi-device mesh + Home Assistant Wyoming satellite.
+mesh = ["zeroconf>=0.131", "wyoming>=1.8"]
+# MCP client adapter + MCP voice server.
+mcp = ["mcp>=1.27,<1.28"]
 chatterbox = ["chatterbox-tts>=0.1.2"]
+
+# The wheel intentionally ships the existing top-level packages (gateway,
+# adapters, providers, discovery) plus the client/identity asset trees next
+# to them, because all internal imports and asset paths resolve relative to
+# the install root. Consolidating everything under the qantara.* namespace
+# is planned for 0.3.x.
+[tool.hatch.build.targets.wheel]
+packages = ["qantara", "adapters", "gateway", "providers", "discovery"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"client" = "client"
+"identity" = "identity"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "qantara",
+    "adapters",
+    "gateway",
+    "providers",
+    "discovery",
+    "client",
+    "identity",
+    "protocols",
+    "schemas",
+    "VERSION",
+    "README.md",
+    "LICENSE",
+]
 
 [tool.ruff]
 line-length = 120

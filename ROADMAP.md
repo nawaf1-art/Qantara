@@ -327,13 +327,13 @@ Planned together post-launch as a single MCP release. **Client:** talk to any MC
 **Files:** `protocols/agent.md` (new), `adapters/base.py`, `client/transport-spike/index.html`
 **Effort:** 3-4 days
 
-#### `0.2.10` — Python SDK (`pip install qantara`)
+#### `0.2.10` — Python SDK (`pip install qantara`) — DONE (2026-06-10, branch `release/0.2.10-pip-package`, pending merge/tag; PyPI upload is a separate owner step)
 
-- [ ] Package structure with `pyproject.toml`
-- [ ] `from qantara import VoiceGateway` works
-- [ ] 5-line example in README
+- [x] Package structure with `pyproject.toml` — hatchling build; wheel ships `qantara` plus the existing top-level packages and client/identity assets (the `qantara.*` namespace consolidation is 0.3.x work); base dependency is aiohttp only, with `speech` / `mesh` / `mcp` extras
+- [x] `from qantara import VoiceGateway` works — `create_app()` for embedding, `run()` for standalone; verified by clean-venv wheel install + HTTP smoke
+- [x] 5-line example in README
 
-**Files:** `pyproject.toml`, `src/qantara/` (new)
+**Files:** `pyproject.toml`, `qantara/` (new)
 **Effort:** 2-3 days
 
 ---

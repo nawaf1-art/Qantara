@@ -4,6 +4,14 @@ All notable changes to Qantara are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reaches `1.0.0`. Until then, minor versions may include breaking changes — see the release notes on each tag.
 
+## [Unreleased]
+
+### Added
+- Python SDK: `pip install qantara` installs the gateway as a package; `from qantara import VoiceGateway` exposes `create_app()` for embedding and `run()` for standalone serving. Base install needs only `aiohttp`; local speech, mesh/Home Assistant, and MCP ship as `qantara[speech]`, `qantara[mesh]`, and `qantara[mcp]` extras.
+
+### Changed
+- `providers.tts` and `providers.stt` package imports no longer eagerly import concrete providers (and their heavy optional dependencies such as numpy); provider selection was already lazy in the factory.
+
 ## [0.2.9] - 2026-06-10
 
 ### Added

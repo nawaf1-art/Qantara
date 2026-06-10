@@ -140,6 +140,21 @@ Then open `http://<your-lan-ip>:8765` and enter that token on the setup page.
 >
 > **Docker supports Ollama and OpenAI-compatible backends out of the box.** OpenClaw is an advanced optional bridge that requires the `openclaw` CLI on your host, so it is not available inside the container. Use the Manual install path only if you already run OpenClaw agents.
 
+### Python SDK
+
+```bash
+pip install qantara
+```
+
+```python
+from qantara import VoiceGateway
+
+gateway = VoiceGateway(host="127.0.0.1", port=8765)
+gateway.run()
+```
+
+Open **http://127.0.0.1:8765** and start talking. The base install ships the gateway and browser client with the demo backend; add local speech with `pip install "qantara[speech]"`, multi-device mesh / Home Assistant with `qantara[mesh]`, and MCP support with `qantara[mcp]`. Backend selection and everything else is configured through the same `QANTARA_*` environment variables — see [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+
 ### Manual
 
 ```bash
