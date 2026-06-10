@@ -7,6 +7,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ## [Unreleased]
 
 ### Added
+- Agent protocol v1 spec at `protocols/agent.md`, formalizing the adapter/gateway/browser event contract (`assistant_activity`, `session_state_changed`, `turn_interrupted`, and the adapter stream events).
+- Richer tool-call metadata on `assistant_activity`: optional `tool_name`, `parameters`, and `confidence` fields, built via `adapters.base.make_activity_event()`, re-validated by the gateway before forwarding, and shown by the browser as an inline tooltip on hover. The MCP adapter now reports its chat tool name.
 - Optional mesh frame authentication via `QANTARA_MESH_TOKEN`: when set, every mesh frame carries an HMAC-SHA256 signature and nodes drop unsigned, tampered, or wrong-token frames. See [docs/MESH.md](docs/MESH.md).
 
 ### Fixed

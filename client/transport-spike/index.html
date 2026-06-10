@@ -1490,7 +1490,20 @@
       if (stateEl) stateEl.textContent = state;
     }
 
-    function showAssistantActivity(activityType, summary, progress) {
+    function formatActivityTooltip(toolName, parameters) {
+      const parts = [];
+      if (toolName) parts.push(`tool: ${toolName}`);
+      if (parameters && typeof parameters === "object") {
+        try {
+          parts.push(JSON.stringify(parameters, null, 1));
+        } catch (_) {
+          // unserializable parameters: skip the tooltip rather than throw
+        }
+      }
+      return parts.join("\n");
+    }
+
+    function showAssistantActivity(activityType, summary, progress, toolName, parameters) {
       const strip = document.getElementById("vcActivityStrip");
       if (!summary) return;
       const icon = {
@@ -1501,10 +1514,12 @@
       }[activityType] || "•";
       const progressText = typeof progress === "number" ? ` (${Math.round(progress * 100)}%)` : "";
       const text = `${icon} ${summary}${progressText}`;
+      const tooltip = formatActivityTooltip(toolName, parameters);
       const debugList = document.getElementById("assistantActivityList");
       if (debugList) {
         const debugLine = document.createElement("div");
         debugLine.textContent = text;
+        if (tooltip) debugLine.title = tooltip;
         debugLine.style.cssText = "padding: 2px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;";
         debugList.prepend(debugLine);
         while (debugList.childNodes.length > 5) {
@@ -1514,6 +1529,7 @@
       if (!strip) return;
       const line = document.createElement("div");
       line.textContent = text;
+      if (tooltip) line.title = tooltip;
       line.style.cssText = "padding: 2px 0; opacity: 0; transition: opacity 200ms ease;";
       strip.appendChild(line);
       // Fade in, auto-fade after 3.5s
@@ -2041,7 +2057,7 @@
               applySessionState(payload.current_state, payload.reason);
               log(`session state: ${payload.previous_state} → ${payload.current_state}${payload.reason ? ` (${payload.reason})` : ""}`);
             } else if (payload.type === "assistant_activity") {
-              showAssistantActivity(payload.activity_type, payload.summary, payload.progress);
+              showAssistantActivity(payload.activity_type, payload.summary, payload.progress, payload.tool_name, payload.parameters);
               log(`activity: ${payload.activity_type} — ${payload.summary}`);
             } else if (payload.type === "turn_interrupted") {
               handleTurnInterrupted(payload.partial_text || "", payload.resumable, payload.interrupted_during_state);

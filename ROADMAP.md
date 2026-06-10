@@ -318,11 +318,11 @@ Planned together post-launch as a single MCP release. **Client:** talk to any MC
 **Effort:** 2-3 weeks
 **Ship when:** (1) a conversation with a locally-running MCP server (HASS MCP or `claude mcp serve`) works end-to-end, with tool-call progress rendering as `assistant_activity` events; (2) Claude Desktop can connect to Qantara's MCP server, start a session, and make it speak
 
-#### `0.2.9` — Agent protocol v1 and tool-call formalization
+#### `0.2.9` — Agent protocol v1 and tool-call formalization — DONE (2026-06-10, branch `release/0.2.9-agent-protocol`, pending merge/tag)
 
-- [ ] Protocol spec document (`protocols/agent.md`) — formalizes `assistant_activity` / `session_state_changed` / `turn_interrupted` events introduced across 0.2.1-0.2.2
-- [ ] Adapter base class extensions for richer tool-call metadata (progress, confidence, parameters)
-- [ ] Browser shows tool-call parameters inline on hover
+- [x] Protocol spec document (`protocols/agent.md`) — formalizes `assistant_activity` / `session_state_changed` / `turn_interrupted` events introduced across 0.2.1-0.2.2
+- [x] Adapter base class extensions for richer tool-call metadata (progress, confidence, parameters) — `make_activity_event()` in `adapters/base.py`; gateway re-validates before forwarding; MCP adapter emits `tool_name`
+- [x] Browser shows tool-call parameters inline on hover
 
 **Files:** `protocols/agent.md` (new), `adapters/base.py`, `client/transport-spike/index.html`
 **Effort:** 3-4 days
