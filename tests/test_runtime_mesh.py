@@ -51,6 +51,24 @@ class GatewayRuntimeMeshLifecycleTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 await runtime.close()
 
+    async def test_mesh_token_env_reaches_controller_config(self) -> None:
+        env = {
+            "QANTARA_MESH_ROLE": "full",
+            "QANTARA_MESH_PORT": "19913",
+            "QANTARA_MESH_TOKEN": "sekrit-mesh-token",
+        }
+        with unittest.mock.patch.dict(os.environ, env, clear=False):
+            runtime = GatewayRuntime(
+                adapter_config=AdapterConfig(kind="mock", name="mock"),
+                stt=FakeSTT(), tts=FakeTTS(), event_sink=lambda r: None,
+            )
+            await runtime.start_mesh()
+            try:
+                self.assertIsNotNone(runtime.mesh_controller)
+                self.assertEqual(runtime.mesh_controller.config.mesh_token, "sekrit-mesh-token")
+            finally:
+                await runtime.close()
+
     async def test_mesh_disabled_role_noop(self) -> None:
         env = {"QANTARA_MESH_ROLE": "disabled"}
         with unittest.mock.patch.dict(os.environ, env, clear=False):

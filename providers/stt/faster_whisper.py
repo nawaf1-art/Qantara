@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import io
 import os
+import threading
 import wave
 
 from providers.stt.base import STTProvider, STTResult
@@ -28,6 +29,9 @@ class FasterWhisperSTTProvider(STTProvider):
         )
         self._model = None
         self._import_error = None
+        # _ensure_model runs on worker threads (asyncio.to_thread); the lock
+        # prevents two concurrent callers from loading the model twice.
+        self._model_init_lock = threading.Lock()
 
         try:
             from faster_whisper import WhisperModel  # type: ignore
@@ -45,11 +49,13 @@ class FasterWhisperSTTProvider(STTProvider):
         if not self.available:
             raise RuntimeError(f"faster-whisper unavailable: {self._import_error}")
         if self._model is None:
-            self._model = self._WhisperModel(
-                self.model_name,
-                device=self.device,
-                compute_type=self.compute_type,
-            )
+            with self._model_init_lock:
+                if self._model is None:
+                    self._model = self._WhisperModel(
+                        self.model_name,
+                        device=self.device,
+                        compute_type=self.compute_type,
+                    )
         return self._model
 
     @staticmethod

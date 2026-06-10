@@ -90,6 +90,10 @@ class GatewayRuntime:
         self._active_session_refs: dict[str, Any] = {}
         self._next_bridge_port = MANAGED_BRIDGE_PORT
         self._configure_lock = asyncio.Lock()
+        # Background tasks must be retained: asyncio only keeps weak
+        # references to tasks, so an unreferenced fire-and-forget task can be
+        # garbage-collected mid-flight and its exception silently dropped.
+        self._background_tasks: set[asyncio.Task] = set()
         self.mesh_controller: Any | None = None
         self.wyoming_bridge: Any | None = None
         # Defaults picked up by new sessions (populated via /api/configure).
@@ -98,6 +102,22 @@ class GatewayRuntime:
         self.default_translation_source: str | None = None
         self.default_translation_target: str | None = None
         self.default_binding_id = self._create_initial_binding(adapter_config or load_adapter_config())
+
+    def retain_task(self, task: asyncio.Task) -> asyncio.Task:
+        """Keep a strong reference to a background task until it finishes,
+        and log its exception instead of dropping it."""
+        self._background_tasks.add(task)
+
+        def _on_done(done: asyncio.Task) -> None:
+            self._background_tasks.discard(done)
+            if done.cancelled():
+                return
+            exc = done.exception()
+            if exc is not None:
+                LOGGER.error("background task failed: %s", exc, exc_info=exc)
+
+        task.add_done_callback(_on_done)
+        return task
 
     def _now_ms(self) -> float:
         return round(time.monotonic() * 1000, 3)
@@ -486,7 +506,7 @@ class GatewayRuntime:
 
         if managed_bridge_type is not None and bridge_port is not None:
             binding.health = {"status": "starting", "detail": "bridge starting up..."}
-            asyncio.create_task(self._background_health_wait(binding))
+            self.retain_task(asyncio.create_task(self._background_health_wait(binding)))
         else:
             await self.refresh_binding_health(binding)
         return binding
@@ -513,13 +533,13 @@ class GatewayRuntime:
             stderr=asyncio.subprocess.PIPE,
         )
         if proc.stdout is not None:
-            asyncio.create_task(
+            self.retain_task(asyncio.create_task(
                 self._log_bridge_stream(bridge_type, proc.stdout, logging.INFO)
-            )
+            ))
         if proc.stderr is not None:
-            asyncio.create_task(
+            self.retain_task(asyncio.create_task(
                 self._log_bridge_stream(bridge_type, proc.stderr, logging.WARNING)
-            )
+            ))
         return proc
 
     async def _log_bridge_stream(
@@ -556,7 +576,7 @@ class GatewayRuntime:
                 continue
             binding = self._bindings.pop(binding_id, None)
             if binding and binding.managed_bridge_proc is not None:
-                asyncio.create_task(_shutdown_bridge_process(binding.managed_bridge_proc))
+                self.retain_task(asyncio.create_task(_shutdown_bridge_process(binding.managed_bridge_proc)))
 
     async def start_mesh(self) -> None:
         """Start the mesh controller if QANTARA_MESH_ROLE is set to a
@@ -576,12 +596,14 @@ class GatewayRuntime:
         mesh_port = int(os.environ.get("QANTARA_MESH_PORT", "8901"))
         mesh_host = os.environ.get("QANTARA_MESH_HOST", "127.0.0.1")
         service_type = os.environ.get("QANTARA_MESH_SERVICE_TYPE", "_qantara._tcp.local.")
+        mesh_token = os.environ.get("QANTARA_MESH_TOKEN", "").strip() or None
         self.mesh_controller = MeshController(MeshControllerConfig(
             node_id=node_id,
             role=role,
             mesh_port=mesh_port,
             mesh_host=mesh_host,
             service_type=service_type,
+            mesh_token=mesh_token,
             capabilities={
                 "stt": self.stt.available if self.stt else False,
                 "tts": self.tts.available if self.tts else False,

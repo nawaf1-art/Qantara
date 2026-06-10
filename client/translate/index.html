@@ -135,6 +135,7 @@
       var audioContext = null;
       var processor = null;
       var scriptNode = null;
+      var sourceNode = null;
       var isRecording = false;
 
       function appendTurn(lang, text, original) {
@@ -173,9 +174,11 @@
             audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
           }
           if (audioContext.state === "suspended") await audioContext.resume();
-          var source = audioContext.createMediaStreamSource(micStream);
+          if (!sourceNode) {
+            sourceNode = audioContext.createMediaStreamSource(micStream);
+          }
           scriptNode = audioContext.createScriptProcessor(2048, 1, 1);
-          source.connect(scriptNode);
+          sourceNode.connect(scriptNode);
           scriptNode.connect(audioContext.destination);
           scriptNode.onaudioprocess = function (e) {
             var chan = e.inputBuffer.getChannelData(0);
@@ -198,12 +201,25 @@
       function stopRecording() {
         if (!isRecording) return;
         isRecording = false;
-        if (scriptNode) { scriptNode.disconnect(); scriptNode = null; }
+        if (sourceNode && scriptNode) { try { sourceNode.disconnect(scriptNode); } catch (_) {} }
+        if (scriptNode) { scriptNode.onaudioprocess = null; scriptNode.disconnect(); scriptNode = null; }
         sendJson({ type: "mic_stream_stopped" });
         sendJson({ type: "transcribe_recent_audio", submit_turn: true });
         document.getElementById("status").textContent = "Translating\u2026";
         document.getElementById("talk-btn").classList.remove("active");
       }
+
+      function releaseAudioResources() {
+        if (isRecording) stopRecording();
+        if (sourceNode) { try { sourceNode.disconnect(); } catch (_) {} sourceNode = null; }
+        if (micStream) {
+          micStream.getTracks().forEach(function (track) { track.stop(); });
+          micStream = null;
+        }
+        if (audioContext) { try { audioContext.close(); } catch (_) {} audioContext = null; }
+      }
+
+      window.addEventListener("pagehide", releaseAudioResources);
 
       var talkBtn = document.getElementById("talk-btn");
       talkBtn.addEventListener("mousedown", startRecording);

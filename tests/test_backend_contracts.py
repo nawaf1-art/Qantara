@@ -184,6 +184,50 @@ class BackendContractTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 await client.close()
 
+    async def test_openclaw_deep_health_timeout_kills_subprocess(self) -> None:
+        """A deep health check whose CLI call times out must terminate the
+        spawned subprocess instead of leaking it in the background."""
+        import asyncio as _asyncio
+
+        class HangingProc:
+            pid = 99999
+
+            def __init__(self) -> None:
+                self.returncode: int | None = None
+
+            async def communicate(self):
+                # Hangs until killed, like a wedged CLI process.
+                while self.returncode is None:
+                    await _asyncio.sleep(0.01)
+                return b"", b""
+
+        proc = HangingProc()
+        kills: list[tuple[object, bool]] = []
+
+        async def fake_create_subprocess_exec(*args, **kwargs):
+            return proc
+
+        async def fake_terminate(process, hard=False):
+            kills.append((process, hard))
+            process.returncode = -9
+
+        with (
+            patch("gateway.openclaw_session_backend.server.OPENCLAW_HEALTH_MODE", "deep"),
+            patch("gateway.openclaw_session_backend.server.OPENCLAW_HEALTH_TIMEOUT_SECONDS", 0.05),
+            patch("gateway.openclaw_session_backend.server.asyncio.create_subprocess_exec", side_effect=fake_create_subprocess_exec),
+            patch("gateway.openclaw_session_backend.server._terminate_process_group", side_effect=fake_terminate),
+        ):
+            server = TestServer(create_openclaw_backend_app())
+            client = TestClient(server)
+            await client.start_server()
+            try:
+                health_resp = await client.get("/health")
+                health_data = await health_resp.json()
+                self.assertEqual(health_data["status"], "degraded")
+                self.assertEqual(kills, [(proc, True)])
+            finally:
+                await client.close()
+
     async def test_openclaw_backend_injects_qantara_turn_context(self) -> None:
         payload = {
             "result": {

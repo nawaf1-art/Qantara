@@ -6,8 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Added
+- Optional mesh frame authentication via `QANTARA_MESH_TOKEN`: when set, every mesh frame carries an HMAC-SHA256 signature and nodes drop unsigned, tampered, or wrong-token frames. See [docs/MESH.md](docs/MESH.md).
+
 ### Fixed
 - Cleaned up Qantara lifecycle regressions around OpenAI-compatible adapter turn bookkeeping, active browser session snapshot pruning, and backend reconfiguration model unload ordering.
+- Barge-in no longer depends on adapter cooperation: after `cancel_turn`, the gateway force-cancels the in-flight turn task once a bounded grace window (`QANTARA_TURN_CANCEL_GRACE_MS`, default 750 ms) expires, so a wedged backend cannot pin the session.
+- The OpenClaw deep health check now terminates its CLI subprocess on timeout (`QANTARA_OPENCLAW_HEALTH_TIMEOUT`, default 25 s) instead of leaking it.
+- Adapter and bridge session stores are now bounded with LRU eviction (`QANTARA_OPENAI_MAX_SESSIONS`, `QANTARA_MCP_MAX_SESSIONS`, `QANTARA_BACKEND_MAX_SESSIONS`; default 64) and per-session turn records are capped, fixing unbounded memory growth in long-running gateways.
+- Background asyncio tasks (bridge health waits, bridge log pumps, bridge shutdowns, OpenClaw cancel escalation) are now retained until done and log their exceptions instead of being silently garbage-collected.
+- faster-whisper lazy model initialization is now lock-guarded so concurrent transcribe calls cannot load the model twice.
+- Browser clients release audio resources on page teardown: the translate client stops microphone tracks and closes its AudioContext, and the voice client closes the playback AudioContext on `pagehide`.
 
 ## [0.2.8] - 2026-04-30
 

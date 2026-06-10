@@ -1634,6 +1634,25 @@
       }
     }
 
+    function releasePlaybackContext() {
+      if (!playbackContext) {
+        return;
+      }
+      try {
+        playbackContext.close();
+      } catch (_) {
+        // already closed
+      }
+      playbackContext = null;
+      playbackAnalyser = null;
+      playbackAnalyserData = null;
+    }
+
+    window.addEventListener("pagehide", () => {
+      stopMic();
+      releasePlaybackContext();
+    });
+
     async function schedulePlayback(int16Payload) {
       await ensurePlaybackContext();
 

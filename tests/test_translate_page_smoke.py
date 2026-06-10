@@ -34,6 +34,24 @@ class TranslatePageSmokeTests(AioHTTPTestCase):
         self.assertIn("talk-btn", body)
         self.assertIn("Live Translator", body)
 
+    async def test_translate_page_releases_audio_resources(self) -> None:
+        """Regression guard for the audit finding: the translate client must
+        fully release mic resources (tracks, source node, AudioContext) and
+        hook page teardown, not just disconnect the script processor."""
+        resp = await self.client.get("/translate/index.html")
+        body = await resp.text()
+        self.assertIn("releaseAudioResources", body)
+        self.assertIn("pagehide", body)
+        self.assertIn("getTracks().forEach", body)
+
+    async def test_voice_page_releases_playback_context(self) -> None:
+        """The voice client closes mic resources in stopMic but must also
+        release the playback AudioContext on page teardown."""
+        resp = await self.client.get("/spike/index.html")
+        body = await resp.text()
+        self.assertIn("releasePlaybackContext", body)
+        self.assertIn("pagehide", body)
+
 
 if __name__ == "__main__":
     unittest.main()

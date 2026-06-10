@@ -23,6 +23,8 @@ OLLAMA_MODEL = os.environ.get("QANTARA_OLLAMA_MODEL", "qwen2.5:7b")
 OLLAMA_KEEP_ALIVE = os.environ.get("QANTARA_OLLAMA_KEEP_ALIVE", "15m")
 OLLAMA_TIMEOUT_SECONDS = float(os.environ.get("QANTARA_OLLAMA_TIMEOUT", "120"))
 MAX_HISTORY_TURNS = max(1, int(os.environ.get("QANTARA_MAX_HISTORY_TURNS", "6")))
+MAX_SESSIONS = max(1, int(os.environ.get("QANTARA_BACKEND_MAX_SESSIONS", "64")))
+MAX_TURNS_PER_SESSION = 24
 ASSISTANT_NAME = os.environ.get("QANTARA_ASSISTANT_NAME", "Qantara")
 ASSISTANT_ROLE = os.environ.get("QANTARA_ASSISTANT_ROLE", "a voice assistant")
 BUSINESS_NAME = os.environ.get("QANTARA_BUSINESS_NAME", "").strip()
@@ -132,16 +134,27 @@ class OllamaSessionBackend:
             client_context=client_context or {},
             history=[{"role": "system", "content": _build_system_prompt(client_context)}],
         )
+        while len(self.sessions) > MAX_SESSIONS:
+            oldest_handle = next(iter(self.sessions))
+            self.sessions.pop(oldest_handle, None)
         return session_handle
 
     def create_turn(self, session_handle: str, transcript: str, turn_context: dict | None = None) -> str:
         if session_handle not in self.sessions:
             raise KeyError("unknown session handle")
+        # Refresh recency so an actively used session is not the next evicted.
+        session_state = self.sessions.pop(session_handle)
+        self.sessions[session_handle] = session_state
         turn_handle = str(uuid.uuid4())
-        self.sessions[session_handle].turns[turn_handle] = TurnState(
+        session_state.turns[turn_handle] = TurnState(
             transcript=transcript,
             turn_context=turn_context or {},
         )
+        while len(session_state.turns) > MAX_TURNS_PER_SESSION:
+            oldest_turn_handle = next(iter(session_state.turns))
+            if oldest_turn_handle == turn_handle:
+                break
+            session_state.turns.pop(oldest_turn_handle, None)
         return turn_handle
 
 

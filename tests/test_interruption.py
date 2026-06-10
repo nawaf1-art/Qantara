@@ -287,6 +287,123 @@ class BargeInEdgeCaseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(interrupted), 1)
 
 
+class _StubbornAdapter(RuntimeAdapter):
+    """Adapter that ignores cancel_turn: the stream never ends after a
+    cancel request. Models a misbehaving or wedged backend. The gateway
+    must not rely on adapter cooperation to unwind the turn task."""
+
+    def __init__(self) -> None:
+        super().__init__(AdapterConfig(kind="mock", name="stubborn"))
+        self._first_delta_released = asyncio.Event()
+        self._never = asyncio.Event()
+
+    async def start_or_resume_session(self, client_context: dict | None = None) -> str:
+        return "runtime-session"
+
+    async def submit_user_turn(
+        self,
+        session_handle: str,
+        transcript: str,
+        turn_context: dict | None = None,
+    ) -> str:
+        return "turn-1"
+
+    async def stream_assistant_output(self, session_handle: str, turn_handle: str):
+        yield {"type": "assistant_text_delta", "text": "I will not stop"}
+        self._first_delta_released.set()
+        await self._never.wait()
+        yield {"type": "cancel_acknowledged"}
+
+    async def cancel_turn(
+        self,
+        session_handle: str,
+        turn_handle: str,
+        cancel_context: dict | None = None,
+    ) -> dict:
+        # Acknowledges over the control channel but never unblocks the stream.
+        return {"status": "ignored"}
+
+    async def check_health(self) -> AdapterHealth:
+        return AdapterHealth(status="ok")
+
+
+class BargeInForceCancelTests(unittest.IsolatedAsyncioTestCase):
+    """The gateway must force-cancel the in-flight turn task when the
+    adapter does not cooperatively end its stream after cancel_turn."""
+
+    def setUp(self) -> None:
+        import os
+
+        os.environ["QANTARA_TURN_CANCEL_GRACE_MS"] = "100"
+        self.addCleanup(os.environ.pop, "QANTARA_TURN_CANCEL_GRACE_MS", None)
+
+    async def test_force_cancels_turn_task_when_adapter_ignores_cancel(self) -> None:
+        events: list[dict] = []
+        runtime = GatewayRuntime(
+            adapter_config=AdapterConfig(kind="mock", name="mock"),
+            stt=FakeSTT(),
+            tts=FakeTTS(),
+            event_sink=lambda record: events.append(record),
+        )
+        ws = DummyWebSocket()
+        session = Session(ws, runtime)
+        runtime.register_session(session)
+        adapter = _StubbornAdapter()
+        session.binding.adapter = adapter
+
+        turn_task = asyncio.create_task(stream_assistant_turn(session, "hello"))
+        session.current_turn_task = turn_task
+        await adapter._first_delta_released.wait()
+
+        # cancel_active_turn must return even though the adapter never
+        # ends its stream — bounded by the grace window, not the adapter.
+        await asyncio.wait_for(cancel_active_turn(session, "speech_detected"), timeout=5.0)
+
+        # The turn task must be finished shortly after (force-cancelled).
+        await asyncio.wait_for(asyncio.wait({turn_task}), timeout=1.0)
+        self.assertTrue(turn_task.done())
+
+        # The session must have unwound to idle so the next turn can start.
+        self.assertEqual(session.state, "idle")
+
+        # turn_interrupted still fired exactly once.
+        interrupted = [e for e in events if e["event_name"] == "turn_interrupted"]
+        self.assertEqual(len(interrupted), 1)
+
+    async def test_next_turn_starts_after_force_cancel(self) -> None:
+        from tests.test_transport_spike import DeltaOnlyAdapter
+
+        events: list[dict] = []
+        runtime = GatewayRuntime(
+            adapter_config=AdapterConfig(kind="mock", name="mock"),
+            stt=FakeSTT(),
+            tts=FakeTTS(),
+            event_sink=lambda record: events.append(record),
+        )
+        ws = DummyWebSocket()
+        session = Session(ws, runtime)
+        runtime.register_session(session)
+        session.binding.adapter = _StubbornAdapter()
+
+        turn_task = asyncio.create_task(stream_assistant_turn(session, "first"))
+        session.current_turn_task = turn_task
+        await session.binding.adapter._first_delta_released.wait()
+        await asyncio.wait_for(cancel_active_turn(session, "speech_detected"), timeout=5.0)
+        await asyncio.wait_for(asyncio.wait({turn_task}), timeout=1.0)
+
+        session.binding.adapter = DeltaOnlyAdapter()
+        session.current_turn_handle = None
+        session.current_turn_task = None
+
+        await asyncio.wait_for(stream_assistant_turn(session, "second"), timeout=5.0)
+        if session.speech_task is not None:
+            await session.speech_task
+
+        self.assertEqual(session.state, "idle")
+        final = [e for e in events if e["event_name"] == "assistant_output_completed"]
+        self.assertGreaterEqual(len(final), 1)
+
+
 class BargeInLatencyBenchmark(unittest.IsolatedAsyncioTestCase):
     """Latency budget for the interruption path. Documented in
     docs/BENCHMARKS.md — these numbers are what the public comparison

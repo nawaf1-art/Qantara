@@ -27,6 +27,8 @@ OPENCLAW_THINKING = os.environ.get("QANTARA_OPENCLAW_THINKING", "").strip()
 OPENCLAW_CANCEL_GRACE_SECONDS = float(os.environ.get("QANTARA_OPENCLAW_CANCEL_GRACE", "2"))
 OPENCLAW_SUBPROCESS_TIMEOUT_BUFFER_SECONDS = float(os.environ.get("QANTARA_OPENCLAW_TIMEOUT_BUFFER", "30"))
 OPENCLAW_HEALTH_MODE = os.environ.get("QANTARA_OPENCLAW_HEALTH_MODE", "shallow").strip().lower()
+OPENCLAW_HEALTH_TIMEOUT_SECONDS = float(os.environ.get("QANTARA_OPENCLAW_HEALTH_TIMEOUT", "25"))
+MAX_SESSIONS = max(1, int(os.environ.get("QANTARA_BACKEND_MAX_SESSIONS", "64")))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 LOG = logging.getLogger("qantara.openclaw")
@@ -75,12 +77,28 @@ class OpenClawSessionBackend:
         self.sessions[session_handle] = SessionState(client_context=client_context)
         if client_session_id:
             self.client_session_map[client_session_id] = session_handle
+        self._evict_stale_sessions()
         return session_handle
+
+    def _evict_stale_sessions(self) -> None:
+        while len(self.sessions) > MAX_SESSIONS:
+            oldest_handle = next(iter(self.sessions))
+            self.sessions.pop(oldest_handle, None)
+            self.session_locks.pop(oldest_handle, None)
+            stale_client_ids = [
+                client_id
+                for client_id, handle in self.client_session_map.items()
+                if handle == oldest_handle
+            ]
+            for client_id in stale_client_ids:
+                self.client_session_map.pop(client_id, None)
 
     def create_turn(self, session_handle: str, transcript: str, turn_context: dict | None = None) -> str:
         if session_handle not in self.sessions:
             raise KeyError("unknown session handle")
-        session_state = self.sessions[session_handle]
+        # Refresh recency so an actively used session is not the next evicted.
+        session_state = self.sessions.pop(session_handle)
+        self.sessions[session_handle] = session_state
         turn_handle = str(uuid.uuid4())
         session_state.turns[turn_handle] = TurnState(
             transcript=transcript,
@@ -138,6 +156,26 @@ def _build_openclaw_command(
     if OPENCLAW_TIMEOUT_SECONDS > 0:
         command.extend(["--timeout", str(int(OPENCLAW_TIMEOUT_SECONDS))])
     return command
+
+
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
+
+
+def _retain_task(task: asyncio.Task) -> asyncio.Task:
+    """Keep a strong reference to a background task until it finishes,
+    and log its exception instead of dropping it."""
+    _BACKGROUND_TASKS.add(task)
+
+    def _on_done(done: asyncio.Task) -> None:
+        _BACKGROUND_TASKS.discard(done)
+        if done.cancelled():
+            return
+        exc = done.exception()
+        if exc is not None:
+            LOG.error("background task failed: %s", exc, exc_info=exc)
+
+    task.add_done_callback(_on_done)
+    return task
 
 
 async def _terminate_process_group(process: asyncio.subprocess.Process, hard: bool = False) -> None:
@@ -256,6 +294,7 @@ async def health_handler(_: web.Request) -> web.Response:
             }
         )
 
+    process = None
     try:
         process = await asyncio.create_subprocess_exec(
             OPENCLAW_BIN,
@@ -271,8 +310,9 @@ async def health_handler(_: web.Request) -> web.Response:
             "20",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            start_new_session=True,
         )
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=25)
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=OPENCLAW_HEALTH_TIMEOUT_SECONDS)
         if process.returncode != 0:
             message = (stderr or stdout).decode("utf-8", errors="replace").strip()
             return web.json_response(
@@ -289,6 +329,12 @@ async def health_handler(_: web.Request) -> web.Response:
         )
         return web.json_response({"status": "ok", "detail": f"{detail}; agent={agent_name}", "mode": "deep"})
     except Exception as exc:
+        if process is not None and process.returncode is None:
+            await _terminate_process_group(process, hard=True)
+            try:
+                await process.communicate()
+            except Exception:
+                pass
         return web.json_response(
             {"status": "degraded", "detail": f"{detail}; {exc}", "mode": "deep"},
             status=200,
@@ -424,7 +470,7 @@ async def cancel_turn_handler(request: web.Request) -> web.Response:
     process = BACKEND.active_processes.get(turn_handle)
     if process and process.returncode is None:
         await _terminate_process_group(process, hard=False)
-        asyncio.create_task(_escalate_cancel(turn_handle, process))
+        _retain_task(asyncio.create_task(_escalate_cancel(turn_handle, process)))
     return web.json_response({"status": "acknowledged", "mode": "best_effort"})
 
 

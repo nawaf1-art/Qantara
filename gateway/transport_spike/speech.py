@@ -491,6 +491,29 @@ async def cancel_active_turn(session: Session, reason: str) -> None:
     }
     await session.emit("turn_interrupted", "session", payload)
     await safe_send_str(session, {"type": "turn_interrupted", **payload})
+    # The adapter has been asked to cancel, but the gateway must not rely on
+    # adapter cooperation: a wedged backend that never ends its stream would
+    # otherwise pin the turn task (and the session) forever. Give the task a
+    # bounded grace window to unwind cooperatively, then force-cancel it.
+    turn_task = session.current_turn_task
+    if turn_task is not None and not turn_task.done() and turn_task is not asyncio.current_task():
+        grace_seconds = max(float(os.environ.get("QANTARA_TURN_CANCEL_GRACE_MS", "750")), 0.0) / 1000.0
+        try:
+            await asyncio.wait_for(asyncio.shield(turn_task), timeout=grace_seconds)
+        except TimeoutError:
+            await session.emit("turn_cancel_forced", "gateway", {"turn_handle": session.current_turn_handle, "grace_ms": grace_seconds * 1000})
+            turn_task.cancel()
+            try:
+                await turn_task
+            except asyncio.CancelledError:
+                if not turn_task.cancelled():
+                    raise
+            except Exception:
+                pass
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
 
 
 async def speak_text(

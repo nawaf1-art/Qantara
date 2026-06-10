@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import math
 from dataclasses import dataclass, field
 from typing import Any
@@ -109,6 +112,31 @@ _DECODERS: dict[str, type] = {
     "turn_claim": TurnClaim,
     "turn_yield": TurnYield,
 }
+
+
+def _frame_signature(frame: dict[str, Any], token: str) -> str:
+    payload = json.dumps(frame, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hmac.new(token.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+
+
+def sign_frame(frame: dict[str, Any], token: str) -> dict[str, Any]:
+    """Return a copy of the frame carrying an HMAC-SHA256 signature over
+    its canonical JSON form, keyed by the shared mesh token."""
+    return {**frame, "sig": _frame_signature(frame, token)}
+
+
+def verify_frame(frame: dict[str, Any], token: str) -> dict[str, Any]:
+    """Verify a signed frame and return it without the signature field.
+    Raises ValueError for missing, malformed, or mismatched signatures so
+    the transport drops the frame."""
+    signature = frame.get("sig")
+    if not isinstance(signature, str):
+        raise ValueError("missing mesh auth signature")
+    unsigned = {k: v for k, v in frame.items() if k != "sig"}
+    expected = _frame_signature(unsigned, token)
+    if not hmac.compare_digest(expected, signature):
+        raise ValueError("bad mesh auth signature")
+    return unsigned
 
 
 def decode_message(raw: dict[str, Any]) -> MeshMessage:

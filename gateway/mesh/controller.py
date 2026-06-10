@@ -22,6 +22,9 @@ class MeshControllerConfig:
     mesh_host: str = "127.0.0.1"
     service_type: str = DEFAULT_SERVICE_TYPE
     capabilities: dict = field(default_factory=dict)
+    # Shared secret for HMAC frame authentication (QANTARA_MESH_TOKEN).
+    # None keeps the legacy plaintext trusted-LAN behavior.
+    mesh_token: str | None = None
 
 
 class MeshController:
@@ -49,6 +52,7 @@ class MeshController:
         )
         self._server = MeshServer(
             host=cfg.mesh_host, port=cfg.mesh_port, on_message=self._on_message,
+            token=cfg.mesh_token,
         )
         self._peer_connections: dict[str, MeshPeer] = {}
         self._started = False
@@ -103,7 +107,7 @@ class MeshController:
         existing = self._peer_connections.get(record.node_id)
         if existing is not None:
             return existing
-        peer = MeshPeer(host=record.host, port=record.port)
+        peer = MeshPeer(host=record.host, port=record.port, token=self._cfg.mesh_token)
         try:
             await peer.connect()
             await peer.send(Hello(

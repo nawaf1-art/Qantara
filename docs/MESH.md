@@ -12,12 +12,21 @@ On each node, set:
 export QANTARA_MESH_ROLE=full      # full | mic-only | speaker-only | disabled
 export QANTARA_MESH_HOST=0.0.0.0   # required for LAN peers; default is 127.0.0.1
 export QANTARA_MESH_PORT=8901      # default
+export QANTARA_MESH_TOKEN="$(openssl rand -hex 24)"  # optional shared secret; same value on every node
 ```
 
 Start the gateway normally (`make spike-run-lan-venv`). Nodes find
 each other automatically within ~2 seconds.
 
-Mesh traffic is plaintext and intended only for a trusted LAN. Do not expose the mesh port to the public internet.
+When `QANTARA_MESH_TOKEN` is set, every mesh frame carries an
+HMAC-SHA256 signature keyed by the token, and nodes silently drop
+frames that are unsigned, tampered with, or signed with a different
+token. Set the same token on every node — a mismatched or missing
+token means the peers will discover each other over mDNS but ignore
+each other's election traffic. The token authenticates frames; it does
+not encrypt them.
+
+Without a token, mesh traffic is plaintext and unauthenticated, and is intended only for a trusted LAN. Either way, do not expose the mesh port to the public internet.
 
 ## Roles
 

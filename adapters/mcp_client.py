@@ -12,6 +12,8 @@ from typing import Any
 
 from adapters.base import AdapterConfig, AdapterHealth, RuntimeAdapter
 
+MAX_TURNS_PER_SESSION = 24
+
 
 class MCPClientAdapter(RuntimeAdapter):
     """Agent-style MCP adapter.
@@ -30,6 +32,9 @@ class MCPClientAdapter(RuntimeAdapter):
         self.chat_tool = str(options.get("chat_tool") or os.environ.get("QANTARA_MCP_CHAT_TOOL", "chat")).strip()
         self.argument_key = str(options.get("argument_key") or os.environ.get("QANTARA_MCP_CHAT_ARG", "")).strip()
         self.timeout_seconds = float(options.get("timeout_seconds") or os.environ.get("QANTARA_MCP_TIMEOUT", "120"))
+        self.max_sessions = int(options.get("max_sessions") or os.environ.get("QANTARA_MCP_MAX_SESSIONS", "64"))
+        # Bounded: least-recently-used sessions are evicted beyond max_sessions;
+        # turns within a session are capped at MAX_TURNS_PER_SESSION.
         self._sessions: dict[str, dict[str, Any]] = {}
 
     @property
@@ -46,6 +51,9 @@ class MCPClientAdapter(RuntimeAdapter):
             "client_context": client_context or {},
             "turns": {},
         }
+        while len(self._sessions) > self.max_sessions:
+            oldest_handle = next(iter(self._sessions))
+            self._sessions.pop(oldest_handle, None)
         return session_handle
 
     async def submit_user_turn(
@@ -56,11 +64,19 @@ class MCPClientAdapter(RuntimeAdapter):
     ) -> str:
         if session_handle not in self._sessions:
             raise ValueError("unknown session handle")
+        # Refresh recency so an actively used session is not the next evicted.
+        self._sessions[session_handle] = self._sessions.pop(session_handle)
         turn_handle = str(uuid.uuid4())
-        self._sessions[session_handle]["turns"][turn_handle] = {
+        turns = self._sessions[session_handle]["turns"]
+        turns[turn_handle] = {
             "transcript": transcript,
             "turn_context": turn_context or {},
         }
+        while len(turns) > MAX_TURNS_PER_SESSION:
+            oldest_turn = next(iter(turns))
+            if oldest_turn == turn_handle:
+                break
+            turns.pop(oldest_turn, None)
         return turn_handle
 
     async def stream_assistant_output(

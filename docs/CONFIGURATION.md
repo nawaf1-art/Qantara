@@ -106,6 +106,7 @@ Mesh and Wyoming are opt-in and bind to loopback by default. Set the host to `0.
 | `QANTARA_MESH_PORT` | `8901` | Mesh TCP port |
 | `QANTARA_MESH_NODE_ID` | generated | Stable node id for peer election |
 | `QANTARA_MESH_SERVICE_TYPE` | `_qantara._tcp.local.` | mDNS service name |
+| `QANTARA_MESH_TOKEN` | unset | Optional shared secret; signs every mesh frame (HMAC-SHA256) and drops unsigned/mismatched frames. Set the same value on every node |
 | `QANTARA_WYOMING_ENABLED` | `false` | Enables Home Assistant Wyoming satellite mode |
 | `QANTARA_WYOMING_HOST` | `127.0.0.1` | Wyoming TCP bind host |
 | `QANTARA_WYOMING_PORT` | `10700` | Wyoming TCP port |

@@ -5,7 +5,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 
-from gateway.mesh.protocol import MeshMessage, decode_message
+from gateway.mesh.protocol import MeshMessage, decode_message, sign_frame, verify_frame
 
 LOGGER = logging.getLogger(__name__)
 
@@ -22,10 +22,12 @@ class MeshServer:
         host: str,
         port: int,
         on_message: OnMessageHandler,
+        token: str | None = None,
     ) -> None:
         self._host = host
         self._port = port
         self._on_message = on_message
+        self._token = token or None
         self._server: asyncio.base_events.Server | None = None
 
     @property
@@ -57,6 +59,8 @@ class MeshServer:
                     continue
                 try:
                     raw = json.loads(text)
+                    if self._token is not None:
+                        raw = verify_frame(raw, self._token)
                     msg = decode_message(raw)
                 except (ValueError, json.JSONDecodeError) as exc:
                     LOGGER.debug("mesh: dropping malformed frame from %s: %s", addr, exc)
@@ -78,9 +82,10 @@ class MeshPeer:
     to send to. Connects on demand, reconnects on drop (caller's
     responsibility — reconnection policy lives in the MeshController)."""
 
-    def __init__(self, host: str, port: int) -> None:
+    def __init__(self, host: str, port: int, token: str | None = None) -> None:
         self._host = host
         self._port = port
+        self._token = token or None
         self._writer: asyncio.StreamWriter | None = None
         self._lock = asyncio.Lock()
 
@@ -95,7 +100,10 @@ class MeshPeer:
         async with self._lock:
             if self._writer is None or self._writer.is_closing():
                 raise ConnectionError(f"mesh peer {self._host}:{self._port} not connected")
-            line = (json.dumps(msg.to_dict()) + "\n").encode("utf-8")
+            frame = msg.to_dict()
+            if self._token is not None:
+                frame = sign_frame(frame, self._token)
+            line = (json.dumps(frame) + "\n").encode("utf-8")
             self._writer.write(line)
             await self._writer.drain()
 

@@ -23,5 +23,31 @@ class FasterWhisperMultilingualTests(unittest.TestCase):
             self.assertEqual(provider.model_name, "small")
 
 
+class FasterWhisperModelInitRaceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_concurrent_ensure_model_constructs_model_once(self) -> None:
+        """transcribe() and transcribe_partial() run _ensure_model on
+        separate threads via asyncio.to_thread — lazy init must not load
+        the (large) Whisper model twice under concurrency."""
+        import asyncio
+        import time
+
+        constructions: list[float] = []
+
+        class SlowFakeModel:
+            def __init__(self, *args, **kwargs) -> None:
+                constructions.append(time.monotonic())
+                time.sleep(0.05)  # widen the race window
+
+        provider = FasterWhisperSTTProvider()
+        provider._WhisperModel = SlowFakeModel
+        provider._import_error = None
+
+        await asyncio.gather(
+            asyncio.to_thread(provider._ensure_model),
+            asyncio.to_thread(provider._ensure_model),
+        )
+        self.assertEqual(len(constructions), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

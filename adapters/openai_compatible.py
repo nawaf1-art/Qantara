@@ -100,7 +100,12 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
             or os.environ.get("QANTARA_OPENAI_TIMEOUT_FIRST_TOKEN", "30")
         )
 
-        # Per-session conversation history: session_handle -> messages list
+        self.max_sessions = int(
+            self.config.options.get("max_sessions")
+            or os.environ.get("QANTARA_OPENAI_MAX_SESSIONS", "64")
+        )
+        # Per-session conversation history: session_handle -> messages list.
+        # Bounded: least-recently-used sessions are evicted beyond max_sessions.
         self._sessions: dict[str, list[dict[str, str]]] = {}
         # Track active turns for cancellation
         self._active_turns: dict[str, bool] = {}
@@ -175,7 +180,19 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
         self._sessions[session_handle] = [
             {"role": "system", "content": self.system_prompt}
         ]
+        self._evict_stale_sessions()
         return session_handle
+
+    def _evict_stale_sessions(self) -> None:
+        while len(self._sessions) > self.max_sessions:
+            oldest_handle = next(iter(self._sessions))
+            self._sessions.pop(oldest_handle, None)
+
+    def _touch_session(self, session_handle: str) -> None:
+        # Move to the tail of the insertion-ordered dict so eviction is LRU.
+        messages = self._sessions.pop(session_handle, None)
+        if messages is not None:
+            self._sessions[session_handle] = messages
 
     async def submit_user_turn(
         self,
@@ -188,6 +205,9 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
             self._sessions[session_handle] = [
                 {"role": "system", "content": self.system_prompt}
             ]
+            self._evict_stale_sessions()
+        else:
+            self._touch_session(session_handle)
 
         # Append user message
         self._sessions[session_handle].append(
