@@ -29,6 +29,10 @@ class MeshServer:
         self._on_message = on_message
         self._token = token or None
         self._server: asyncio.base_events.Server | None = None
+        # Open inbound connections. stop() must close these explicitly:
+        # wait_closed() waits for connection handlers to finish, and a
+        # handler blocks in readline() until its peer hangs up.
+        self._connections: set[asyncio.StreamWriter] = set()
 
     @property
     def sockets(self):  # type: ignore[no-untyped-def]
@@ -40,6 +44,8 @@ class MeshServer:
     async def stop(self) -> None:
         if self._server is not None:
             self._server.close()
+            for writer in list(self._connections):
+                writer.close()
             await self._server.wait_closed()
             self._server = None
 
@@ -49,6 +55,7 @@ class MeshServer:
         writer: asyncio.StreamWriter,
     ) -> None:
         addr = writer.get_extra_info("peername") or ("<unknown>", 0)
+        self._connections.add(writer)
         try:
             while not reader.at_eof():
                 line = await reader.readline()
@@ -70,6 +77,7 @@ class MeshServer:
                 except Exception:
                     LOGGER.exception("mesh: on_message handler raised; dropping frame")
         finally:
+            self._connections.discard(writer)
             writer.close()
             try:
                 await writer.wait_closed()

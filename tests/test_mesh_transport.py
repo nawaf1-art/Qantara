@@ -58,6 +58,30 @@ class MeshTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(received[0].node_id, "x")
 
 
+class MeshServerShutdownTests(unittest.IsolatedAsyncioTestCase):
+    async def test_stop_completes_while_peer_connection_is_open(self) -> None:
+        """Found during real-network verification: asyncio's wait_closed()
+        waits for connection handlers to finish, and the handler blocks in
+        readline() until the peer hangs up — so stop() hung forever while
+        any peer was still connected. The server must close its connections
+        on stop."""
+        async def on_message(msg, addr) -> None:
+            pass
+
+        server = MeshServer(host="127.0.0.1", port=0, on_message=on_message)
+        await server.start()
+        addr = server.sockets[0].getsockname()
+        reader, writer = await asyncio.open_connection(addr[0], addr[1])
+        try:
+            await asyncio.wait_for(server.stop(), timeout=2.0)
+        finally:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+
+
 class MeshAuthTests(unittest.IsolatedAsyncioTestCase):
     """QANTARA_MESH_TOKEN shared-secret frame authentication. When a token
     is configured, every frame carries an HMAC-SHA256 signature; the server
