@@ -13,6 +13,8 @@ one audit line per request to the "qantara.voice_api" logger.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import io
 import json
 import logging
@@ -23,6 +25,7 @@ import wave
 
 from aiohttp import web
 
+from adapters.base import make_activity_event
 from gateway.transport_spike.auth import AUTH_TOKEN_KEY, require_bearer_token
 from gateway.transport_spike.common import TARGET_SAMPLE_RATE
 from gateway.transport_spike.runtime import APP_RUNTIME_KEY, GatewayRuntime
@@ -70,16 +73,16 @@ async def api_v1_speak_handler(request: web.Request) -> web.Response:
     try:
         payload = await request.json()
     except Exception:
-        return web.json_response({"error": "body must be JSON"}, status=400)
+        return web.json_response({"ok": False, "error": "body must be JSON"}, status=400)
     text = str(payload.get("text") or "").strip()
     if not text:
-        return web.json_response({"error": "text is required"}, status=400)
+        return web.json_response({"ok": False, "error": "text is required"}, status=400)
     voice_id = payload.get("voice_id")
     speech_rate = payload.get("speech_rate")
 
     runtime = _runtime(request)
     if not runtime.tts.available:
-        return web.json_response({"error": "no TTS provider available"}, status=503)
+        return web.json_response({"ok": False, "error": "no TTS provider available"}, status=503)
     started_ms = time.monotonic() * 1000
     try:
         samples, resolved_voice, fallback_reason = await runtime.tts.synthesize(
@@ -88,7 +91,7 @@ async def api_v1_speak_handler(request: web.Request) -> web.Response:
             speech_rate=speech_rate,
         )
     except Exception as exc:
-        return web.json_response({"error": f"synthesis failed: {exc}"}, status=502)
+        return web.json_response({"ok": False, "error": f"synthesis failed: {exc}"}, status=502)
     sample_rate = resolved_voice.sample_rate
     synthesis_ms = round((time.monotonic() * 1000) - started_ms, 1)
     _audit(request, f"chars={len(text)} voice={resolved_voice.voice_id} synthesis_ms={synthesis_ms}")
@@ -135,25 +138,26 @@ async def api_v1_transcribe_handler(request: web.Request) -> web.Response:
         return auth_error
     body = await request.read()
     if len(body) > MAX_AUDIO_BYTES:
-        return web.json_response({"error": "audio body too large"}, status=413)
+        return web.json_response({"ok": False, "error": "audio body too large"}, status=413)
     try:
         samples, sample_rate = _decode_audio_body(
             body, request.content_type or "", request.query.get("sample_rate")
         )
     except Exception as exc:
-        return web.json_response({"error": f"could not decode audio: {exc}"}, status=400)
+        return web.json_response({"ok": False, "error": f"could not decode audio: {exc}"}, status=400)
 
     runtime = _runtime(request)
     if not runtime.stt.available:
-        return web.json_response({"error": "no STT provider available"}, status=503)
+        return web.json_response({"ok": False, "error": "no STT provider available"}, status=503)
     started_ms = time.monotonic() * 1000
     try:
         result = await runtime.stt.transcribe(samples, sample_rate)
     except Exception as exc:
-        return web.json_response({"error": f"transcription failed: {exc}"}, status=502)
+        return web.json_response({"ok": False, "error": f"transcription failed: {exc}"}, status=502)
     transcribe_ms = round((time.monotonic() * 1000) - started_ms, 1)
     _audit(request, f"samples={len(samples)} rate={sample_rate} transcribe_ms={transcribe_ms}")
     return web.json_response({
+        "ok": True,
         "text": result.text,
         "language": result.language,
         "language_probability": result.language_probability,
@@ -179,6 +183,22 @@ async def _resolve_adapter_session(runtime: GatewayRuntime, client_session_id: s
     return adapter, handle
 
 
+async def _reset_adapter_session(adapter: object, client_session_id: str | None) -> str:
+    """Drop any cached handle for this client and start a fresh adapter session.
+
+    Used when a stored handle is stale (e.g. the backend was switched via
+    /api/configure), so converse can transparently continue rather than fail.
+    """
+    if client_session_id:
+        _api_sessions.pop(client_session_id, None)
+    handle = await adapter.start_or_resume_session({"source": "voice_api", "client_session_id": client_session_id})
+    if client_session_id:
+        _api_sessions[client_session_id] = handle
+        while len(_api_sessions) > MAX_API_SESSIONS:
+            _api_sessions.pop(next(iter(_api_sessions)), None)
+    return handle
+
+
 async def api_v1_converse_handler(request: web.Request) -> web.StreamResponse:
     auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
     if auth_error is not None:
@@ -186,10 +206,10 @@ async def api_v1_converse_handler(request: web.Request) -> web.StreamResponse:
     try:
         payload = await request.json()
     except Exception:
-        return web.json_response({"error": "body must be JSON"}, status=400)
+        return web.json_response({"ok": False, "error": "body must be JSON"}, status=400)
     text = str(payload.get("text") or "").strip()
     if not text:
-        return web.json_response({"error": "text is required"}, status=400)
+        return web.json_response({"ok": False, "error": "text is required"}, status=400)
     client_session_id = (str(payload.get("session_id") or "").strip()) or None
 
     runtime = _runtime(request)
@@ -209,23 +229,50 @@ async def api_v1_converse_handler(request: web.Request) -> web.StreamResponse:
         line = f"event: {event.get('type', 'message')}\ndata: {json.dumps(event)}\n\n"
         await response.write(line.encode("utf-8"))
 
-    started = time.monotonic()
     _audit(request, f"chars={len(text)} session={client_session_id or 'ephemeral'}")
     try:
-        turn_handle = await adapter.submit_user_turn(session_handle, text, {"source": "voice_api", "modality": "text"})
+        try:
+            turn_handle = await adapter.submit_user_turn(session_handle, text, {"source": "voice_api", "modality": "text"})
+        except Exception:
+            # Stale adapter session handle (e.g. the backend was switched via
+            # /api/configure since this session_id was created): start a fresh
+            # adapter session and retry once, honoring the documented "reuse
+            # session_id to keep history" contract instead of an opaque failure.
+            session_handle = await _reset_adapter_session(adapter, client_session_id)
+            turn_handle = await adapter.submit_user_turn(session_handle, text, {"source": "voice_api", "modality": "text"})
         await send_event({"type": "turn_accepted", "turn_handle": turn_handle, "session_id": client_session_id})
         saw_final = False
         buffered = ""
-        async for event in adapter.stream_assistant_output(session_handle, turn_handle):
-            if time.monotonic() - started > CONVERSE_TURN_TIMEOUT_SECONDS:
-                await send_event({"type": "turn_failed", "message": "turn timed out"})
-                break
-            event_type = event.get("type")
-            if event_type == "assistant_text_delta":
-                buffered += event.get("text", "")
-            if event_type == "assistant_text_final":
-                saw_final = True
-            await send_event(event)
+        try:
+            # Hard deadline that fires even if the adapter yields nothing: a
+            # wedged backend must not pin the SSE request/worker. Mirrors the
+            # force-cancel the WS path applies via cancel_active_turn().
+            async with asyncio.timeout(CONVERSE_TURN_TIMEOUT_SECONDS):
+                async for event in adapter.stream_assistant_output(session_handle, turn_handle):
+                    event_type = event.get("type")
+                    if event_type == "assistant_text_delta":
+                        buffered += event.get("text", "")
+                    elif event_type == "assistant_text_final":
+                        saw_final = True
+                    elif event_type == "assistant_activity":
+                        # Re-validate through the protocol-v1 builder so the SSE
+                        # surface applies the same trust-boundary normalization the
+                        # WS path does (invalid activity_type coerced, progress/
+                        # confidence clamped, malformed tool metadata dropped)
+                        # instead of forwarding raw adapter output.
+                        event = make_activity_event(
+                            activity_type=event.get("activity_type", "other"),
+                            summary=event.get("summary", ""),
+                            progress=event.get("progress"),
+                            tool_name=event.get("tool_name"),
+                            parameters=event.get("parameters") if isinstance(event.get("parameters"), dict) else None,
+                            confidence=event.get("confidence"),
+                        )
+                    await send_event(event)
+        except TimeoutError:
+            await send_event({"type": "turn_failed", "message": "turn timed out"})
+            with contextlib.suppress(Exception):
+                await adapter.cancel_turn(session_handle, turn_handle)
         if not saw_final and buffered:
             await send_event({"type": "assistant_text_final", "text": buffered, "completed_via": "buffer_flush"})
         await send_event({"type": "turn_completed"})

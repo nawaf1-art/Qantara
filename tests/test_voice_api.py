@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import unittest
@@ -8,7 +9,7 @@ import wave
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
-from adapters.base import AdapterConfig
+from adapters.base import AdapterConfig, AdapterHealth, RuntimeAdapter
 from gateway.transport_spike.auth import AUTH_TOKEN_KEY
 from gateway.transport_spike.http_api import APP_RUNTIME_KEY, mount_static_routes
 from gateway.transport_spike.runtime import GatewayRuntime
@@ -151,6 +152,26 @@ class ConverseEndpointTests(VoiceAPITestBase):
         self.assertEqual(resp.status, 400)
 
 
+class ErrorEnvelopeTests(VoiceAPITestBase):
+    async def test_error_responses_carry_ok_false(self) -> None:
+        # Voice-as-API JSON errors use the same {"ok": false, "error": ...}
+        # envelope as the /api/control/* surface, so a generic client can key
+        # on one field to detect failure.
+        resp = await self.client.post("/api/v1/speak", json={})
+        self.assertEqual(resp.status, 400)
+        body = await resp.json()
+        self.assertFalse(body["ok"])
+        self.assertIn("error", body)
+
+    async def test_json_success_carries_ok_true(self) -> None:
+        audio = _wav_bytes([10, -10] * 400)
+        resp = await self.client.post("/api/v1/transcribe", data=audio, headers={"Content-Type": "audio/wav"})
+        self.assertEqual(resp.status, 200)
+        body = await resp.json()
+        self.assertTrue(body["ok"])
+        self.assertIn("text", body)
+
+
 class VoiceAPIAuthTests(VoiceAPITestBase):
     auth_token = "verify-voice-api-token-0123456789"
 
@@ -177,6 +198,122 @@ class VoiceAPIAuditLogTests(VoiceAPITestBase):
         with self.assertLogs("qantara.voice_api", level="INFO") as captured:
             await self.client.post("/api/v1/speak", json={"text": "log me"})
         self.assertTrue(any("/api/v1/speak" in line for line in captured.output))
+
+
+class HangingAdapter(RuntimeAdapter):
+    """Adapter whose stream never yields — simulates a wedged backend."""
+
+    def __init__(self) -> None:
+        super().__init__(AdapterConfig(kind="mock", name="hang"))
+        self.cancel_called = False
+
+    async def start_or_resume_session(self, client_context=None) -> str:
+        return "hang-session"
+
+    async def submit_user_turn(self, session_handle, transcript, turn_context=None) -> str:
+        return "hang-turn"
+
+    async def stream_assistant_output(self, session_handle, turn_handle):
+        await asyncio.Event().wait()  # never completes — a wedged backend
+        yield {}  # pragma: no cover - unreachable; makes this an async generator
+
+    async def cancel_turn(self, session_handle, turn_handle, cancel_context=None) -> dict:
+        self.cancel_called = True
+        return {"status": "acknowledged", "turn_handle": turn_handle}
+
+    async def check_health(self) -> AdapterHealth:
+        return AdapterHealth(status="ok")
+
+
+class _ActivityAdapter(RuntimeAdapter):
+    """Emits a malformed assistant_activity to prove converse re-validates it."""
+
+    def __init__(self) -> None:
+        super().__init__(AdapterConfig(kind="mock", name="activity"))
+
+    async def start_or_resume_session(self, client_context=None) -> str:
+        return "s"
+
+    async def submit_user_turn(self, session_handle, transcript, turn_context=None) -> str:
+        return "t"
+
+    async def stream_assistant_output(self, session_handle, turn_handle):
+        yield {
+            "type": "assistant_activity",
+            "activity_type": "NOT_A_REAL_TYPE",  # invalid -> coerced to "other"
+            "summary": "doing a thing",
+            "confidence": 5.0,                    # out of range -> clamped to 1.0
+            "parameters": "not-a-dict",           # invalid -> dropped
+            "tool_name": "",                      # empty -> dropped
+        }
+        yield {"type": "assistant_text_final", "text": "done"}
+
+    async def cancel_turn(self, session_handle, turn_handle, cancel_context=None) -> dict:
+        return {"status": "acknowledged"}
+
+    async def check_health(self) -> AdapterHealth:
+        return AdapterHealth(status="ok")
+
+
+class ConverseActivityValidationTests(VoiceAPITestBase):
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        self.app[APP_RUNTIME_KEY].default_binding().adapter = _ActivityAdapter()
+
+    async def test_converse_normalizes_assistant_activity(self) -> None:
+        resp = await self.client.post("/api/v1/converse", json={"text": "go"})
+        raw = (await resp.read()).decode("utf-8")
+        events = [json.loads(line[len("data: "):]) for line in raw.splitlines() if line.startswith("data: ")]
+        activity = next(e for e in events if e["type"] == "assistant_activity")
+        self.assertEqual(activity["activity_type"], "other", "invalid activity_type must be coerced")
+        self.assertEqual(activity["confidence"], 1.0, "out-of-range confidence must be clamped")
+        self.assertNotIn("parameters", activity, "non-dict parameters must be dropped")
+        self.assertNotIn("tool_name", activity, "empty tool_name must be dropped")
+
+
+class ConverseBackendSwitchTests(VoiceAPITestBase):
+    async def test_converse_session_survives_backend_switch(self) -> None:
+        # First turn creates and caches an adapter session handle.
+        first = await self.client.post("/api/v1/converse", json={"text": "one", "session_id": "sw"})
+        await first.read()
+        self.assertEqual(first.status, 200)
+
+        # Simulate /api/configure swapping the backend: a brand-new adapter
+        # instance that has never seen the cached handle.
+        from adapters.mock_adapter import MockAdapter
+        self.app[APP_RUNTIME_KEY].default_binding().adapter = MockAdapter()
+
+        # Reusing the same session_id must transparently start a fresh session
+        # and still stream a normal response — not an opaque turn_failed.
+        second = await self.client.post("/api/v1/converse", json={"text": "two", "session_id": "sw"})
+        raw = (await second.read()).decode("utf-8")
+        events = [json.loads(line[len("data: "):]) for line in raw.splitlines() if line.startswith("data: ")]
+        types = [e["type"] for e in events]
+        self.assertIn("assistant_text_final", types, "reused session after a backend switch must still respond")
+        self.assertNotIn("turn_failed", types, "backend switch must not surface an opaque turn_failed")
+
+
+class ConverseTimeoutTests(VoiceAPITestBase):
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        self.hanging = HangingAdapter()
+        self.app[APP_RUNTIME_KEY].default_binding().adapter = self.hanging
+
+    async def test_converse_times_out_and_cancels_wedged_backend(self) -> None:
+        # The deadline must fire even though the adapter yields nothing, and the
+        # backend turn must be cancelled rather than abandoned.
+        import gateway.transport_spike.voice_api as voice_api
+
+        original = voice_api.CONVERSE_TURN_TIMEOUT_SECONDS
+        voice_api.CONVERSE_TURN_TIMEOUT_SECONDS = 0.2
+        try:
+            resp = await self.client.post("/api/v1/converse", json={"text": "hello"})
+            raw = await asyncio.wait_for(resp.read(), timeout=5.0)
+        finally:
+            voice_api.CONVERSE_TURN_TIMEOUT_SECONDS = original
+        self.assertEqual(resp.status, 200)
+        self.assertIn("turn timed out", raw.decode("utf-8"))
+        self.assertTrue(self.hanging.cancel_called, "wedged turn should be cancelled on timeout")
 
 
 if __name__ == "__main__":

@@ -14,3 +14,10 @@ build
 *.log
 docs/internal
 docs/audits
+ops/certs
+models
+.env
+.env.*
+!.env.example
+tests
+.claude

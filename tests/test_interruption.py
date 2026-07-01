@@ -437,5 +437,145 @@ class BargeInLatencyBenchmark(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class _SlowSubmitAdapter(RuntimeAdapter):
+    """Blocks inside submit_user_turn so a barge-in can land during the
+    turn-acceptance window (before any turn handle exists)."""
+
+    def __init__(self) -> None:
+        super().__init__(AdapterConfig(kind="mock", name="slow-submit"))
+        self.submit_entered = asyncio.Event()
+        self.release_submit = asyncio.Event()
+        self.cancel_called = False
+        self.streamed = False
+
+    async def start_or_resume_session(self, client_context: dict | None = None) -> str:
+        return "runtime-session"
+
+    async def submit_user_turn(self, session_handle: str, transcript: str, turn_context: dict | None = None) -> str:
+        self.submit_entered.set()
+        await self.release_submit.wait()
+        return "turn-1"
+
+    async def stream_assistant_output(self, session_handle: str, turn_handle: str):
+        self.streamed = True
+        yield {"type": "assistant_text_final", "text": "ghost response"}
+
+    async def cancel_turn(self, session_handle: str, turn_handle: str, cancel_context: dict | None = None) -> dict:
+        self.cancel_called = True
+        return {"status": "acknowledged"}
+
+    async def check_health(self) -> AdapterHealth:
+        return AdapterHealth(status="ok")
+
+
+class BargeInDuringAcceptTests(unittest.IsolatedAsyncioTestCase):
+    async def test_barge_in_during_submit_window_is_honored(self) -> None:
+        session, events, ws, _ = _make_session()
+        adapter = _SlowSubmitAdapter()
+        session.binding.adapter = adapter
+
+        turn_task = asyncio.create_task(stream_assistant_turn(session, "hello"))
+        session.current_turn_task = turn_task
+        await adapter.submit_entered.wait()  # inside the accept window; no handle yet
+
+        # Barge-in lands before the backend accepted the turn.
+        await cancel_active_turn(session, "speech_detected")
+        # Let the backend finish accepting; the pending cancel must now fire.
+        adapter.release_submit.set()
+        await turn_task
+
+        # The barge-in is honored once a handle exists: backend cancel + turn_interrupted.
+        self.assertTrue(adapter.cancel_called, "backend turn must be cancelled")
+        interrupted = [e for e in events if e["event_name"] == "turn_interrupted"]
+        self.assertEqual(len(interrupted), 1, "exactly one turn_interrupted expected")
+        # No ghost assistant response reaches the client.
+        ghost = [m for m in ws.strings if m.get("type") == "assistant_text_final"]
+        self.assertEqual(ghost, [], "ghost response must not be streamed after a barge-in")
+
+
+class ControlSpeechDuringTurnTests(unittest.IsolatedAsyncioTestCase):
+    async def test_control_speech_does_not_force_idle_during_active_turn(self) -> None:
+        from gateway.transport_spike.speech import enqueue_control_speech
+
+        session, events, ws, adapter = _make_session()  # _BlockingAdapter
+        turn_task = asyncio.create_task(stream_assistant_turn(session, "hello"))
+        session.current_turn_task = turn_task
+        await adapter._first_delta_released.wait()  # turn is mid-flight
+
+        # Inject control speech WITHOUT interrupt while the turn is active.
+        enqueue_control_speech(session, "an injected announcement")
+        await session.speech_task
+
+        # Control speech must not hijack the state machine to idle mid-turn.
+        self.assertNotEqual(session.state, "idle", "control speech corrupted state mid-turn")
+
+        # Clean up the still-blocked turn.
+        await cancel_active_turn(session, "cleanup")
+        await turn_task
+
+
+class _FailThenOkAdapter(RuntimeAdapter):
+    """First submit_user_turn blocks (so a barge-in can land) then raises, as
+    if the backend handle went stale; the second submit succeeds."""
+
+    def __init__(self) -> None:
+        super().__init__(AdapterConfig(kind="mock", name="fail-then-ok"))
+        self.submit_entered = asyncio.Event()
+        self.release = asyncio.Event()
+        self.calls = 0
+
+    async def start_or_resume_session(self, client_context: dict | None = None) -> str:
+        return "runtime-session"
+
+    async def submit_user_turn(self, session_handle: str, transcript: str, turn_context: dict | None = None) -> str:
+        self.calls += 1
+        if self.calls == 1:
+            self.submit_entered.set()
+            await self.release.wait()
+            raise ValueError("unknown session handle")
+        return "turn-ok"
+
+    async def stream_assistant_output(self, session_handle: str, turn_handle: str):
+        yield {"type": "assistant_text_final", "text": "real answer"}
+
+    async def cancel_turn(self, session_handle: str, turn_handle: str, cancel_context: dict | None = None) -> dict:
+        return {"status": "acknowledged"}
+
+    async def check_health(self) -> AdapterHealth:
+        return AdapterHealth(status="ok")
+
+
+class CancelFlagLeakTests(unittest.IsolatedAsyncioTestCase):
+    async def test_flag_does_not_leak_to_next_turn_after_submit_failure(self) -> None:
+        session, events, ws, _ = _make_session()
+        adapter = _FailThenOkAdapter()
+        session.binding.adapter = adapter
+
+        # Turn 1: barge in during the accept window, then submit_user_turn raises.
+        t1 = asyncio.create_task(stream_assistant_turn(session, "hello"))
+        session.current_turn_task = t1
+        await adapter.submit_entered.wait()
+        await cancel_active_turn(session, "speech_detected")  # sets turn_cancel_requested
+        adapter.release.set()
+        try:
+            await t1
+        except Exception:
+            pass
+        self.assertFalse(session.turn_cancel_requested, "cancel flag must not leak past a failed turn")
+
+        # Turn 2: a clean turn must respond normally, not self-cancel from a leaked flag.
+        ws.strings.clear()
+        events.clear()
+        t2 = asyncio.create_task(stream_assistant_turn(session, "again"))
+        session.current_turn_task = t2
+        await t2
+        finals = [m for m in ws.strings if m.get("type") == "assistant_text_final"]
+        self.assertTrue(finals, "next turn must respond, not self-cancel")
+        self.assertEqual(
+            [e for e in events if e["event_name"] == "turn_interrupted"], [],
+            "next turn must not emit a spurious turn_interrupted",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

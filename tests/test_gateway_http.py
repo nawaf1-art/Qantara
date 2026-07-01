@@ -30,6 +30,20 @@ class FakeSTT(STTProvider):
         return "transcribed"
 
 
+class _CountingSTT(STTProvider):
+    """STT that echoes the decoded sample count, so a test can assert the
+    PCM_KIND + int16-LE transport decode produced exactly the frames sent."""
+
+    kind = "counting_stt"
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    async def transcribe(self, samples: list[int], sample_rate: int) -> str:
+        return str(len(samples))
+
+
 class FakeTTS(TTSProvider):
     kind = "fake_tts"
 
@@ -474,6 +488,52 @@ class GatewayHTTPTests(unittest.IsolatedAsyncioTestCase):
                 break
         self.assertTrue(seen_tts)
         self.assertTrue(seen_final)
+        await ws.close()
+
+    async def test_websocket_binary_frame_decodes_to_stt(self) -> None:
+        # End-to-end binary transport: a PCM_KIND-prefixed int16-LE frame must
+        # decode into recent_pcm and reach STT with the exact sample count.
+        self.runtime.stt = _CountingSTT()
+        ws = await self.client.ws_connect("/ws")
+        await ws.send_json({"type": "session_init", "client_session_id": "bin-audio-client"})
+        await ws.receive_json()
+        await ws.receive_json()
+        samples = [100, -100, 32767, -32768]
+        frame = bytes([0x01]) + b"".join(int(s).to_bytes(2, "little", signed=True) for s in samples)
+        await ws.send_bytes(frame)
+        await ws.send_json({"type": "transcribe_recent_audio", "submit_turn": False})
+        transcript = None
+        for _ in range(12):
+            msg = await ws.receive_json()
+            if msg.get("type") == "transcript_result":
+                transcript = msg
+                break
+        self.assertIsNotNone(transcript, "expected a transcript_result")
+        self.assertEqual(transcript["text"], str(len(samples)),
+                         "server must decode exactly the samples the client framed")
+        await ws.close()
+
+    async def test_websocket_unprefixed_binary_frame_is_rejected(self) -> None:
+        # Guards the B1 contract: a frame WITHOUT the leading PCM_KIND byte (the
+        # bug the /translate client had) must be rejected, never entering the PCM
+        # buffer — so transcription sees no audio.
+        self.runtime.stt = _CountingSTT()
+        ws = await self.client.ws_connect("/ws")
+        await ws.send_json({"type": "session_init", "client_session_id": "bad-bin-client"})
+        await ws.receive_json()
+        await ws.receive_json()
+        bad_frame = bytes([0x02]) + b"".join(int(s).to_bytes(2, "little", signed=True) for s in [1, 2, 3])
+        await ws.send_bytes(bad_frame)
+        await ws.send_json({"type": "transcribe_recent_audio", "submit_turn": False})
+        result = None
+        for _ in range(12):
+            msg = await ws.receive_json()
+            if msg.get("type") == "transcript_result":
+                result = msg
+                break
+        self.assertIsNotNone(result, "expected a transcript_result")
+        self.assertEqual(result["text"], "", "rejected frame must not enter the PCM buffer")
+        self.assertEqual(result["engine"], "none")
         await ws.close()
 
     async def test_playback_cleared_protocol_fixture(self) -> None:

@@ -31,7 +31,7 @@ Issues = "https://github.com/nawaf1-art/Qantara/issues"
 # Local STT/TTS. Piper needs the external `piper` binary on PATH; Kokoro
 # pulls PyTorch transitively. Without this extra the gateway still runs with
 # the demo backend and synthetic audio.
-speech = ["faster-whisper>=1.0", "kokoro>=0.7", "numpy>=1.26"]
+speech = ["faster-whisper>=1.2,<2", "kokoro>=0.9.4,<0.10", "numpy>=2.0,<3", "soundfile>=0.13"]
 # Multi-device mesh + Home Assistant Wyoming satellite.
 mesh = ["zeroconf>=0.131", "wyoming>=1.8"]
 # MCP client adapter + MCP voice server.
