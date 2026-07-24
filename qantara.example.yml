@@ -6,7 +6,7 @@
 backend:
   type: openai_compatible    # openai_compatible | ollama | openclaw | custom | mock
   url: http://localhost:11434
-  model: qwen2.5:3b
+  model: qwen3.5:2b
   # agent: main               # only for the advanced OpenClaw bridge
 
 voice:

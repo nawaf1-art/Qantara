@@ -377,6 +377,7 @@ async def ensure_adapter_session(session: Session) -> None:
 def clear_turn_state(session: Session) -> None:
     session.current_turn_handle = None
     session.current_turn_task = None
+    session.turn_cancel_requested = False
 
 
 async def emit_turn_state(session: Session, state: str, reason: str | None = None) -> None:
@@ -461,7 +462,14 @@ def apply_voice_transforms(
 
 
 async def cancel_active_turn(session: Session, reason: str) -> None:
-    if session.runtime_session_handle is None or session.current_turn_handle is None or session.current_turn_task is None or session.current_turn_task.done():
+    if session.runtime_session_handle is None or session.current_turn_task is None or session.current_turn_task.done():
+        return
+    if session.current_turn_handle is None:
+        # Barge-in landed while the backend was still accepting the turn
+        # (submit_user_turn in flight, no handle to cancel yet). Record the
+        # intent; stream_assistant_turn honors it the moment a handle exists,
+        # instead of silently dropping the barge-in and streaming a ghost turn.
+        session.turn_cancel_requested = True
         return
     # Past the guard => a real turn was active and is about to be cancelled.
     # That's the semantic for "interrupted" regardless of what session.state
@@ -606,7 +614,14 @@ async def _run_control_speech_segment(
             return
     if expected_generation != session.speech_generation:
         return
-    await session.set_state("speaking", reason="control_voice_speak")
+    # If a real backend turn is in flight, play the injected audio but do NOT
+    # drive the session state machine: forcing speaking->idle here would make
+    # every state consumer (barge-in eligibility, endpoint auto-submit, the UI)
+    # believe the assistant finished mid-turn. State is only ours to manage
+    # when this is a standalone announcement with no active turn.
+    turn_active = session.current_turn_task is not None and not session.current_turn_task.done()
+    if not turn_active:
+        await session.set_state("speaking", reason="control_voice_speak")
     await session.emit("assistant_output_started", "control", {"kind": "voice_speak", "char_count": len(text)})
     session.record_transcript_item(role="assistant", text=text, source="control", turn_id=None)
     await safe_send_str(session, {"type": "assistant_text_final", "text": text, "source": "control"})
@@ -614,7 +629,7 @@ async def _run_control_speech_segment(
         await speak_text(session, text, expected_generation=expected_generation, voice_id=voice_id)
     finally:
         await session.emit("assistant_output_completed", "control", {"kind": "voice_speak", "char_count": len(text)})
-        if session.state == "speaking":
+        if not turn_active and session.state == "speaking":
             await session.set_state("idle", reason="control_voice_speak_completed")
 
 
@@ -679,15 +694,27 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
     for key, value in optional_turn_context.items():
         if value is not None and value != "":
             turn_context[key] = value
-    turn_handle = await session.binding.adapter.submit_user_turn(session.runtime_session_handle, transcript, turn_context)
-    session.current_turn_handle = turn_handle
-    await session.emit("turn_submit_accepted", "adapter", {"turn_id": session.turn_id, "turn_handle": turn_handle})
     buffered = ""
     spoken_so_far = ""
     saw_final = False
     session.current_turn_buffered_text = ""
     session.current_turn_phase = "thinking"
     try:
+        # submit_user_turn stays INSIDE this try so the finally (clear_turn_state)
+        # always runs — even if the backend rejects the turn. Otherwise a
+        # turn_cancel_requested set during the accept window would leak to the
+        # next turn and make it self-cancel.
+        turn_handle = await session.binding.adapter.submit_user_turn(session.runtime_session_handle, transcript, turn_context)
+        session.current_turn_handle = turn_handle
+        await session.emit("turn_submit_accepted", "adapter", {"turn_id": session.turn_id, "turn_handle": turn_handle})
+        if session.turn_cancel_requested:
+            # A barge-in arrived during the accept window; honor it now that a
+            # handle exists. We are the current turn task, so cancel_active_turn
+            # requests the backend cancel and emits turn_interrupted without
+            # force-cancelling us — then we fall through to the finally cleanup.
+            session.turn_cancel_requested = False
+            await cancel_active_turn(session, "barge_in_during_accept")
+            return
         await session.emit("assistant_output_started", "adapter", {"turn_handle": turn_handle})
         async for event in session.binding.adapter.stream_assistant_output(session.runtime_session_handle, turn_handle):
             event_type = event["type"]

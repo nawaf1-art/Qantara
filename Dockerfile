@@ -18,7 +18,7 @@ RUN apt-get update \
 
 COPY ops/docker/requirements.txt /tmp/requirements.txt
 
-RUN pip install --index-url https://download.pytorch.org/whl/cpu torch==2.11.0 \
+RUN pip install --index-url https://download.pytorch.org/whl/cpu torch==2.13.0 \
     && pip install -r /tmp/requirements.txt \
     && python -m spacy download en_core_web_sm
 

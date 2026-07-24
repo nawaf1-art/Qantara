@@ -8,6 +8,7 @@ from typing import Any
 import aiohttp
 
 from adapters.base import AdapterConfig, AdapterHealth, RuntimeAdapter
+from qantara.streaming import iter_text_lines
 
 
 class SessionGatewayHTTPAdapter(RuntimeAdapter):
@@ -50,9 +51,10 @@ class SessionGatewayHTTPAdapter(RuntimeAdapter):
         if not payload:
             return None
         try:
-            return json.loads(payload)
+            event = json.loads(payload)
         except json.JSONDecodeError:
             return None
+        return event if isinstance(event, dict) else None
 
     async def _request_json(
         self,
@@ -76,7 +78,10 @@ class SessionGatewayHTTPAdapter(RuntimeAdapter):
                     raise RuntimeError(f"backend request failed: {response.status} {body}".strip())
                 if not body:
                     return {}
-                return json.loads(body)
+                data = json.loads(body)
+                if not isinstance(data, dict):
+                    raise RuntimeError("backend response must be a JSON object")
+                return data
 
     async def start_or_resume_session(self, client_context: dict | None = None) -> str:
         data = await self._request_json("POST", "/sessions", {"client_context": client_context or {}})
@@ -119,16 +124,8 @@ class SessionGatewayHTTPAdapter(RuntimeAdapter):
                     body = await response.text()
                     raise RuntimeError(f"backend stream failed: {response.status} {body}".strip())
 
-                buffer = ""
-                async for chunk in response.content:
-                    buffer += chunk.decode("utf-8", errors="replace")
-                    while "\n" in buffer:
-                        line, buffer = buffer.split("\n", 1)
-                        event = self._parse_stream_line(line)
-                        if event is not None:
-                            yield event
-                if buffer.strip():
-                    event = self._parse_stream_line(buffer)
+                async for line in iter_text_lines(response.content):
+                    event = self._parse_stream_line(line)
                     if event is not None:
                         yield event
 

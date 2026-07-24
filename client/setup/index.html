@@ -347,7 +347,7 @@
     var authStatus = document.getElementById("auth-status");
 
     // Recommended models for voice (fast, conversational)
-    var RECOMMENDED = ["gemma4:e4b", "llama3.2:3b", "llama3.1:8b", "qwen2.5:7b", "qwen2.5:3b", "mistral:latest", "gemma2:latest"];
+    var RECOMMENDED = ["qwen3.5:2b", "qwen3.5:4b", "qwen3:4b", "gemma3:4b", "qwen2.5:3b"];
 
     var saved = null;
     try { saved = JSON.parse(localStorage.getItem("qantara_backend")); } catch (_) {}
@@ -562,7 +562,7 @@
         '<p>Qantara needs an AI backend to generate responses. The easiest way to start:</p>' +
         '<p><strong>1.</strong> Install Ollama from <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">ollama.com</a></p>' +
         '<p><strong>2.</strong> Download a model:</p>' +
-        '<div class="cmd-box"><code>ollama pull gemma4:e4b</code><button class="copy-btn" onclick="navigator.clipboard.writeText(\'ollama pull gemma4:e4b\')">Copy</button></div>' +
+        '<div class="cmd-box"><code>ollama pull qwen3.5:2b</code><button class="copy-btn" onclick="navigator.clipboard.writeText(\'ollama pull qwen3.5:2b\')">Copy</button></div>' +
         '<p><strong>3.</strong> Come back \u2014 Qantara detects it automatically.</p>' +
         '<div><button class="scan-btn" onclick="location.reload()">Scan Again</button></div>';
       area.appendChild(div);
@@ -802,8 +802,8 @@
         noModels.className = "config-group";
         noModels.innerHTML =
           '<label>No models installed in Ollama</label>' +
-          '<div class="cmd-box" style="margin:6px 0"><code>ollama pull gemma4:e4b</code>' +
-          '<button class="copy-btn" onclick="navigator.clipboard.writeText(\'ollama pull gemma4:e4b\')">Copy</button></div>';
+          '<div class="cmd-box" style="margin:6px 0"><code>ollama pull qwen3.5:2b</code>' +
+          '<button class="copy-btn" onclick="navigator.clipboard.writeText(\'ollama pull qwen3.5:2b\')">Copy</button></div>';
         configEl.appendChild(noModels);
         return;
       }

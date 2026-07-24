@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "qantara"
-version = "0.2.10"
+version = "0.2.12"
 description = "Local-first voice gateway for Ollama, local LLMs, and local AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,7 +19,7 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
 dependencies = [
-    "aiohttp>=3.9",
+    "aiohttp>=3.14,<4",
 ]
 
 [project.urls]
@@ -31,11 +31,11 @@ Issues = "https://github.com/nawaf1-art/Qantara/issues"
 # Local STT/TTS. Piper needs the external `piper` binary on PATH; Kokoro
 # pulls PyTorch transitively. Without this extra the gateway still runs with
 # the demo backend and synthetic audio.
-speech = ["faster-whisper>=1.0", "kokoro>=0.7", "numpy>=1.26"]
+speech = ["faster-whisper>=1.2,<2", "kokoro>=0.9.4,<0.10", "numpy>=2.0,<3", "soundfile>=0.13"]
 # Multi-device mesh + Home Assistant Wyoming satellite.
-mesh = ["zeroconf>=0.131", "wyoming>=1.8"]
+mesh = ["zeroconf>=0.150,<0.151", "wyoming>=1.10,<2"]
 # MCP client adapter + MCP voice server.
-mcp = ["mcp>=1.27,<1.28"]
+mcp = ["mcp>=1.28,<1.29"]
 chatterbox = ["chatterbox-tts>=0.1.2"]
 
 # The wheel intentionally ships the existing top-level packages (gateway,

@@ -1,6 +1,6 @@
 services:
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.32.3
     container_name: qantara-ollama
     volumes:
       - ollama-data:/root/.ollama
@@ -12,7 +12,7 @@ services:
       start_period: 10s
 
   ollama-pull:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.32.3
     container_name: qantara-ollama-pull
     depends_on:
       ollama:
@@ -21,7 +21,7 @@ services:
       OLLAMA_HOST: http://ollama:11434
     volumes:
       - ollama-data:/root/.ollama
-    entrypoint: ["/bin/sh", "-lc", "ollama pull qwen2.5:3b"]
+    entrypoint: ["/bin/sh", "-lc", "ollama pull qwen3.5:2b"]
     restart: "no"
 
   qantara-backend:
@@ -37,7 +37,8 @@ services:
       QANTARA_REAL_BACKEND_HOST: 0.0.0.0
       QANTARA_REAL_BACKEND_PORT: 19120
       QANTARA_OLLAMA_BASE_URL: http://ollama:11434
-      QANTARA_OLLAMA_MODEL: qwen2.5:3b
+      QANTARA_OLLAMA_MODEL: qwen3.5:2b
+      QANTARA_OLLAMA_THINK: "false"
     expose:
       - "19120"
     command: ["python", "gateway/ollama_session_backend/server.py"]

@@ -14,7 +14,7 @@ QANTARA_TLS_CERT=ops/certs/qantara-cert.pem \
 QANTARA_TLS_KEY=ops/certs/qantara-key.pem \
 QANTARA_ADAPTER=openai_compatible \
 QANTARA_OPENAI_BASE_URL=http://127.0.0.1:11434 \
-QANTARA_OPENAI_MODEL=qwen2.5:3b \
+QANTARA_OPENAI_MODEL=qwen3.5:2b \
 ./.venv/bin/python gateway/transport_spike/server.py
 ```
 

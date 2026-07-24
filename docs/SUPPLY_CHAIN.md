@@ -9,15 +9,15 @@ Qantara runs AI models locally. This document explains what gets downloaded, fro
 | `faster-whisper` model (e.g., `base.en`) | HuggingFace Hub (`Systran/faster-whisper-*`) | First STT call | ~100 MB |
 | `Kokoro-82M` model assets + voice packs | HuggingFace Hub (`hexgrad/Kokoro-82M`) | First Kokoro TTS call | ~350 MB |
 | Piper voices (`en_US-lessac-medium.onnx` etc.) | You download manually to `models/piper/` | Pre-installed by user | ~20 MB each |
-| Ollama model (`qwen2.5:3b` by default in Docker) | `registry.ollama.ai` | `docker compose up` or first run | ~2 GB |
+| Ollama model (`qwen3.5:2b` by default in Docker) | `registry.ollama.ai` | `docker compose up` or first run | ~2.7 GB |
 | Python/ML dependencies | PyPI via `pip` | `pip install -r requirements.txt` or Docker build | Several GB in the Docker image because speech packages include large ML wheels |
 
 ## Who verifies integrity
 
 - **HuggingFace Hub downloads** (faster-whisper, Kokoro): the `huggingface_hub` library (used internally by `faster-whisper` and `kokoro`) verifies files by content-addressed ETags. Files are named by commit SHA; a tampered repo would require either HuggingFace compromise or a downgrade attack.
-- **PyPI installs**: pip verifies wheel hashes when they appear in the lock file. `gateway/transport_spike/requirements.txt` uses loose version ranges (`aiohttp>=3.9,<4`). For production, pin exact versions with `pip-compile` and commit the result.
+- **PyPI installs**: pip verifies the exact versions and wheel hashes committed in `gateway/transport_spike/requirements.txt`. The CPU-only PyTorch index and version are pinned in the corresponding `.in` file.
 - **Ollama images**: Ollama models are content-addressed by SHA256 internally; the Ollama registry verifies on pull.
-- **Docker images**: `ollama/ollama:latest` is a floating tag — pin to a digest for reproducible builds (`ollama/ollama@sha256:...`).
+- **Docker images**: Compose pins the validated `ollama/ollama:0.32.3` version tag. Hardened deployments can pin the matching architecture-specific digest for fully reproducible pulls (`ollama/ollama@sha256:...`).
 - **Piper voices**: you download manually. Verify against the [Piper voices release](https://huggingface.co/rhasspy/piper-voices) SHA256 sums published with each voice.
 
 ## What Qantara does *not* yet do
@@ -27,6 +27,28 @@ Qantara runs AI models locally. This document explains what gets downloaded, fro
 - No SBOM generation in CI.
 
 These are hardening items for v0.3.x+.
+
+## Regenerating Python lock files
+
+The two runtime lock files are universal locks generated for Qantara's minimum
+supported Python 3.11 from their adjacent `.in` files:
+
+```bash
+uv pip compile --universal --generate-hashes --python-version 3.11 \
+  --index-strategy unsafe-best-match --emit-index-url \
+  --output-file gateway/transport_spike/requirements.txt \
+  gateway/transport_spike/requirements.in
+
+uv pip compile --universal --generate-hashes --python-version 3.11 \
+  --index-strategy unsafe-best-match --emit-index-url \
+  --output-file ops/docker/requirements.txt \
+  ops/docker/requirements.in
+```
+
+The `unsafe-best-match` index strategy is required because PyTorch's CPU index
+and PyPI both publish the `torch` package. The universal lock selects
+`2.13.0+cpu` off macOS and the CPU-only `2.13.0` macOS wheels, with every
+resolved artifact hash pinned.
 
 ## Manual verification (air-gapped or audit contexts)
 

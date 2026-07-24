@@ -21,6 +21,7 @@ from gateway.transport_spike.auth import (
 )
 from gateway.transport_spike.common import CLIENT_SETUP_DIR, CLIENT_SPIKE_DIR, CLIENT_TRANSLATE_DIR, IDENTITY_DIR
 from gateway.transport_spike.runtime import APP_RUNTIME_KEY, GatewayRuntime
+from gateway.transport_spike.voice_api import mount_voice_api
 
 _TEST_URL_RATE_LIMIT_WINDOW_S = 10.0
 _TEST_URL_RATE_LIMIT_MAX_CALLS = 8
@@ -58,7 +59,9 @@ async def probe_ollama() -> dict[str, Any]:
                 data = await resp.json()
                 models = []
                 for m in data.get("models", []):
-                    name = m.get("name", "")
+                    if not isinstance(m, dict):
+                        continue
+                    name = m.get("name") or m.get("model") or ""
                     if name:
                         size_bytes = m.get("size", 0)
                         models.append({"name": name, "size_gb": round(size_bytes / (1024 ** 3), 1) if size_bytes else None, "family": m.get("details", {}).get("family", ""), "param_size": m.get("details", {}).get("parameter_size", "")})
@@ -1050,6 +1053,7 @@ async def api_mesh_status_handler(request: web.Request) -> web.Response:
 
 
 def mount_static_routes(app: web.Application) -> None:
+    mount_voice_api(app)
     app.router.add_get("/", index_handler)
     app.router.add_get("/api/auth/status", api_auth_status_handler)
     app.router.add_post("/api/auth/login", api_auth_login_handler)

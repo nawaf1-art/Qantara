@@ -1,6 +1,6 @@
 # Roadmap
 
-Current version: `0.2.10` (Python SDK)
+Current version: `0.2.12` (Ollama compatibility and audit hardening)
 
 This roadmap is the single source of truth for what to build and in what order. It is designed to be read by humans, Claude Code, and Codex alike.
 
@@ -214,19 +214,19 @@ Shipped 2026-04-19. 22 tasks landed across 5 phases: mesh foundation, election, 
 
 The items below complete the public-launch bundle and the post-launch roadmap.
 
-#### `0.2.3` — [Tier 1] Voice-as-API (HTTP/WS for any local app)
+#### `0.2.3` — [Tier 1] Voice-as-API (HTTP/WS for any local app) — PREPARED AS `0.2.11`, SHIPPED IN `0.2.12`
 
 **Why:** Second strongest wedge in both research passes. Expands Qantara's addressable audience from "people who want a voice assistant" to "every developer with a local app that could benefit from voice." An Obsidian plugin, a terminal tool, a Home Assistant automation — anyone can POST to Qantara and get streamed TTS or submit audio for STT + agent reply. Reinforces the "voice transport, not monolith app" positioning.
 
-- [ ] `POST /api/v1/speak` — accepts `{text, voice_id?, route?}`, streams back audio/pcm or audio/wav. `route` can target a specific mesh peer from 0.2.2
-- [ ] `POST /api/v1/transcribe` — accepts audio body, returns text. Streams partials if `?stream=true`
-- [ ] `POST /api/v1/converse` — accepts `{text | audio, backend?, session_id?}`, runs the full STT→adapter→TTS loop, streams events back as SSE
-- [ ] `WS /api/v1/stream` — bi-directional streaming variant for long-lived integrations
-- [ ] Auth via existing `QANTARA_AUTH_TOKEN` (already landed in commit `d4d15ed`)
-- [ ] Example clients: 3-line shell (`curl`), 5-line Python, 5-line Node, one Obsidian plugin snippet
-- [ ] Rate limit + audit log per token
+- [x] `POST /api/v1/speak` — accepts `{text, voice_id?, speech_rate?}`, returns audio/wav (or `?format=pcm`). `route` mesh-peer targeting deferred to 0.3.x
+- [x] `POST /api/v1/transcribe` — accepts WAV or raw-PCM16 audio body, returns text + language. `?stream=true` partials deferred to 0.3.x
+- [x] `POST /api/v1/converse` — accepts `{text, session_id?}`, runs the turn through the configured adapter, streams agent-protocol events back as SSE. Audio-body input deferred with the streaming variant
+- [ ] `WS /api/v1/stream` — bi-directional streaming variant for long-lived integrations (deferred to 0.3.x; the `/ws` transport covers live audio today)
+- [x] Auth via existing `QANTARA_AUTH_TOKEN`
+- [x] Example clients: shell (`curl`+`aplay`), Python, Node in `docs/examples/clients/`
+- [x] Audit log per request (`qantara.voice_api` logger); rate limiting deferred to 0.3.x
 
-**Files:** `gateway/transport_spike/http_api.py` (new endpoints), `docs/VOICE_API.md` (new), `docs/examples/clients/*` (new), `tests/test_voice_api.py` (new)
+**Files:** `gateway/transport_spike/voice_api.py` (new), `docs/VOICE_API.md` (new), `docs/examples/clients/*` (new), `tests/test_voice_api.py` (new)
 **Effort:** 4-6 days
 **Ship when:** `curl -X POST localhost:8765/api/v1/speak -d '{"text":"hello"}' | play` works; a 10-line example app using `/converse` runs end-to-end
 
@@ -327,7 +327,7 @@ Planned together post-launch as a single MCP release. **Client:** talk to any MC
 **Files:** `protocols/agent.md` (new), `adapters/base.py`, `client/transport-spike/index.html`
 **Effort:** 3-4 days
 
-#### `0.2.10` — Python SDK (`pip install qantara`) — DONE (2026-06-10, branch `release/0.2.10-pip-package`, pending merge/tag; PyPI upload is a separate owner step)
+#### `0.2.10` — Python SDK (`pip install qantara`) — RELEASED (2026-06-10; PyPI upload is a separate owner step)
 
 - [x] Package structure with `pyproject.toml` — hatchling build; wheel ships `qantara` plus the existing top-level packages and client/identity assets (the `qantara.*` namespace consolidation is 0.3.x work); base dependency is aiohttp only, with `speech` / `mesh` / `mcp` extras
 - [x] `from qantara import VoiceGateway` works — `create_app()` for embedding, `run()` for standalone; verified by clean-venv wheel install + HTTP smoke
@@ -472,6 +472,8 @@ Basic EN↔AR translation shipped in 0.2.5. This item extends it:
 0.2.8          ✅ MCP client + server (postponed from 0.2.1)
 0.2.9          ✅ Agent protocol v1 + tool-call formalization
 0.2.10         ✅ pip install qantara
+0.2.11         ↪ Untagged; Voice-as-API work carried into 0.2.12
+0.2.12         ✅ Ollama compatibility, stream correctness, audit fixes, dependency hardening
 0.3.0          ⬜ Phase 2 complete
 0.3.1          ⬜ Home Assistant
 0.3.2          ⬜ Speech-native models

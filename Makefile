@@ -19,7 +19,7 @@ fake-backend-run-venv:
 	QANTARA_FAKE_BACKEND_HOST=$${QANTARA_FAKE_BACKEND_HOST:-127.0.0.1} QANTARA_FAKE_BACKEND_PORT=$${QANTARA_FAKE_BACKEND_PORT:-19110} ./.venv/bin/python gateway/fake_session_backend/server.py
 
 real-backend-run-venv:
-	QANTARA_REAL_BACKEND_HOST=$${QANTARA_REAL_BACKEND_HOST:-127.0.0.1} QANTARA_REAL_BACKEND_PORT=$${QANTARA_REAL_BACKEND_PORT:-19120} QANTARA_OLLAMA_BASE_URL=$${QANTARA_OLLAMA_BASE_URL:-http://127.0.0.1:11434} QANTARA_OLLAMA_MODEL=$${QANTARA_OLLAMA_MODEL:-qwen2.5:7b} ./.venv/bin/python gateway/ollama_session_backend/server.py
+	QANTARA_REAL_BACKEND_HOST=$${QANTARA_REAL_BACKEND_HOST:-127.0.0.1} QANTARA_REAL_BACKEND_PORT=$${QANTARA_REAL_BACKEND_PORT:-19120} QANTARA_OLLAMA_BASE_URL=$${QANTARA_OLLAMA_BASE_URL:-http://127.0.0.1:11434} QANTARA_OLLAMA_MODEL=$${QANTARA_OLLAMA_MODEL:-qwen3.5:2b} ./.venv/bin/python gateway/ollama_session_backend/server.py
 
 spike-clean:
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

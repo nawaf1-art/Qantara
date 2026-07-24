@@ -182,12 +182,16 @@
           scriptNode.connect(audioContext.destination);
           scriptNode.onaudioprocess = function (e) {
             var chan = e.inputBuffer.getChannelData(0);
-            var pcm = new Int16Array(chan.length);
+            // Frame PCM exactly like the transport-spike client: a leading
+            // PCM_KIND byte (0x01) the /ws server requires, then Int16 LE samples.
+            var frame = new ArrayBuffer(1 + chan.length * 2);
+            var view = new DataView(frame);
+            view.setUint8(0, 0x01);
             for (var i = 0; i < chan.length; i++) {
               var s = Math.max(-1, Math.min(1, chan[i]));
-              pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+              view.setInt16(1 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
             }
-            if (socket.readyState === WebSocket.OPEN) socket.send(pcm.buffer);
+            if (socket.readyState === WebSocket.OPEN) socket.send(frame);
           };
           sendJson({ type: "mic_stream_started", sample_rate: 16000 });
           isRecording = true;

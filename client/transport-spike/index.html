@@ -2222,7 +2222,7 @@
         const status = await response.json();
         if (status.required && !status.authenticated) {
           log("auth required: unlock Qantara from the setup page first");
-          showMicPermissionError("Qantara is locked. Open the setup page and enter QANTARA_AUTH_TOKEN.");
+          setMicPermissionError("Qantara is locked. Open the setup page and enter QANTARA_AUTH_TOKEN.");
           setTimeout(() => { window.location.href = "/setup?auth=1"; }, 800);
           return false;
         }

@@ -80,7 +80,7 @@ http://localhost:8765
 Recommended local backend:
 
 ```bash
-ollama pull qwen2.5:3b
+ollama pull qwen3.5:2b
 ollama serve
 ```
 

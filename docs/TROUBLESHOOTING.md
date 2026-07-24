@@ -6,7 +6,7 @@ Common problems and how to fix them. If your issue isn't here, open a GitHub iss
 
 ### `docker compose up` is stuck "pulling" for minutes
 
-Expected on first run. The initial build downloads the Ollama image, a ~2 GB LLM (`qwen2.5:3b`), and builds the Qantara image with Python/ML speech dependencies. Plan for roughly 8–10 GB of disk, plus temporary Docker build cache, and 5–10 minutes on a reasonable connection. Subsequent runs start in seconds.
+Expected on first run. The initial build downloads the Ollama image, the ~2.7 GB `qwen3.5:2b` model, and builds the Qantara image with Python/ML speech dependencies. Plan for roughly 8–10 GB of disk, plus temporary Docker build cache, and 5–10 minutes on a reasonable connection. Subsequent runs start in seconds.
 
 If you see no progress for 10+ minutes, check Docker Desktop's status and your disk space.
 
@@ -53,7 +53,7 @@ Check the browser's sound settings. The page has a playback indicator — if it 
 
 - Is Ollama running? Test with `curl http://localhost:11434/api/tags`.
 - Using Docker? The included compose file spins up Ollama automatically — wait for `qantara-ollama-pull` to finish.
-- Using the manual path? Install Ollama separately, run `ollama pull qwen2.5:3b` (or your model), then start the gateway.
+- Using the manual path? Install Ollama separately, run `ollama pull qwen3.5:2b` (or your model), then start the gateway.
 
 ### OpenClaw does not appear in setup
 
@@ -72,7 +72,7 @@ Expected in most first-run setups. OpenClaw is an advanced optional bridge and o
 Cold-start penalty. First time each of STT, TTS, and the LLM run they load weights. Expected:
 - `faster-whisper base.en`: 2–3s cold, ~100ms warm
 - `kokoro`: 3–5s cold, ~800ms warm
-- `qwen2.5:3b`: 5–10s cold, ~1s warm
+- `qwen3.5:2b`: timing varies by hardware; disable thinking for the lowest voice latency
 
 After the first turn, subsequent responses are much faster.
 

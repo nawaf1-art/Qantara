@@ -4,15 +4,23 @@ Use this before tagging a public release.
 
 ## Latest Validation Note
 
-Local release checkpoint passed on 2026-04-28 from `public-main` plus the local language-catalog fix. The fast native checks, benchmark snapshot, Docker build, Docker setup page, authenticated backend discovery, language catalog check, and Docker WebSocket/backend/TTS smoke all passed. Docker was published on `127.0.0.1:9877` because a separate local `python3` process was already listening on port `8765`.
-
-The `v0.2.6` tag already exists at the original public-launch commit. Do not move it. The post-launch hardening work is being tagged as `v0.2.7`; MCP moved forward to `0.2.8`.
+The current candidate is `v0.2.12`. It combines the unmerged Voice-as-API
+`0.2.11` branch with the July audit fixes, current Ollama compatibility work,
+and dependency hardening. GitHub PR #15 and the absent `v0.2.11` tag must be
+accounted for before publishing: merge the combined `0.2.12` candidate and
+close the superseded PR rather than moving or inventing an old tag.
 
 ## Automated Checks
 
-- [ ] `make test`
-- [ ] `ruff check .`
-- [ ] `./.venv/bin/python scripts/bench_launch.py --arabic`
+- [ ] `python -m unittest discover -s tests -v`
+- [ ] `python -m ruff check .`
+- [ ] `python -m compileall -q adapters discovery gateway providers qantara scripts`
+- [ ] `python -m pip_audit -r ops/docker/requirements.txt --disable-pip`
+- [ ] Build wheel and sdist with `python -m build`
+- [ ] Install the wheel in a clean environment and verify `qantara.__version__`
+- [ ] Run the browser inline-script syntax check
+- [ ] `python scripts/bench_launch.py --json --barge-in-iterations 20 --tts-iterations 0`
+- [ ] Validate `/api/version`, `/api/tags`, `/api/chat`, and `/v1/models` against the current Ollama release
 - [ ] Docker build succeeds: `docker compose build`
 - [ ] Docker first run reaches setup page: `docker compose up`
 - [ ] CI passes on Linux, macOS, and Windows
@@ -33,10 +41,10 @@ The `v0.2.6` tag already exists at the original public-launch commit. Do not mov
 ## Publication Safety
 
 - [ ] `git status --short` is clean
-- [ ] `git grep -n -I -E 'ghp_|github_pat_|sk-[A-Za-z0-9]|BEGIN .*PRIVATE KEY' -- .` has no real secrets
+- [ ] Tracked-file secret scan reports no matching file names (do not print secret values)
 - [ ] No tracked local certs or model weights: `git ls-files 'ops/certs/*' 'models/piper/*.onnx'`
 - [ ] `docs/SECURITY_PUBLICATION_AUDIT.md` reviewed
-- [ ] Public repository will be populated from `public-main`, not private `main`
+- [ ] Release branch targets the public repository's `main`
 
 ## GitHub Repository Setup
 
@@ -64,23 +72,22 @@ Before publishing:
 
 ## Tag and Release
 
-First public tag, already created:
+Release tag:
 
 ```text
-v0.2.6
+v0.2.12
 ```
 
 Commands:
 
 ```bash
-git tag -a v0.2.6 -m "v0.2.6 public launch"
-git push <public-remote> public-main:main
-git push <public-remote> v0.2.6
-gh release create v0.2.6 \
-  --title "v0.2.6 - Public launch" \
-  --notes-file docs/FIRST_PUBLIC_RELEASE_NOTES_DRAFT.md
+git tag -a v0.2.12 -m "v0.2.12 Ollama compatibility and audit hardening"
+git push origin v0.2.12
+gh release create v0.2.12 \
+  --title "v0.2.12 - Ollama compatibility and audit hardening" \
+  --notes-file docs/RELEASE_NOTES_0.2.12.md
 ```
 
-Do not run these until the blockers in `docs/PUBLISHING_READINESS_AUDIT.md` are resolved or explicitly accepted.
-
-For the post-launch hardening release, do not reuse `v0.2.6`. Use `v0.2.7`, and keep `VERSION`, `pyproject.toml`, `CHANGELOG.md`, and `ROADMAP.md` aligned in the release commit.
+Do not tag until the combined pull request is merged, CI is green, and
+`VERSION`, `pyproject.toml`, `CHANGELOG.md`, `README.md`, and `ROADMAP.md`
+all agree on `0.2.12`.

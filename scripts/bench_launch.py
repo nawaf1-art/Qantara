@@ -226,18 +226,19 @@ async def measure_tts(provider_kind: str, voice_id: str | None, iterations: int,
 
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     series: list[Series] = [await measure_barge_in(args.barge_in_iterations)]
-    tts = await measure_tts(args.tts_provider, args.voice_id, args.tts_iterations, args.text)
-    if tts is not None:
-        series.append(tts)
-    if args.arabic:
-        arabic = await measure_tts(
-            args.tts_provider,
-            "ar_JO-kareem-medium",
-            args.tts_iterations,
-            "مرحبا، قنطرة جاهزة للمحادثة الصوتية المحلية.",
-        )
-        if arabic is not None:
-            series.append(arabic)
+    if args.tts_iterations > 0:
+        tts = await measure_tts(args.tts_provider, args.voice_id, args.tts_iterations, args.text)
+        if tts is not None:
+            series.append(tts)
+        if args.arabic:
+            arabic = await measure_tts(
+                args.tts_provider,
+                "ar_JO-kareem-medium",
+                args.tts_iterations,
+                "مرحبا، قنطرة جاهزة للمحادثة الصوتية المحلية.",
+            )
+            if arabic is not None:
+                series.append(arabic)
 
     return {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -273,6 +274,10 @@ def main() -> int:
     parser.add_argument("--voice-id", default=None)
     parser.add_argument("--text", default="Qantara is ready for a local voice conversation.")
     args = parser.parse_args()
+    if args.barge_in_iterations <= 0:
+        parser.error("--barge-in-iterations must be greater than zero")
+    if args.tts_iterations < 0:
+        parser.error("--tts-iterations cannot be negative")
 
     payload = asyncio.run(run(args))
     if args.json:

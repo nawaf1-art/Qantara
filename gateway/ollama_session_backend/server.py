@@ -15,13 +15,20 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from gateway.session_backend_prompts import build_voice_turn_context_prompt  # noqa: E402
+from qantara.streaming import iter_ndjson_objects  # noqa: E402
 
 DEFAULT_HOST = os.environ.get("QANTARA_REAL_BACKEND_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("QANTARA_REAL_BACKEND_PORT", "19120"))
 OLLAMA_BASE_URL = os.environ.get("QANTARA_OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
-OLLAMA_MODEL = os.environ.get("QANTARA_OLLAMA_MODEL", "qwen2.5:7b")
+OLLAMA_MODEL = os.environ.get("QANTARA_OLLAMA_MODEL", "qwen3.5:2b")
 OLLAMA_KEEP_ALIVE = os.environ.get("QANTARA_OLLAMA_KEEP_ALIVE", "15m")
 OLLAMA_TIMEOUT_SECONDS = float(os.environ.get("QANTARA_OLLAMA_TIMEOUT", "120"))
+OLLAMA_THINK = os.environ.get("QANTARA_OLLAMA_THINK", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 MAX_HISTORY_TURNS = max(1, int(os.environ.get("QANTARA_MAX_HISTORY_TURNS", "6")))
 MAX_SESSIONS = max(1, int(os.environ.get("QANTARA_BACKEND_MAX_SESSIONS", "64")))
 MAX_TURNS_PER_SESSION = 24
@@ -175,8 +182,16 @@ async def health_handler(_: web.Request) -> web.Response:
 
 
 async def create_session_handler(request: web.Request) -> web.Response:
-    payload = await request.json()
-    session_handle = BACKEND.create_session(payload.get("client_context"))
+    try:
+        payload = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError, web.HTTPBadRequest):
+        return web.json_response({"error": "invalid JSON object"}, status=400)
+    if not isinstance(payload, dict):
+        return web.json_response({"error": "invalid JSON object"}, status=400)
+    client_context = payload.get("client_context")
+    if client_context is not None and not isinstance(client_context, dict):
+        return web.json_response({"error": "client_context must be an object"}, status=400)
+    session_handle = BACKEND.create_session(client_context)
     return web.json_response({"session_handle": session_handle})
 
 
@@ -185,12 +200,21 @@ async def create_turn_handler(request: web.Request) -> web.Response:
     if session_handle not in BACKEND.sessions:
         return web.json_response({"error": "unknown session handle"}, status=404)
 
-    payload = await request.json()
-    transcript = (payload.get("transcript") or "").strip()
+    try:
+        payload = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError, web.HTTPBadRequest):
+        return web.json_response({"error": "invalid JSON object"}, status=400)
+    if not isinstance(payload, dict):
+        return web.json_response({"error": "invalid JSON object"}, status=400)
+    raw_transcript = payload.get("transcript")
+    transcript = raw_transcript.strip() if isinstance(raw_transcript, str) else ""
     if not transcript:
         return web.json_response({"error": "empty transcript"}, status=400)
 
-    turn_handle = BACKEND.create_turn(session_handle, transcript, payload.get("turn_context"))
+    turn_context = payload.get("turn_context")
+    if turn_context is not None and not isinstance(turn_context, dict):
+        return web.json_response({"error": "turn_context must be an object"}, status=400)
+    turn_handle = BACKEND.create_turn(session_handle, transcript, turn_context)
     return web.json_response({"turn_handle": turn_handle})
 
 
@@ -205,11 +229,16 @@ async def _ollama_stream_messages(session_state: SessionState, transcript: str, 
         "messages": messages,
         "stream": True,
         "keep_alive": OLLAMA_KEEP_ALIVE,
+        "think": OLLAMA_THINK,
     }
 
     timeout = aiohttp.ClientTimeout(total=OLLAMA_TIMEOUT_SECONDS)
     client = aiohttp.ClientSession(timeout=timeout)
-    response = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
+    try:
+        response = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
+    except Exception:
+        await client.close()
+        raise
     return client, response
 
 
@@ -237,6 +266,7 @@ async def stream_turn_events_handler(request: web.Request) -> web.StreamResponse
     client: aiohttp.ClientSession | None = None
     upstream: aiohttp.ClientResponse | None = None
     full_text = ""
+    saw_thinking = False
     try:
         client, upstream = await _ollama_stream_messages(session_state, turn.transcript, turn.turn_context)
         if upstream.status >= 400:
@@ -245,25 +275,42 @@ async def stream_turn_events_handler(request: web.Request) -> web.StreamResponse
             await response.write_eof()
             return response
 
-        async for chunk in upstream.content:
+        async for payload in iter_ndjson_objects(upstream.content):
             if turn.cancelled:
                 await response.write((json.dumps({"type": "cancel_acknowledged", "turn_handle": turn_handle}) + "\n").encode("utf-8"))
                 await response.write_eof()
                 return response
 
-            line = chunk.decode("utf-8", errors="replace").strip()
-            if not line:
-                continue
-
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+            upstream_error = payload.get("error")
+            if upstream_error:
+                message = upstream_error if isinstance(upstream_error, str) else json.dumps(upstream_error)
+                await response.write(
+                    (
+                        json.dumps(
+                            {
+                                "type": "turn_failed",
+                                "message": message,
+                                "turn_handle": turn_handle,
+                            }
+                        )
+                        + "\n"
+                    ).encode("utf-8")
+                )
+                await response.write_eof()
+                return response
 
             if payload.get("done"):
                 break
 
-            delta = ((payload.get("message") or {}).get("content")) or ""
+            message = payload.get("message")
+            if not isinstance(message, dict):
+                continue
+            thinking = message.get("thinking")
+            saw_thinking = saw_thinking or (
+                isinstance(thinking, str) and bool(thinking)
+            )
+            content = message.get("content")
+            delta = content if isinstance(content, str) else ""
             if not delta:
                 continue
 
@@ -272,6 +319,25 @@ async def stream_turn_events_handler(request: web.Request) -> web.StreamResponse
 
         if turn.cancelled:
             await response.write((json.dumps({"type": "cancel_acknowledged", "turn_handle": turn_handle}) + "\n").encode("utf-8"))
+            await response.write_eof()
+            return response
+
+        if not full_text:
+            message = "model returned no assistant content"
+            if saw_thinking:
+                message += "; reasoning was withheld from voice output"
+            await response.write(
+                (
+                    json.dumps(
+                        {
+                            "type": "turn_failed",
+                            "message": message,
+                            "turn_handle": turn_handle,
+                        }
+                    )
+                    + "\n"
+                ).encode("utf-8")
+            )
             await response.write_eof()
             return response
 

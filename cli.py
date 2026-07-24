@@ -3,7 +3,7 @@
 Usage examples:
     python cli.py --backend mock
     python cli.py --backend ollama
-    python cli.py --backend ollama --model qwen2.5:7b
+    python cli.py --backend ollama --model qwen3.5:2b
     python cli.py --backend openclaw --agent main
     python cli.py --backend http://my-service:8080
 
@@ -58,7 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--model",
         default=None,
-        help="Model name for Ollama backend (e.g. qwen2.5:7b).",
+        help="Model name for Ollama backend (e.g. qwen3.5:2b).",
     )
     parser.add_argument(
         "--agent",
