@@ -20,6 +20,7 @@ import aiohttp
 
 from adapters.base import AdapterConfig, AdapterHealth, RuntimeAdapter
 from gateway.session_backend_prompts import build_voice_turn_context_prompt
+from qantara.streaming import iter_sse_json_objects
 
 # Voice-optimized system prompt: short responses, conversational, no markdown.
 DEFAULT_SYSTEM_PROMPT = (
@@ -56,15 +57,17 @@ def _normalize_error(body: str) -> str:
     return body.strip() or "unknown error"
 
 
-def _extract_sse_data(line: str) -> str | None:
-    payload = line.strip()
-    if not payload:
-        return None
-    if payload.startswith("data: "):
-        return payload[6:].strip()
-    if payload.startswith("data:"):
-        return payload[5:].strip()
-    return None
+def _extract_answer_delta(delta: object) -> tuple[str, bool]:
+    """Return only user-facing content and flag hidden reasoning separately."""
+    if not isinstance(delta, dict):
+        return "", False
+    content = delta.get("content")
+    answer = content if isinstance(content, str) else ""
+    has_reasoning = any(
+        isinstance(delta.get(key), str) and bool(delta[key])
+        for key in ("reasoning", "reasoning_content", "thinking")
+    )
+    return answer, has_reasoning
 
 
 class OpenAICompatibleAdapter(RuntimeAdapter):
@@ -99,6 +102,10 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
             self.config.options.get("timeout_first_token")
             or os.environ.get("QANTARA_OPENAI_TIMEOUT_FIRST_TOKEN", "30")
         )
+        self.reasoning_effort = (
+            self.config.options.get("reasoning_effort")
+            or os.environ.get("QANTARA_OPENAI_REASONING_EFFORT", "")
+        ).strip()
 
         self.max_sessions = int(
             self.config.options.get("max_sessions")
@@ -145,7 +152,7 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
                         if resp.status < 400:
                             self._api_prefix = prefix
                             return prefix
-                except Exception:
+                except (aiohttp.ClientError, TimeoutError):
                     continue
 
         # Default to /v1 if we can't detect
@@ -165,11 +172,17 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
                     if resp.status >= 400:
                         return ""
                     data = await resp.json()
+                    if not isinstance(data, dict):
+                        return ""
                     models = data.get("data", [])
-                    if models:
-                        return models[0].get("id", "")
-        except Exception:
-            pass
+                    if not isinstance(models, list) or not models:
+                        return ""
+                    first = models[0]
+                    if isinstance(first, dict):
+                        model_id = first.get("id")
+                        return model_id if isinstance(model_id, str) else ""
+        except (aiohttp.ClientError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError):
+            return ""
         return ""
 
     async def start_or_resume_session(
@@ -276,6 +289,8 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
             "messages": messages,
             "stream": True,
         }
+        if self.reasoning_effort:
+            payload["reasoning_effort"] = self.reasoning_effort
 
         timeout = aiohttp.ClientTimeout(
             sock_connect=self.timeout_connect,
@@ -283,6 +298,8 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
         )
 
         full_response = ""
+        saw_reasoning = False
+        stream_error = ""
 
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -302,104 +319,59 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
                         yield {"type": "turn_failed", "message": error_msg}
                         return
 
-                    buffer = ""
-                    stream_done = False
-                    async for chunk in resp.content:
+                    async for event in iter_sse_json_objects(resp.content):
                         if not self._active_turns.get(turn_handle, False):
                             break  # Cancelled
 
-                        buffer += chunk.decode("utf-8", errors="replace")
-
-                        while "\n" in buffer:
-                            line, buffer = buffer.split("\n", 1)
-                            line = line.strip()
-
-                            if not line:
-                                continue
-
-                            data_str = _extract_sse_data(line)
-                            if data_str is None:
-                                continue
-
-                            if data_str == "[DONE]":
-                                stream_done = True
-                                break
-
-                            if not data_str:
-                                continue
-
-                            try:
-                                event = json.loads(data_str)
-                            except json.JSONDecodeError:
-                                continue
-
-                            # Extract content from delta
-                            choices = event.get("choices", [])
-                            if not choices:
-                                continue
-
-                            delta = choices[0].get("delta", {})
-                            # Handle both content and reasoning_content (vLLM)
-                            content = (
-                                delta.get("content")
-                                or delta.get("reasoning_content")
-                                or ""
-                            )
-
-                            if content:
-                                full_response += content
-                                yield {
-                                    "type": "assistant_text_delta",
-                                    "text": content,
-                                }
-                        if stream_done:
+                        if event.get("error"):
+                            stream_error = _normalize_error(json.dumps(event))
                             break
-                    if not stream_done and buffer.strip():
-                        data_str = _extract_sse_data(buffer)
-                        if data_str and data_str != "[DONE]":
-                            try:
-                                event = json.loads(data_str)
-                            except json.JSONDecodeError:
-                                event = None
-                            if event is not None:
-                                choices = event.get("choices", [])
-                                if choices:
-                                    delta = choices[0].get("delta", {})
-                                    content = (
-                                        delta.get("content")
-                                        or delta.get("reasoning_content")
-                                        or ""
-                                    )
-                                    if content:
-                                        full_response += content
-                                        yield {
-                                            "type": "assistant_text_delta",
-                                            "text": content,
-                                        }
+
+                        choices = event.get("choices", [])
+                        if (
+                            not isinstance(choices, list)
+                            or not choices
+                            or not isinstance(choices[0], dict)
+                        ):
+                            continue
+
+                        content, event_has_reasoning = _extract_answer_delta(
+                            choices[0].get("delta", {})
+                        )
+                        saw_reasoning = saw_reasoning or event_has_reasoning
+                        if content:
+                            full_response += content
+                            yield {
+                                "type": "assistant_text_delta",
+                                "text": content,
+                            }
 
         except aiohttp.ClientConnectorError:
-            self._rollback_user_message(session_handle)
-            self._cleanup_turn(turn_handle)
-            yield {
-                "type": "turn_failed",
-                "message": f"Cannot reach server at {self.base_url}. Is it running?",
-            }
+            yield self._finish_failed_or_cancelled(
+                session_handle,
+                turn_handle,
+                f"Cannot reach server at {self.base_url}. Is it running?",
+            )
             return
         except aiohttp.ServerTimeoutError:
-            self._rollback_user_message(session_handle)
-            self._cleanup_turn(turn_handle)
-            yield {
-                "type": "turn_failed",
-                "message": "Server not responding. The model may be loading — try again.",
-            }
+            yield self._finish_failed_or_cancelled(
+                session_handle,
+                turn_handle,
+                "Server not responding. The model may be loading — try again.",
+            )
             return
         except Exception as exc:
+            yield self._finish_failed_or_cancelled(
+                session_handle,
+                turn_handle,
+                str(exc),
+            )
+            return
+
+        if stream_error:
             self._rollback_user_message(session_handle)
             self._cleanup_turn(turn_handle)
-            yield {
-                "type": "turn_failed",
-                "message": str(exc),
-            }
+            yield {"type": "turn_failed", "message": stream_error}
             return
 
         # Clean up turn tracking
@@ -408,17 +380,25 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
 
         if was_cancelled:
             # Cancelled turn: emit cancel_acknowledged, do NOT save partial response
+            self._rollback_user_message(session_handle)
             yield {"type": "cancel_acknowledged"}
             return
 
+        if not full_response:
+            self._rollback_user_message(session_handle)
+            message = "model returned no assistant content"
+            if saw_reasoning:
+                message += "; reasoning was withheld from voice output"
+            yield {"type": "turn_failed", "message": message}
+            return
+
         # Emit final text for completed turns only
-        if full_response:
-            yield {"type": "assistant_text_final", "text": full_response}
-            # Save assistant response to conversation history
-            if session_handle in self._sessions:
-                self._sessions[session_handle].append(
-                    {"role": "assistant", "content": full_response}
-                )
+        yield {"type": "assistant_text_final", "text": full_response}
+        # Save assistant response to conversation history
+        if session_handle in self._sessions:
+            self._sessions[session_handle].append(
+                {"role": "assistant", "content": full_response}
+            )
 
         yield {"type": "turn_completed"}
 
@@ -427,6 +407,20 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
         messages = self._sessions.get(session_handle, [])
         if messages and messages[-1].get("role") == "user":
             messages.pop()
+
+    def _finish_failed_or_cancelled(
+        self,
+        session_handle: str,
+        turn_handle: str,
+        message: str,
+    ) -> dict[str, str]:
+        """Clean up a failed stream while preserving cancellation semantics."""
+        was_cancelled = not self._active_turns.get(turn_handle, False)
+        self._rollback_user_message(session_handle)
+        self._cleanup_turn(turn_handle)
+        if was_cancelled:
+            return {"type": "cancel_acknowledged"}
+        return {"type": "turn_failed", "message": message}
 
     def _cleanup_turn(self, turn_handle: str) -> None:
         """Drop per-turn state after completion, cancellation, or failure."""

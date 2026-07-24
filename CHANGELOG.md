@@ -4,10 +4,35 @@ All notable changes to Qantara are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reaches `1.0.0`. Until then, minor versions may include breaking changes — see the release notes on each tag.
 
-## [0.2.11] - 2026-06-10
+## [0.2.12] - 2026-07-24
 
 ### Added
-- Voice-as-API (roadmap `0.2.3`, shipped as `0.2.11`): `POST /api/v1/speak` (text → WAV/PCM audio), `POST /api/v1/transcribe` (WAV or raw-PCM16 audio → text + language), and `POST /api/v1/converse` (text turn → SSE stream of agent-protocol events, with optional `session_id` continuity). Auth via `QANTARA_AUTH_TOKEN`, per-request audit logging, runnable shell/Python/Node examples in `docs/examples/clients/`, and a new [docs/VOICE_API.md](docs/VOICE_API.md) guide.
+- Ollama compatibility guide covering the native and OpenAI-compatible API paths, thinking-model behavior, current model recommendations, and the Ollama `0.32.3` validation target.
+- Regression coverage for fragmented/coalesced NDJSON and SSE frames, split UTF-8 Arabic, reasoning-only responses, malformed bridge requests, and current Ollama model metadata.
+
+### Changed
+- Updated the default Ollama model from `qwen2.5` to the current, compact `qwen3.5:2b`; the setup page now prioritizes Qwen 3.5, Qwen 3, and Gemma 3 models.
+- Pinned the Docker Compose Ollama services to the validated `0.32.3` image instead of the floating `latest` tag.
+- Disabled Ollama thinking by default on the native voice bridge to reduce first-audio latency. Hidden reasoning remains available as an opt-in but is never sent to TTS.
+- Refreshed the pinned Python/ML stack, including aiohttp 3.14, MCP 1.28, CPU-only PyTorch 2.13, Wyoming 1.10, and zeroconf 0.150.
+- Wyoming discovery now reports the actual Qantara package version instead of the stale `0.2.2` value.
+
+### Fixed
+- Ollama NDJSON parsing no longer assumes one HTTP chunk per JSON object, so split records, coalesced records, and multibyte text are preserved.
+- The OpenAI-compatible SSE parser now uses incremental UTF-8 decoding and never promotes `reasoning`, `reasoning_content`, or `thinking` fields into spoken assistant output.
+- The generic session-gateway stream parser now preserves multibyte text split across network chunks.
+- Cancelling a direct OpenAI-compatible stream now acknowledges the cancellation even when closing the HTTP response raises a connection error, and rolls the interrupted user turn out of history.
+- Native Ollama and OpenAI-compatible streams now fail clearly on reasoning-only or empty responses instead of completing a silent turn.
+- The Ollama session bridge rejects malformed JSON shapes with a 400 response and closes its HTTP client if connection setup fails.
+- Includes the July platform-audit fixes for translator PCM framing, converse timeout/session recovery, barge-in during turn acceptance, control-speech state, auth-lock UI behavior, and Docker build-context exclusions.
+
+### Security
+- Upgraded direct and transitive dependencies to patched releases, kept the universal lock compatible with Python 3.11, and pinned the Docker speech stack to the CPU-only PyTorch index, avoiding unintended CUDA package installation.
+
+## 0.2.11 - Unreleased (superseded by 0.2.12)
+
+### Added
+- Voice-as-API was prepared on the `0.2.11` branch but never tagged. It ships in `0.2.12`: `POST /api/v1/speak` (text → WAV/PCM audio), `POST /api/v1/transcribe` (WAV or raw-PCM16 audio → text + language), and `POST /api/v1/converse` (text turn → SSE stream of agent-protocol events, with optional `session_id` continuity). Auth uses `QANTARA_AUTH_TOKEN`; examples live in `docs/examples/clients/`; see [docs/VOICE_API.md](docs/VOICE_API.md).
 
 ### Fixed
 - Mesh server shutdown no longer hangs while peers are still connected (found during real-network verification of `QANTARA_MESH_TOKEN`).
@@ -195,7 +220,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - 39 lint issues surfaced by ruff: unused imports, deprecated typing imports, missing `raise … from`, unused variables, import ordering.
 - Version references aligned on `0.1.9-pre` across `VERSION`, `AGENTS.md`, `README.md`, and `ROADMAP.md`.
 
-[Unreleased]: https://github.com/nawaf1-art/Qantara/compare/v0.2.8...HEAD
+[Unreleased]: https://github.com/nawaf1-art/Qantara/compare/v0.2.12...HEAD
+[0.2.12]: https://github.com/nawaf1-art/Qantara/compare/v0.2.10...v0.2.12
+[0.2.10]: https://github.com/nawaf1-art/Qantara/compare/v0.2.9...v0.2.10
+[0.2.9]: https://github.com/nawaf1-art/Qantara/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/nawaf1-art/Qantara/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/nawaf1-art/Qantara/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/nawaf1-art/Qantara/releases/tag/v0.2.6

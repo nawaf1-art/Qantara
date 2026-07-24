@@ -1,9 +1,12 @@
-aiohttp==3.13.5
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+aiohttp==3.14.3
 faster-whisper==1.2.1
 kokoro==0.9.4
-mcp==1.27.*
+mcp==1.28.*
 numpy==2.4.4
 soundfile==0.13.1
-spacy==3.8.7
-wyoming==1.8.0
-zeroconf==0.148.0
+spacy==3.8.14
+torch==2.13.0+cpu
+wyoming==1.10.0
+zeroconf==0.150.0

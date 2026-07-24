@@ -59,7 +59,9 @@ async def probe_ollama() -> dict[str, Any]:
                 data = await resp.json()
                 models = []
                 for m in data.get("models", []):
-                    name = m.get("name", "")
+                    if not isinstance(m, dict):
+                        continue
+                    name = m.get("name") or m.get("model") or ""
                     if name:
                         size_bytes = m.get("size", 0)
                         models.append({"name": name, "size_gb": round(size_bytes / (1024 ** 3), 1) if size_bytes else None, "family": m.get("details", {}).get("family", ""), "param_size": m.get("details", {}).get("parameter_size", "")})

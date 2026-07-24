@@ -13,7 +13,8 @@ Purpose:
 ## Default Runtime
 
 - Ollama base URL: `http://127.0.0.1:11434`
-- Default model: `qwen2.5:7b`
+- Default model: `qwen3.5:2b`
+- Thinking: disabled by default for lower voice latency; set `QANTARA_OLLAMA_THINK=true` to opt in
 - Default backend port: `19120`
 
 ## Run
@@ -24,7 +25,7 @@ From the repo root:
 QANTARA_REAL_BACKEND_HOST=127.0.0.1 \
 QANTARA_REAL_BACKEND_PORT=19120 \
 QANTARA_OLLAMA_BASE_URL=http://127.0.0.1:11434 \
-QANTARA_OLLAMA_MODEL=qwen2.5:7b \
+QANTARA_OLLAMA_MODEL=qwen3.5:2b \
 ./.venv/bin/python gateway/ollama_session_backend/server.py
 ```
 

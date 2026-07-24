@@ -23,6 +23,7 @@ from gateway.transport_spike.common import (
     utc_now,
 )
 from providers.factory import create_stt_provider, create_tts_provider
+from qantara.version import __version__
 
 _BRIDGE_SCRIPTS: dict[str, str] = {
     "ollama": os.path.join(REPO_ROOT, "gateway", "ollama_session_backend", "server.py"),
@@ -635,7 +636,7 @@ class GatewayRuntime:
         wyoming_area = os.environ.get("QANTARA_WYOMING_AREA", "")
         self.wyoming_bridge = WyomingBridge(
             node_name=wyoming_node_name, area=wyoming_area,
-            host=wyoming_host, port=wyoming_port, version="0.2.2", has_vad=False,
+            host=wyoming_host, port=wyoming_port, version=__version__, has_vad=False,
             runtime=self,
             register_zeroconf=wyoming_host not in {"127.0.0.1", "::1", "localhost"},
         )

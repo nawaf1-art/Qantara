@@ -41,7 +41,7 @@ See [docs/SUPPLY_CHAIN.md](docs/SUPPLY_CHAIN.md) for what Qantara downloads, who
 
 ## Response expectations
 
-Qantara is maintained by a small team and this is a pre-launch project. Expect response times in the order of days, not hours. We'll:
+Qantara is maintained by a small team. Expect response times in the order of days, not hours. We'll:
 
 1. Acknowledge the report privately.
 2. Work with you on a fix and disclosure timeline.
@@ -49,4 +49,6 @@ Qantara is maintained by a small team and this is a pre-launch project. Expect r
 
 ## Supported versions
 
-During pre-launch, only the `main` branch is supported. Once `v0.2.6` (public launch) ships, the policy will be updated to cover the most recent minor release.
+Security fixes target the latest tagged `0.2.x` release and the `main` branch.
+Older `0.2.x` tags may receive a fix only when the maintainers determine that
+an update is practical.

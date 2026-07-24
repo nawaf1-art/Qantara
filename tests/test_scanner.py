@@ -88,6 +88,10 @@ class FingerprintParsingTests(unittest.TestCase):
         self.assertEqual(_extract_ollama_models(None), [])
         self.assertEqual(_extract_ollama_models("nope"), [])
 
+    def test_extract_ollama_models_accepts_current_model_field(self) -> None:
+        body = {"models": [{"model": "qwen3.5:2b", "size": 123}]}
+        self.assertEqual(_extract_ollama_models(body)[0].name, "qwen3.5:2b")
+
     def test_extract_openai_models_skips_idless_entries(self) -> None:
         body = {"data": [{"id": "gpt-x"}, {"id": ""}, {"nomodel": 1}]}
         self.assertEqual([m.name for m in _extract_openai_models(body)], ["gpt-x"])

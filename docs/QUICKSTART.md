@@ -49,7 +49,7 @@ http://localhost:8765
 For the simplest Ollama path, expose Ollama through its OpenAI-compatible API and choose **OpenAI-Compatible** in the Qantara setup page.
 
 ```bash
-ollama pull qwen2.5:3b
+ollama pull qwen3.5:2b
 ollama serve
 ```
 
@@ -57,7 +57,7 @@ Then configure Qantara with:
 
 ```text
 Base URL: http://127.0.0.1:11434/v1
-Model: qwen2.5:3b
+Model: qwen3.5:2b
 API key: any local placeholder if your server requires a value
 ```
 

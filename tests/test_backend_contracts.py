@@ -4,12 +4,19 @@ import json
 import unittest
 from unittest.mock import patch
 
+from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from adapters.base import AdapterConfig
 from adapters.session_gateway_http import SessionGatewayHTTPAdapter
 from gateway.fake_session_backend.server import create_app as create_fake_backend_app
-from gateway.ollama_session_backend.server import create_app as create_ollama_backend_app
+from gateway.ollama_session_backend.server import (
+    SessionState,
+    _ollama_stream_messages,
+)
+from gateway.ollama_session_backend.server import (
+    create_app as create_ollama_backend_app,
+)
 from gateway.openclaw_session_backend.server import create_app as create_openclaw_backend_app
 
 
@@ -25,13 +32,13 @@ class FakeProc:
 
 
 class FakeStreamResponse:
-    def __init__(self, lines: list[str], status: int = 200) -> None:
+    def __init__(self, chunks: list[str | bytes], status: int = 200) -> None:
         self.status = status
-        self.content = self._iter_lines(lines)
+        self.content = self._iter_chunks(chunks)
 
-    async def _iter_lines(self, lines: list[str]):
-        for line in lines:
-            yield line.encode("utf-8")
+    async def _iter_chunks(self, chunks: list[str | bytes]):
+        for chunk in chunks:
+            yield chunk if isinstance(chunk, bytes) else chunk.encode("utf-8")
 
     async def text(self) -> str:
         return ""
@@ -112,6 +119,151 @@ class BackendContractTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn('"type": "turn_completed"', body)
             finally:
                 await client.close()
+
+    async def test_ollama_native_request_disables_thinking_by_default(self) -> None:
+        captured: dict = {}
+
+        async def chat_handler(request):
+            captured.update(await request.json())
+            return web.json_response({"done": True})
+
+        app = web.Application()
+        app.router.add_post("/api/chat", chat_handler)
+        server = TestServer(app)
+        await server.start_server()
+        client_session = None
+        upstream = None
+        try:
+            with patch(
+                "gateway.ollama_session_backend.server.OLLAMA_BASE_URL",
+                str(server.make_url("")).rstrip("/"),
+            ):
+                client_session, upstream = await _ollama_stream_messages(
+                    SessionState(client_context={}, history=[]),
+                    "hello",
+                )
+                await upstream.read()
+            self.assertIs(captured["think"], False)
+            self.assertEqual(captured["model"], "qwen3.5:2b")
+        finally:
+            if upstream is not None:
+                upstream.close()
+            if client_session is not None:
+                await client_session.close()
+            await server.close()
+
+    async def test_ollama_backend_handles_split_utf8_and_coalesced_ndjson(self) -> None:
+        first = json.dumps(
+            {"message": {"content": "أهلاً "}, "done": False},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        second = json.dumps(
+            {"message": {"content": "بك"}, "done": False},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        done = json.dumps({"done": True}).encode("utf-8")
+        split_at = first.index("أ".encode()) + 1
+
+        async def fake_ollama_stream_messages(session_state, transcript, turn_context=None):
+            return FakeClientSession(), FakeStreamResponse(
+                [
+                    first[:split_at],
+                    first[split_at:] + b"\n" + second + b"\n" + done,
+                ]
+            )
+
+        with patch(
+            "gateway.ollama_session_backend.server._ollama_stream_messages",
+            side_effect=fake_ollama_stream_messages,
+        ):
+            server = TestServer(create_ollama_backend_app())
+            client = TestClient(server)
+            await client.start_server()
+            try:
+                session_data = await (await client.post("/sessions", json={})).json()
+                turn_data = await (
+                    await client.post(
+                        f"/sessions/{session_data['session_handle']}/turns",
+                        json={"transcript": "hello"},
+                    )
+                ).json()
+                events_resp = await client.get(
+                    f"/sessions/{session_data['session_handle']}/turns/{turn_data['turn_handle']}/events"
+                )
+                body = await events_resp.text()
+                events = [json.loads(line) for line in body.splitlines()]
+                final = next(event for event in events if event["type"] == "assistant_text_final")
+                self.assertEqual(final["text"], "أهلاً بك")
+                self.assertNotIn("\ufffd", body)
+                self.assertIn('"type": "turn_completed"', body)
+            finally:
+                await client.close()
+
+    async def test_ollama_backend_does_not_speak_reasoning_only_output(self) -> None:
+        async def fake_ollama_stream_messages(session_state, transcript, turn_context=None):
+            return FakeClientSession(), FakeStreamResponse(
+                [
+                    json.dumps(
+                        {
+                            "message": {
+                                "thinking": "private chain of thought",
+                                "content": "",
+                            },
+                            "done": False,
+                        }
+                    )
+                    + "\n",
+                    json.dumps({"done": True}) + "\n",
+                ]
+            )
+
+        with patch(
+            "gateway.ollama_session_backend.server._ollama_stream_messages",
+            side_effect=fake_ollama_stream_messages,
+        ):
+            server = TestServer(create_ollama_backend_app())
+            client = TestClient(server)
+            await client.start_server()
+            try:
+                session_data = await (await client.post("/sessions", json={})).json()
+                turn_data = await (
+                    await client.post(
+                        f"/sessions/{session_data['session_handle']}/turns",
+                        json={"transcript": "hello"},
+                    )
+                ).json()
+                events_resp = await client.get(
+                    f"/sessions/{session_data['session_handle']}/turns/{turn_data['turn_handle']}/events"
+                )
+                body = await events_resp.text()
+                self.assertIn('"type": "turn_failed"', body)
+                self.assertIn("reasoning was withheld", body)
+                self.assertNotIn("private chain of thought", body)
+                self.assertNotIn('"type": "turn_completed"', body)
+            finally:
+                await client.close()
+
+    async def test_ollama_backend_rejects_invalid_request_shapes(self) -> None:
+        server = TestServer(create_ollama_backend_app())
+        client = TestClient(server)
+        await client.start_server()
+        try:
+            response = await client.post("/sessions", json=[])
+            self.assertEqual(response.status, 400)
+
+            session_data = await (await client.post("/sessions", json={})).json()
+            response = await client.post(
+                f"/sessions/{session_data['session_handle']}/turns",
+                json={"transcript": 42},
+            )
+            self.assertEqual(response.status, 400)
+            response = await client.post(
+                f"/sessions/{session_data['session_handle']}/turns",
+                json={"transcript": "hello", "turn_context": []},
+            )
+            self.assertEqual(response.status, 400)
+        finally:
+            await client.close()
 
     async def test_openclaw_backend_contract_with_mocked_cli(self) -> None:
         payload = {

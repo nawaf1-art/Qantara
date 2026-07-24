@@ -147,7 +147,9 @@ def _extract_ollama_models(tags_body: Any) -> list[DiscoveredModel]:
         return []
     models = []
     for m in tags_body.get("models", []):
-        name = m.get("name", "")
+        if not isinstance(m, dict):
+            continue
+        name = m.get("name") or m.get("model") or ""
         if not name:
             continue
         size_bytes = m.get("size", 0)
@@ -198,7 +200,7 @@ async def fingerprint_host(
             running = ps[1].get("models", [])
             if running:
                 first = running[0]
-                backend.model_loaded = first.get("name", "")
+                backend.model_loaded = first.get("name") or first.get("model") or ""
                 vram = first.get("size_vram", 0)
                 if vram:
                     backend.gpu_info = f"{round(vram / (1024**3), 1)}GB VRAM"

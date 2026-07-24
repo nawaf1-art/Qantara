@@ -8,7 +8,7 @@ Supported config shape:
     backend:
       type: ollama
       url: http://localhost:11434
-      model: qwen2.5:7b
+      model: qwen3.5:2b
       agent: main
 
     voice:

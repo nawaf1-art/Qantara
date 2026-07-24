@@ -47,10 +47,12 @@ Recommended OpenAI-compatible path:
 |---|---|---|
 | `QANTARA_ADAPTER` | `openai_compatible` | Selects direct chat-completions adapter |
 | `QANTARA_OPENAI_BASE_URL` | `http://127.0.0.1:11434` | Base URL for the local backend |
-| `QANTARA_OPENAI_MODEL` | `qwen2.5:3b` | Model id |
+| `QANTARA_OPENAI_MODEL` | auto-detected | Model id; set explicitly when the server exposes more than one |
 | `QANTARA_OPENAI_API_KEY` | `not-needed` | Optional bearer token for compatible servers that require one |
+| `QANTARA_OPENAI_REASONING_EFFORT` | unset | Optional compatible-server control; use `none` with current Ollama when low voice latency is preferred |
 | `QANTARA_OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API base URL used by the setup probe and Ollama bridge |
-| `QANTARA_OLLAMA_MODEL` | `qwen2.5:3b` | Ollama bridge model id |
+| `QANTARA_OLLAMA_MODEL` | `qwen3.5:2b` | Ollama bridge model id |
+| `QANTARA_OLLAMA_THINK` | `false` | Include Ollama reasoning; reasoning is never spoken, and enabling it adds latency |
 
 Session HTTP bridge path:
 
