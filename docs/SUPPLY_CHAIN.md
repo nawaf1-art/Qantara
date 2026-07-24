@@ -45,9 +45,10 @@ uv pip compile --universal --generate-hashes --python-version 3.11 \
   ops/docker/requirements.in
 ```
 
-The `unsafe-best-match` index strategy is required because the exact
-`torch==2.13.0+cpu` wheel comes from PyTorch's CPU index. Direct versions and
-all resolved artifact hashes remain pinned in the generated files.
+The `unsafe-best-match` index strategy is required because PyTorch's CPU index
+and PyPI both publish the `torch` package. The universal lock selects
+`2.13.0+cpu` off macOS and the CPU-only `2.13.0` macOS wheels, with every
+resolved artifact hash pinned.
 
 ## Manual verification (air-gapped or audit contexts)
 

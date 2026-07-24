@@ -2267,7 +2267,19 @@ tokenizers==0.22.2 \
     # via
     #   faster-whisper
     #   transformers
-torch==2.13.0+cpu \
+torch==2.13.0 ; sys_platform == 'darwin' \
+    --hash=sha256:2fe228aba290d14b9f31b049be550dbd469c3fd3013d7a19705b30454da97027 \
+    --hash=sha256:33449899ce5496c1b84b4853179d94fd102028ae1407314d9fb956bb79e70d09 \
+    --hash=sha256:94f0de129916f77b8dc2c7a8eff644cfeddfe59e39c9f55e9f6e17543410281d \
+    --hash=sha256:c28def70706c2f9ecc752574766e8ae4da9b810ab6676b611166761a78a9f1e1 \
+    --hash=sha256:d849b390e07d8d333ce8ecaf91b273c656c598379a19c9acf1318a883f6b391c \
+    --hash=sha256:e76f9bcecc52b8ff711239a2f7547d5353df95878ab232f0773c1d95928b92f8
+    # via
+    #   -r gateway/transport_spike/../../ops/docker/requirements.in
+    #   curated-transformers
+    #   kokoro
+    #   spacy-curated-transformers
+torch==2.13.0+cpu ; sys_platform != 'darwin' \
     --hash=sha256:0555fde6108ca90247ae33d4e1237cbae475c86a223bb2f0f91d9addf1f611bd \
     --hash=sha256:0b8f7d0423027ae8b90c7977c627f3379f325363a08224dffad9b4b2d684a83d \
     --hash=sha256:10717d8b3b67c45a4788bf7ffc0bab1ea1e5ebbedd24466be6100102d141fac1 \
