@@ -4,6 +4,17 @@ All notable changes to Qantara are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reaches `1.0.0`. Until then, minor versions may include breaking changes — see the release notes on each tag.
 
+## [0.3.0] - 2026-07-25
+
+### Changed
+- Corrected the release line after the Python SDK milestone: Qantara now uses `0.3.0` as the canonical current version.
+- Consolidated the Python SDK, Voice-as-API, Ollama compatibility, stream-correctness, audit, and dependency-hardening work under the `0.3.0` platform milestone.
+- Preserved the published `v0.2.10` and `v0.2.12` tags as immutable historical compatibility points.
+
+### Upgrade Notes
+- `0.3.0` is runtime-equivalent to `0.2.12`; this release changes version and release metadata only.
+- Users pinned to `v0.2.10` or `v0.2.12` are not required to change immediately. New installations and downstream references should use `v0.3.0`.
+
 ## [0.2.12] - 2026-07-24
 
 ### Added
@@ -220,7 +231,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - 39 lint issues surfaced by ruff: unused imports, deprecated typing imports, missing `raise … from`, unused variables, import ordering.
 - Version references aligned on `0.1.9-pre` across `VERSION`, `AGENTS.md`, `README.md`, and `ROADMAP.md`.
 
-[Unreleased]: https://github.com/nawaf1-art/Qantara/compare/v0.2.12...HEAD
+[Unreleased]: https://github.com/nawaf1-art/Qantara/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/nawaf1-art/Qantara/compare/v0.2.12...v0.3.0
 [0.2.12]: https://github.com/nawaf1-art/Qantara/compare/v0.2.10...v0.2.12
 [0.2.10]: https://github.com/nawaf1-art/Qantara/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/nawaf1-art/Qantara/compare/v0.2.8...v0.2.9
