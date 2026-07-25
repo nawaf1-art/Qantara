@@ -12,7 +12,7 @@
 
 Qantara lets you talk by voice to Ollama, local LLM servers, and local AI agents through your browser. It handles microphone capture, speech recognition, turn-taking, interruption, text-to-speech, and the live connection to whichever local backend you choose — all running on your local network with no cloud dependency for speech processing.
 
-> Version `0.2.12` — Ollama compatibility, stream correctness, and dependency hardening. `0.2.6` was the first public release.
+> Version `0.3.0` — consolidated platform release covering the Python SDK, Voice-as-API, Ollama compatibility, stream correctness, and dependency hardening. `0.2.6` was the first public release.
 
 > Demo media needed: the README is ready for a 30-second GIF showing Docker startup, browser setup, an Ollama conversation, and barge-in. See [docs/DEMO_PLAN.md](docs/DEMO_PLAN.md).
 
@@ -327,6 +327,7 @@ qantara/
 | 0.2.10 | ✅ Released | Python SDK (`pip install qantara`) |
 | 0.2.11 | ↪ Superseded | Voice-as-API work ships in 0.2.12; no 0.2.11 tag was published |
 | 0.2.12 | ✅ Released | Ollama 0.32 compatibility, audit fixes, and dependency hardening |
+| 0.3.0 | ✅ Released | Canonical consolidated platform release; runtime-equivalent to 0.2.12 |
 | 0.3.2 | Planned | Speech-native adapter (OpenAI Realtime, Gemini Live, MiniCPM-o) |
 | 0.3.4 | Planned | Identity-aware sessions (voice fingerprinting) |
 | 0.3.5 | Planned | Screenshot + voice multimodal |

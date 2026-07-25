@@ -1,6 +1,6 @@
 # Roadmap
 
-Current version: `0.2.12` (Ollama compatibility and audit hardening)
+Current version: `0.3.0` (consolidated platform release)
 
 This roadmap is the single source of truth for what to build and in what order. It is designed to be read by humans, Claude Code, and Codex alike.
 
@@ -474,7 +474,7 @@ Basic EN↔AR translation shipped in 0.2.5. This item extends it:
 0.2.10         ✅ pip install qantara
 0.2.11         ↪ Untagged; Voice-as-API work carried into 0.2.12
 0.2.12         ✅ Ollama compatibility, stream correctness, audit fixes, dependency hardening
-0.3.0          ⬜ Phase 2 complete
+0.3.0          ✅ Consolidated platform release; Phase 2 complete
 0.3.1          ⬜ Home Assistant
 0.3.2          ⬜ Speech-native models
 0.3.3          ⬜ Arabic voice

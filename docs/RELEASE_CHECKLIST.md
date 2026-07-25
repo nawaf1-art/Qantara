@@ -4,11 +4,13 @@ Use this before tagging a public release.
 
 ## Latest Validation Note
 
-The current candidate is `v0.2.12`. It combines the unmerged Voice-as-API
-`0.2.11` branch with the July audit fixes, current Ollama compatibility work,
-and dependency hardening. GitHub PR #15 and the absent `v0.2.11` tag must be
-accounted for before publishing: merge the combined `0.2.12` candidate and
-close the superseded PR rather than moving or inventing an old tag.
+The current candidate is `v0.3.0`. It corrects the release line after the
+Python SDK milestone and consolidates the SDK, Voice-as-API, July audit fixes,
+current Ollama compatibility work, and dependency hardening. It is
+runtime-equivalent to `v0.2.12`.
+
+Keep the published `v0.2.10` and `v0.2.12` tags intact. They are historical
+compatibility points and must not be moved or deleted.
 
 ## Automated Checks
 
@@ -75,19 +77,19 @@ Before publishing:
 Release tag:
 
 ```text
-v0.2.12
+v0.3.0
 ```
 
 Commands:
 
 ```bash
-git tag -a v0.2.12 -m "v0.2.12 Ollama compatibility and audit hardening"
-git push origin v0.2.12
-gh release create v0.2.12 \
-  --title "v0.2.12 - Ollama compatibility and audit hardening" \
-  --notes-file docs/RELEASE_NOTES_0.2.12.md
+git tag -a v0.3.0 -m "v0.3.0 consolidated platform release"
+git push origin v0.3.0
+gh release create v0.3.0 \
+  --title "v0.3.0 - Consolidated platform release" \
+  --notes-file docs/RELEASE_NOTES_0.3.0.md
 ```
 
-Do not tag until the combined pull request is merged, CI is green, and
+Do not tag until the version-correction pull request is merged, CI is green, and
 `VERSION`, `pyproject.toml`, `CHANGELOG.md`, `README.md`, and `ROADMAP.md`
-all agree on `0.2.12`.
+all agree on `0.3.0`.
