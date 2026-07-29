@@ -156,7 +156,13 @@ gateway = VoiceGateway(host="127.0.0.1", port=8765)
 gateway.run()
 ```
 
-Open **http://127.0.0.1:8765** and start talking. The base install ships the gateway and browser client with the demo backend. Extras work the same way from the tag — append `#egg=qantara[speech]` for local speech, `[mesh]` for multi-device mesh / Home Assistant, or `[mcp]` for MCP support. Backend selection and everything else is configured through the same `QANTARA_*` environment variables — see [docs/CONFIGURATION.md](docs/CONFIGURATION.md) and the [Ollama compatibility guide](docs/OLLAMA_COMPATIBILITY.md).
+Open **http://127.0.0.1:8765** and start talking. The base install ships the gateway and browser client with the demo backend. Extras install the same way — name them ahead of the URL:
+
+```bash
+pip install "qantara[speech] @ git+https://github.com/nawaf1-art/Qantara.git@v0.3.0"
+```
+
+Use `[speech]` for local speech, `[mesh]` for multi-device mesh / Home Assistant, or `[mcp]` for MCP support. Backend selection and everything else is configured through the same `QANTARA_*` environment variables — see [docs/CONFIGURATION.md](docs/CONFIGURATION.md) and the [Ollama compatibility guide](docs/OLLAMA_COMPATIBILITY.md).
 
 ### Manual
 
