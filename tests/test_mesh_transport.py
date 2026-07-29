@@ -81,6 +81,42 @@ class MeshServerShutdownTests(unittest.IsolatedAsyncioTestCase):
             except Exception:
                 pass
 
+    async def test_stop_completes_when_handler_has_not_registered_yet(self) -> None:
+        """The accept-to-register gap. asyncio attaches the transport (so
+        Server.wait_closed() already waits for the handler) before the
+        handler task runs its first line and adds the writer to
+        _connections. A stop() landing inside that gap saw an empty
+        connection set, closed nothing, and hung forever on a handler that
+        then parked in readline().
+
+        Linux/epoll schedules the accept fast enough to hide this; macOS
+        kqueue does not, which is why CI failed only on macos/3.12. The
+        delay here makes that scheduling window explicit and deterministic
+        on every platform.
+        """
+        async def on_message(msg, addr) -> None:
+            pass
+
+        server = MeshServer(host="127.0.0.1", port=0, on_message=on_message)
+        original = server._handle_connection
+
+        async def delayed_handler(reader, writer):
+            await asyncio.sleep(0.1)  # accepted, but body not yet scheduled
+            await original(reader, writer)
+
+        server._handle_connection = delayed_handler  # type: ignore[method-assign]
+        await server.start()
+        addr = server.sockets[0].getsockname()
+        reader, writer = await asyncio.open_connection(addr[0], addr[1])
+        try:
+            await asyncio.wait_for(server.stop(), timeout=2.0)
+        finally:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+
 
 class MeshAuthTests(unittest.IsolatedAsyncioTestCase):
     """QANTARA_MESH_TOKEN shared-secret frame authentication. When a token

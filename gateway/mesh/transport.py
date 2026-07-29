@@ -33,16 +33,30 @@ class MeshServer:
         # wait_closed() waits for connection handlers to finish, and a
         # handler blocks in readline() until its peer hangs up.
         self._connections: set[asyncio.StreamWriter] = set()
+        # Closing connections is not enough on its own. asyncio attaches the
+        # transport at accept time -- so wait_closed() already counts the
+        # connection -- but the handler task registers itself in
+        # _connections only once its body is scheduled. A stop() landing in
+        # that gap would close nothing and then hang on a handler that goes
+        # on to park in readline(). This flag closes the gap: a handler that
+        # starts after stop() bails out instead of reading.
+        self._closing = False
 
     @property
     def sockets(self):  # type: ignore[no-untyped-def]
         return self._server.sockets if self._server else []
 
     async def start(self) -> None:
+        self._closing = False
         self._server = await asyncio.start_server(self._handle_connection, self._host, self._port)
 
     async def stop(self) -> None:
         if self._server is not None:
+            # Everything up to wait_closed() is synchronous, so it cannot
+            # interleave with a handler's own await-free registration block.
+            # A handler therefore either registered before the snapshot below
+            # (and is closed here) or observes _closing and bails out.
+            self._closing = True
             self._server.close()
             for writer in list(self._connections):
                 writer.close()
@@ -56,6 +70,12 @@ class MeshServer:
     ) -> None:
         addr = writer.get_extra_info("peername") or ("<unknown>", 0)
         self._connections.add(writer)
+        if self._closing:
+            # stop() already took its snapshot; do not park in readline(),
+            # or wait_closed() would never return.
+            self._connections.discard(writer)
+            writer.close()
+            return
         try:
             while not reader.at_eof():
                 line = await reader.readline()
