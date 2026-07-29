@@ -4,16 +4,19 @@ All notable changes to Qantara are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reaches `1.0.0`. Until then, minor versions may include breaking changes — see the release notes on each tag.
 
-## [0.3.0] - 2026-07-25
+## [0.3.0] - 2026-07-30
 
 ### Changed
 - Corrected the release line after the Python SDK milestone: Qantara now uses `0.3.0` as the canonical current version.
 - Consolidated the Python SDK, Voice-as-API, Ollama compatibility, stream-correctness, audit, and dependency-hardening work under the `0.3.0` platform milestone.
 - Preserved the published `v0.2.10` and `v0.2.12` tags as immutable historical compatibility points.
 
+### Fixed
+- Mesh shutdown no longer hangs when a peer connection is accepted but its handler has not yet registered. `MeshServer.stop()` now marks itself closing before snapshotting open connections, so a handler scheduled after that point exits instead of blocking in `readline()`. This closes the intermittent `macos-latest` / Python 3.12 CI failure in `test_stop_completes_while_peer_connection_is_open`.
+
 ### Upgrade Notes
-- `0.3.0` is runtime-equivalent to `0.2.12`; this release changes version and release metadata only.
-- Users pinned to `v0.2.10` or `v0.2.12` are not required to change immediately. New installations and downstream references should use `v0.3.0`.
+- Apart from the mesh shutdown fix above, `0.3.0` matches `0.2.12` at runtime; the rest of the release is version and release metadata.
+- Users pinned to `v0.2.10` or `v0.2.12` are not required to change immediately. New installations and downstream references should use `v0.3.0`. Anyone running the mesh should prefer `v0.3.0`.
 
 ## [0.2.12] - 2026-07-24
 

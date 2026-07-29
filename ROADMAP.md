@@ -471,7 +471,7 @@ Basic EN↔AR translation shipped in 0.2.5. This item extends it:
 0.2.7          ✅ Post-launch hardening patch
 0.2.8          ✅ MCP client + server (postponed from 0.2.1)
 0.2.9          ✅ Agent protocol v1 + tool-call formalization
-0.2.10         ✅ pip install qantara
+0.2.10         ✅ Python SDK package (PyPI upload still pending)
 0.2.11         ↪ Untagged; Voice-as-API work carried into 0.2.12
 0.2.12         ✅ Ollama compatibility, stream correctness, audit fixes, dependency hardening
 0.3.0          ✅ Consolidated platform release; Phase 2 complete

@@ -6,8 +6,9 @@ Use this before tagging a public release.
 
 The current candidate is `v0.3.0`. It corrects the release line after the
 Python SDK milestone and consolidates the SDK, Voice-as-API, July audit fixes,
-current Ollama compatibility work, and dependency hardening. It is
-runtime-equivalent to `v0.2.12`.
+current Ollama compatibility work, and dependency hardening. It also carries
+the mesh shutdown fix for the intermittent `macos-latest` / Python 3.12 CI
+failure; otherwise it matches `v0.2.12` at runtime.
 
 Keep the published `v0.2.10` and `v0.2.12` tags intact. They are historical
 compatibility points and must not be moved or deleted.

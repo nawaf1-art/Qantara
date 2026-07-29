@@ -142,8 +142,11 @@ Then open `http://<your-lan-ip>:8765` and enter that token on the setup page.
 
 ### Python SDK
 
+> **Not on PyPI yet.** `pip install qantara` does not work today — the name is
+> reserved but nothing has been uploaded. Install from the tag instead:
+
 ```bash
-pip install qantara
+pip install "git+https://github.com/nawaf1-art/Qantara.git@v0.3.0"
 ```
 
 ```python
@@ -153,7 +156,7 @@ gateway = VoiceGateway(host="127.0.0.1", port=8765)
 gateway.run()
 ```
 
-Open **http://127.0.0.1:8765** and start talking. The base install ships the gateway and browser client with the demo backend; add local speech with `pip install "qantara[speech]"`, multi-device mesh / Home Assistant with `qantara[mesh]`, and MCP support with `qantara[mcp]`. Backend selection and everything else is configured through the same `QANTARA_*` environment variables — see [docs/CONFIGURATION.md](docs/CONFIGURATION.md) and the [Ollama compatibility guide](docs/OLLAMA_COMPATIBILITY.md).
+Open **http://127.0.0.1:8765** and start talking. The base install ships the gateway and browser client with the demo backend. Extras work the same way from the tag — append `#egg=qantara[speech]` for local speech, `[mesh]` for multi-device mesh / Home Assistant, or `[mcp]` for MCP support. Backend selection and everything else is configured through the same `QANTARA_*` environment variables — see [docs/CONFIGURATION.md](docs/CONFIGURATION.md) and the [Ollama compatibility guide](docs/OLLAMA_COMPATIBILITY.md).
 
 ### Manual
 
@@ -324,10 +327,10 @@ qantara/
 | 0.2.7 | ✅ Released | Post-launch hardening patch |
 | 0.2.8 | ✅ Released | MCP voice client + server |
 | 0.2.9 | ✅ Released | Agent protocol v1 + tool-call metadata |
-| 0.2.10 | ✅ Released | Python SDK (`pip install qantara`) |
+| 0.2.10 | ✅ Released | Python SDK — installable package (not yet on PyPI) |
 | 0.2.11 | ↪ Superseded | Voice-as-API work ships in 0.2.12; no 0.2.11 tag was published |
 | 0.2.12 | ✅ Released | Ollama 0.32 compatibility, audit fixes, and dependency hardening |
-| 0.3.0 | ✅ Released | Canonical consolidated platform release; runtime-equivalent to 0.2.12 |
+| 0.3.0 | ✅ Released | Canonical consolidated platform release; adds the mesh shutdown fix |
 | 0.3.2 | Planned | Speech-native adapter (OpenAI Realtime, Gemini Live, MiniCPM-o) |
 | 0.3.4 | Planned | Identity-aware sessions (voice fingerprinting) |
 | 0.3.5 | Planned | Screenshot + voice multimodal |
