@@ -5,8 +5,8 @@ SDK milestone. It consolidates the SDK, Voice-as-API, current Ollama
 compatibility, stream-correctness fixes, July audit hardening, and refreshed
 dependencies.
 
-This is a version and release-metadata correction. The runtime is equivalent to
-Qantara 0.2.12.
+Apart from one mesh shutdown fix, this is a version and release-metadata
+correction; the rest of the runtime is equivalent to Qantara 0.2.12.
 
 ## Highlights
 
@@ -17,6 +17,7 @@ Qantara 0.2.12.
 - Correct handling of fragmented streams, multibyte Arabic text, cancellation,
   reasoning-only responses, and barge-in races.
 - Refreshed, security-patched Python and ML dependency set.
+- Mesh shutdown no longer hangs when a peer connects as the server is stopping.
 
 ## Version compatibility
 
