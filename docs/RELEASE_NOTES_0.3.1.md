@@ -1,4 +1,4 @@
-# Qantara 0.3.1 Release Notes (Draft)
+# Qantara 0.3.1 Release Notes
 
 Qantara `0.3.1` is a hardening and release-readiness update. It keeps the existing browser-first, WebSocket PCM, adapter, and provider architecture while tightening network/input/process boundaries and making package/release evidence repeatable.
 
@@ -23,4 +23,9 @@ No namespace migration, audio transport change, adapter-interface change, or bro
 
 ## Validation evidence
 
-Do not fill this section from memory. Before publication, copy the exact tag, commit, check outcome, artifact hashes, SBOM, and provenance links from the successful release-preparation run and attached `release-validation.json`.
+The GitHub Release is the canonical evidence bundle for this version. It attaches
+the wheel and source archive built by the tag-only workflow together with
+`SHA256SUMS`, an SPDX SBOM, and `release-validation.json`; GitHub also records
+provenance attestations for those artifacts. Verify downloads against the attached
+checksums and confirm that the release tag resolves to the commit recorded in the
+validation file.

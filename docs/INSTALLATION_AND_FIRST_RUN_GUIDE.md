@@ -90,7 +90,7 @@ Piper requires its executable and compatible voice files outside the base packag
 
 ## Option 3: Tagged package source
 
-After `v0.3.1` is published:
+Install from the published `v0.3.1` tag:
 
 ```bash
 pip install "qantara @ git+https://github.com/nawaf1-art/Qantara.git@v0.3.1"

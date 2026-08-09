@@ -4,7 +4,7 @@ All notable changes to Qantara are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reaches `1.0.0`. Until then, minor versions may include breaking changes — see the release notes on each tag.
 
-## [0.3.1] - Unreleased
+## [0.3.1] - 2026-08-09
 
 ### Added
 - Reusable release consistency, package-content, and clean-install smoke checks for wheel and source artifacts.
@@ -28,7 +28,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 ### Upgrade Notes
 - Custom internal DNS names outside the built-in loopback/private/LAN-name policy must be listed in `QANTARA_ALLOWED_HOSTS`.
 - Set `QANTARA_BRIDGE_LOG_OUTPUT=1` only when bridge stdout/stderr is needed for local diagnostics; review that output before sharing it.
-- This pull request prepares `0.3.1` but does not create a tag, publish a release, or upload to PyPI.
+- GitHub Release artifacts are published from the protected `v0.3.1` tag; PyPI remains out of scope for this release.
 
 ## [0.3.0] - 2026-07-30
 
