@@ -5,7 +5,39 @@ from unittest.mock import patch
 
 from adapters.base import AdapterConfig
 from adapters.mcp_client import MCPClientAdapter
+from adapters.mock_adapter import MockAdapter
 from adapters.openai_compatible import OpenAICompatibleAdapter
+from adapters.runtime_skeleton import RuntimeSkeletonAdapter
+
+
+class LightweightAdapterEvictionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_mock_sessions_and_turns_are_bounded(self) -> None:
+        adapter = MockAdapter(
+            AdapterConfig(kind="mock", name="test", options={"max_sessions": 3})
+        )
+        handles = [await adapter.start_or_resume_session() for _ in range(5)]
+        self.assertEqual(len(adapter._sessions), 3)
+        self.assertNotIn(handles[0], adapter._sessions)
+        active = handles[-1]
+        for index in range(40):
+            await adapter.submit_user_turn(active, f"turn {index}")
+        self.assertLessEqual(len(adapter._sessions[active]["turns"]), 24)
+
+    async def test_runtime_skeleton_sessions_and_turns_are_bounded(self) -> None:
+        adapter = RuntimeSkeletonAdapter(
+            AdapterConfig(
+                kind="runtime_skeleton",
+                name="test",
+                options={"max_sessions": 3},
+            )
+        )
+        handles = [await adapter.start_or_resume_session() for _ in range(5)]
+        self.assertEqual(len(adapter._sessions), 3)
+        self.assertNotIn(handles[0], adapter._sessions)
+        active = handles[-1]
+        for index in range(40):
+            await adapter.submit_user_turn(active, f"turn {index}")
+        self.assertLessEqual(len(adapter._sessions[active]["turns"]), 24)
 
 
 class OpenAIAdapterEvictionTests(unittest.IsolatedAsyncioTestCase):
@@ -93,6 +125,24 @@ class OllamaBackendEvictionTests(unittest.TestCase):
         for i in range(40):
             backend.create_turn(handle, f"turn {i}")
         self.assertLessEqual(len(backend.sessions[handle].turns), 24)
+
+
+class FakeBackendEvictionTests(unittest.TestCase):
+    def test_sessions_and_turns_are_bounded(self) -> None:
+        from gateway.fake_session_backend.server import FakeBackend
+
+        with (
+            patch("gateway.fake_session_backend.server.MAX_SESSIONS", 3),
+            patch("gateway.fake_session_backend.server.MAX_TURNS_PER_SESSION", 4),
+        ):
+            backend = FakeBackend()
+            handles = [backend.create_session() for _ in range(5)]
+            self.assertEqual(len(backend.sessions), 3)
+            self.assertNotIn(handles[0], backend.sessions)
+            active = handles[-1]
+            for index in range(8):
+                backend.create_turn(active, f"turn {index}")
+            self.assertEqual(len(backend.sessions[active]["turns"]), 4)
 
 
 class OpenClawBackendEvictionTests(unittest.TestCase):

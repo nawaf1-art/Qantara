@@ -38,6 +38,9 @@ Do not commit real `.env` files, tokens, TLS private keys, or downloaded model w
 | `QANTARA_TLS_KEY` | unset | Path to local TLS private key |
 | `QANTARA_AUTH_TOKEN` | unset | Optional 24+ character token for browser login and protected API/WebSocket endpoints |
 | `QANTARA_ADMIN_TOKEN` | unset | Optional 24+ character bearer token for `/api/admin/runtime`; endpoint is disabled when unset |
+| `QANTARA_ALLOWED_HOSTS` | unset | Comma-separated additional internal hostnames accepted by the Host guard |
+| `QANTARA_ALLOWED_ORIGINS` | unset | Comma-separated exact browser origins allowed to differ from the request authority |
+| `QANTARA_BRIDGE_LOG_OUTPUT` | unset | Set to `1` only to opt into managed bridge stdout/stderr diagnostics |
 
 ## Backend Variables
 
@@ -69,6 +72,7 @@ Advanced optional OpenClaw path:
 | `QANTARA_OPENCLAW_BIN` | `openclaw` | CLI binary |
 | `QANTARA_OPENCLAW_AGENT_ID` | `main` | Agent id to call |
 | `QANTARA_OPENCLAW_TIMEOUT` | `300` | Per-turn timeout |
+| `QANTARA_OPENCLAW_AGENTS_TIMEOUT` | `60` | Setup discovery timeout for listing agents; timed-out children are killed and reaped |
 | `QANTARA_OPENCLAW_HEALTH_MODE` | `shallow` | Health endpoint mode. Keep `shallow` for normal use so health checks do not run agent turns; set `deep` only for explicit diagnostics. |
 
 OpenClaw is hidden from setup unless the host gateway is healthy. It is not the default local LLM path.
@@ -83,6 +87,7 @@ OpenClaw is hidden from setup unless the host gateway is healthy. It is not the 
 | `QANTARA_WHISPER_COMPUTE` | provider default | compute type such as `int8` |
 | `QANTARA_TTS_PROVIDER` | `piper` | Text-to-speech provider |
 | `QANTARA_PIPER_VOICE` | first available | Piper voice id |
+| `QANTARA_PIPER_TIMEOUT` | `60` | Maximum seconds for one Piper subprocess synthesis |
 | `QANTARA_VOICE_REGISTRY` | `identity/voice-registry/voices.json` | Voice registry file |
 | `QANTARA_KOKORO_VOICE` | provider default | Kokoro voice id |
 | `QANTARA_KOKORO_REPO_ID` | `hexgrad/Kokoro-82M` | Kokoro model repository override |
@@ -117,7 +122,30 @@ Mesh and Wyoming are opt-in and bind to loopback by default. Set the host to `0.
 
 ## URL Safety
 
-The setup page, `/api/configure`, and `/api/test-url` reject public backend URLs. Use loopback, private LAN IPs, single-label local hostnames, or hostnames ending in `.local`, `.lan`, or `.home.arpa`. This is intentional SSRF and DNS-rebinding protection.
+The setup page, `/api/configure`, and `/api/test-url` reject public backend URLs and URLs with embedded credentials. Use loopback, private LAN IPs, single-label local hostnames, or hostnames ending in `.local`, `.lan`, or `.home.arpa`. Validated names are pinned to a private address before use, and probes do not follow redirects or inherit proxy variables. This is intentional SSRF and DNS-rebinding protection.
+
+The inbound Host guard uses the same local/LAN policy. Add an exact custom internal DNS hostname with `QANTARA_ALLOWED_HOSTS`; do not use it to approve a public hostname. Browser Origin checks compare both hostname and port. `QANTARA_ALLOWED_ORIGINS` is an explicit exception list and should contain complete origins such as `https://voice.example.internal`.
+
+## Privacy and request limits
+
+Default event logs redact free-form content and credentials. `QANTARA_BRIDGE_LOG_OUTPUT=1` can expose backend-controlled output and should be enabled only during controlled local troubleshooting.
+
+Control-plane JSON bodies are capped at 1 MiB. WebSocket messages are capped at
+256 KiB, with 64 KiB control-message and PCM-frame limits. Voice API text is
+capped at 16 KiB, generated assistant text and backend stream lines at 1 MiB,
+and one-shot transcription uploads at 32 MiB. Piper raw audio capture has a
+64 MiB ceiling so subprocess output cannot grow without bound. The larger audio
+limits reflect uncompressed PCM rather than control data.
+
+The gateway permits 64 simultaneous WebSocket connections by default and
+retains at most 256 resumable session snapshots. Override these ceilings with
+`QANTARA_MAX_WEBSOCKET_CONNECTIONS` and `QANTARA_SESSION_STORE_LIMIT` when a
+known deployment needs different bounds. Mock and runtime-skeleton adapters
+also retain at most 64 sessions and 24 turns per session.
+
+`QANTARA_VOICE_API_TURN_TIMEOUT` controls the converse SSE turn deadline
+(default 120 seconds), and `QANTARA_PIPER_TIMEOUT` controls one Piper synthesis
+(default 60 seconds).
 
 ## Configuration Precedence
 

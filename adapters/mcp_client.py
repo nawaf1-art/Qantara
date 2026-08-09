@@ -13,6 +13,8 @@ from typing import Any
 from adapters.base import AdapterConfig, AdapterHealth, RuntimeAdapter, make_activity_event
 
 MAX_TURNS_PER_SESSION = 24
+MAX_MCP_TOOL_OUTPUT_CHARS = 1024 * 1024
+MAX_MCP_ACTIVITY_CHARS = 4096
 
 
 class MCPClientAdapter(RuntimeAdapter):
@@ -90,7 +92,9 @@ class MCPClientAdapter(RuntimeAdapter):
         if turn is None:
             raise ValueError("unknown turn handle")
 
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        # Backpressure prevents a noisy MCP server from accumulating an
+        # unbounded number of progress notifications in gateway memory.
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=32)
 
         async def progress_callback(progress: float, total: float | None, message: str | None) -> None:
             await queue.put(self._activity_event(message, progress, total))
@@ -103,6 +107,8 @@ class MCPClientAdapter(RuntimeAdapter):
                     turn["turn_context"],
                     progress_callback,
                 )
+                if len(text) > MAX_MCP_TOOL_OUTPUT_CHARS:
+                    raise RuntimeError("MCP tool output exceeded the configured limit")
                 await queue.put({"type": "_result", "text": text})
             except Exception as exc:
                 await queue.put({"type": "_error", "message": str(exc)})
@@ -209,7 +215,7 @@ class MCPClientAdapter(RuntimeAdapter):
             from mcp.client.stdio import stdio_client
             from mcp.client.streamable_http import streamablehttp_client
         except ModuleNotFoundError as exc:
-            raise RuntimeError("mcp package is not installed; install mcp==1.27.*") from exc
+            raise RuntimeError("mcp package is not installed; install mcp==1.28.*") from exc
 
         read_timeout = timedelta(seconds=self.timeout_seconds)
         if self.transport == "stdio":
@@ -265,9 +271,13 @@ class MCPClientAdapter(RuntimeAdapter):
     @staticmethod
     def _extract_text(result: Any) -> str:
         chunks: list[str] = []
+        total = 0
         for item in getattr(result, "content", []) or []:
             text = getattr(item, "text", None)
-            if text:
+            if isinstance(text, str) and text:
+                total += len(text) + (1 if chunks else 0)
+                if total > MAX_MCP_TOOL_OUTPUT_CHARS:
+                    raise RuntimeError("MCP tool output exceeded the configured limit")
                 chunks.append(text)
         if chunks:
             return "\n".join(chunks).strip()
@@ -276,8 +286,20 @@ class MCPClientAdapter(RuntimeAdapter):
             for key in ("text", "message", "response", "result"):
                 value = structured.get(key)
                 if isinstance(value, str) and value.strip():
-                    return value.strip()
-            return json.dumps(structured, ensure_ascii=False)
+                    clean = value.strip()
+                    if len(clean) > MAX_MCP_TOOL_OUTPUT_CHARS:
+                        raise RuntimeError(
+                            "MCP tool output exceeded the configured limit"
+                        )
+                    return clean
+            encoded_chunks: list[str] = []
+            total = 0
+            for chunk in json.JSONEncoder(ensure_ascii=False).iterencode(structured):
+                total += len(chunk)
+                if total > MAX_MCP_TOOL_OUTPUT_CHARS:
+                    raise RuntimeError("MCP tool output exceeded the configured limit")
+                encoded_chunks.append(chunk)
+            return "".join(encoded_chunks)
         return ""
 
     def _activity_event(
@@ -293,7 +315,7 @@ class MCPClientAdapter(RuntimeAdapter):
             ratio = progress
         return make_activity_event(
             activity_type="tool_call",
-            summary=summary or "MCP tool activity",
+            summary=(summary or "MCP tool activity")[:MAX_MCP_ACTIVITY_CHARS],
             progress=ratio,
             tool_name=self.chat_tool or None,
         )

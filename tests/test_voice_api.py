@@ -88,6 +88,24 @@ class SpeakEndpointTests(VoiceAPITestBase):
         resp = await self.client.post("/api/v1/speak", json={})
         self.assertEqual(resp.status, 400)
 
+    async def test_speak_rejects_oversized_text(self) -> None:
+        resp = await self.client.post("/api/v1/speak", json={"text": "x" * (16 * 1024 + 1)})
+        self.assertEqual(resp.status, 413)
+
+    async def test_speak_requires_json_object(self) -> None:
+        resp = await self.client.post("/api/v1/speak", json=[])
+        self.assertEqual(resp.status, 400)
+
+    async def test_speak_rejects_non_string_fields(self) -> None:
+        for payload in (
+            {"text": {"nested": "value"}},
+            {"text": "hello", "voice_id": ["not", "a", "voice"]},
+            {"text": "hello", "speech_rate": "fast"},
+        ):
+            with self.subTest(payload=payload):
+                resp = await self.client.post("/api/v1/speak", json=payload)
+                self.assertEqual(resp.status, 400)
+
     async def test_speak_voice_id_is_forwarded(self) -> None:
         resp = await self.client.post(
             "/api/v1/speak", json={"text": "مرحبا", "voice_id": "ar_JO-kareem-medium"}
@@ -126,6 +144,15 @@ class TranscribeEndpointTests(VoiceAPITestBase):
         )
         self.assertEqual(resp.status, 400)
 
+    async def test_transcribe_has_audio_specific_limit_above_control_limit(self) -> None:
+        pcm = b"\x10\x00" * (600 * 1024)
+        resp = await self.client.post(
+            "/api/v1/transcribe?sample_rate=16000",
+            data=io.BytesIO(pcm),
+            headers={"Content-Type": "application/octet-stream"},
+        )
+        self.assertEqual(resp.status, 200)
+
 
 class ConverseEndpointTests(VoiceAPITestBase):
     async def test_converse_streams_sse_events_to_final_text(self) -> None:
@@ -150,6 +177,25 @@ class ConverseEndpointTests(VoiceAPITestBase):
     async def test_converse_missing_text_is_400(self) -> None:
         resp = await self.client.post("/api/v1/converse", json={})
         self.assertEqual(resp.status, 400)
+
+    async def test_converse_rejects_oversized_text_and_session_id(self) -> None:
+        too_much_text = await self.client.post(
+            "/api/v1/converse", json={"text": "x" * (16 * 1024 + 1)}
+        )
+        self.assertEqual(too_much_text.status, 413)
+        too_long_session = await self.client.post(
+            "/api/v1/converse", json={"text": "ok", "session_id": "s" * 257}
+        )
+        self.assertEqual(too_long_session.status, 413)
+
+    async def test_converse_rejects_non_string_text_and_session_id(self) -> None:
+        for payload in (
+            {"text": ["not", "text"]},
+            {"text": "ok", "session_id": {"not": "an id"}},
+        ):
+            with self.subTest(payload=payload):
+                resp = await self.client.post("/api/v1/converse", json=payload)
+                self.assertEqual(resp.status, 400)
 
 
 class ErrorEnvelopeTests(VoiceAPITestBase):
@@ -198,6 +244,18 @@ class VoiceAPIAuditLogTests(VoiceAPITestBase):
         with self.assertLogs("qantara.voice_api", level="INFO") as captured:
             await self.client.post("/api/v1/speak", json={"text": "log me"})
         self.assertTrue(any("/api/v1/speak" in line for line in captured.output))
+
+    async def test_converse_log_hashes_client_session_id(self) -> None:
+        raw_session_id = "private-client-session-value"
+        with self.assertLogs("qantara.voice_api", level="INFO") as captured:
+            response = await self.client.post(
+                "/api/v1/converse",
+                json={"text": "hello", "session_id": raw_session_id},
+            )
+            await response.read()
+        combined = "\n".join(captured.output)
+        self.assertNotIn(raw_session_id, combined)
+        self.assertIn("session=sha256:", combined)
 
 
 class HangingAdapter(RuntimeAdapter):
@@ -255,6 +313,35 @@ class _ActivityAdapter(RuntimeAdapter):
         return AdapterHealth(status="ok")
 
 
+class _OversizedOutputAdapter(RuntimeAdapter):
+    def __init__(self) -> None:
+        super().__init__(AdapterConfig(kind="mock", name="oversized-output"))
+        self.cancel_called = False
+
+    async def start_or_resume_session(self, client_context=None) -> str:
+        return "oversized-session"
+
+    async def submit_user_turn(self, session_handle, transcript, turn_context=None) -> str:
+        return "oversized-turn"
+
+    async def stream_assistant_output(self, session_handle, turn_handle):
+        yield {"type": "assistant_text_delta", "text": "ab"}
+        yield {"type": "assistant_text_delta", "text": "cd"}
+
+    async def cancel_turn(self, session_handle, turn_handle, cancel_context=None) -> dict:
+        self.cancel_called = True
+        return {"status": "acknowledged"}
+
+    async def check_health(self) -> AdapterHealth:
+        return AdapterHealth(status="ok")
+
+
+class _ContradictoryTerminalAdapter(_OversizedOutputAdapter):
+    async def stream_assistant_output(self, session_handle, turn_handle):
+        yield {"type": "turn_completed"}
+        yield {"type": "turn_failed", "message": "must not escape"}
+
+
 class ConverseActivityValidationTests(VoiceAPITestBase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
@@ -269,6 +356,33 @@ class ConverseActivityValidationTests(VoiceAPITestBase):
         self.assertEqual(activity["confidence"], 1.0, "out-of-range confidence must be clamped")
         self.assertNotIn("parameters", activity, "non-dict parameters must be dropped")
         self.assertNotIn("tool_name", activity, "empty tool_name must be dropped")
+
+
+class ConverseResourceLimitTests(VoiceAPITestBase):
+    async def test_converse_cancels_backend_when_output_limit_is_exceeded(self) -> None:
+        import gateway.transport_spike.voice_api as voice_api
+
+        adapter = _OversizedOutputAdapter()
+        self.app[APP_RUNTIME_KEY].default_binding().adapter = adapter
+        original = voice_api.MAX_GENERATED_TEXT_CHARS
+        voice_api.MAX_GENERATED_TEXT_CHARS = 3
+        try:
+            resp = await self.client.post("/api/v1/converse", json={"text": "go"})
+            raw = (await resp.read()).decode("utf-8")
+        finally:
+            voice_api.MAX_GENERATED_TEXT_CHARS = original
+        self.assertIn("assistant output exceeded", raw)
+        self.assertNotIn("event: turn_completed", raw)
+        self.assertTrue(adapter.cancel_called)
+
+    async def test_converse_stops_after_first_terminal_event(self) -> None:
+        self.app[APP_RUNTIME_KEY].default_binding().adapter = (
+            _ContradictoryTerminalAdapter()
+        )
+        resp = await self.client.post("/api/v1/converse", json={"text": "go"})
+        raw = (await resp.read()).decode("utf-8")
+        self.assertIn("event: turn_completed", raw)
+        self.assertNotIn("event: turn_failed", raw)
 
 
 class ConverseBackendSwitchTests(VoiceAPITestBase):
@@ -312,7 +426,9 @@ class ConverseTimeoutTests(VoiceAPITestBase):
         finally:
             voice_api.CONVERSE_TURN_TIMEOUT_SECONDS = original
         self.assertEqual(resp.status, 200)
-        self.assertIn("turn timed out", raw.decode("utf-8"))
+        decoded = raw.decode("utf-8")
+        self.assertIn("turn timed out", decoded)
+        self.assertNotIn("event: turn_completed", decoded)
         self.assertTrue(self.hanging.cancel_called, "wedged turn should be cancelled on timeout")
 
 

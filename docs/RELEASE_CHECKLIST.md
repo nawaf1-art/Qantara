@@ -1,96 +1,36 @@
 # Release Checklist
 
-Use this before tagging a public release.
+Use this checklist together with [RELEASE_PROCESS.md](RELEASE_PROCESS.md). It is intentionally version-neutral.
 
-## Latest Validation Note
+## Source preparation
 
-The current candidate is `v0.3.0`. It corrects the release line after the
-Python SDK milestone and consolidates the SDK, Voice-as-API, July audit fixes,
-current Ollama compatibility work, and dependency hardening. It also carries
-the mesh shutdown fix for the intermittent `macos-latest` / Python 3.12 CI
-failure; otherwise it matches `v0.2.12` at runtime.
+- [ ] Version matches in `VERSION`, `pyproject.toml`, changelog, README, and roadmap.
+- [ ] Changelog entry is complete and upgrade notes identify compatibility/security changes.
+- [ ] Public docs and feature statuses describe implemented behavior only.
+- [ ] Dependency/lock changes were reviewed and audited.
+- [ ] No secrets, certificates, logs, model weights, audio, private notes, or caches are tracked or packaged.
 
-Keep the published `v0.2.10` and `v0.2.12` tags intact. They are historical
-compatibility points and must not be moved or deleted.
+## Pull request validation
 
-## Automated Checks
+- [ ] Required CI jobs pass on the exact release commit.
+- [ ] Wheel and sdist pass metadata/content checks and clean-install smoke tests.
+- [ ] Docker configuration is valid; a clean build/health check was run when Docker changed.
+- [ ] Relevant real backend/browser/device checks and gaps are recorded.
+- [ ] Security/privacy and rollback implications were reviewed.
 
-- [ ] `python -m unittest discover -s tests -v`
-- [ ] `python -m ruff check .`
-- [ ] `python -m compileall -q adapters discovery gateway providers qantara scripts`
-- [ ] `python -m pip_audit -r ops/docker/requirements.txt --disable-pip`
-- [ ] Build wheel and sdist with `python -m build`
-- [ ] Install the wheel in a clean environment and verify `qantara.__version__`
-- [ ] Run the browser inline-script syntax check
-- [ ] `python scripts/bench_launch.py --json --barge-in-iterations 20 --tts-iterations 0`
-- [ ] Validate `/api/version`, `/api/tags`, `/api/chat`, and `/v1/models` against the current Ollama release
-- [ ] Docker build succeeds: `docker compose build`
-- [ ] Docker first run reaches setup page: `docker compose up`
-- [ ] CI passes on Linux, macOS, and Windows
+## Owner-controlled release
 
-## Manual First-Run Checks
+- [ ] Release PR is merged without rewriting published history.
+- [ ] Owner creates the exact protected `vX.Y.Z` tag on the intended commit.
+- [ ] Manual release workflow is dispatched from that tag with matching `X.Y.Z` input.
+- [ ] Draft assets include wheel, sdist, checksums, SPDX SBOM, validation evidence, and provenance.
+- [ ] Checksums and validation commit/tag are reviewed independently.
+- [ ] Draft notes contain upgrade/security guidance and no unsupported claims.
+- [ ] GitHub Release is published manually; PyPI remains a separate explicit decision.
 
-- [ ] Fresh clone on a clean machine or VM
-- [ ] Native install from `docs/INSTALLATION_AND_FIRST_RUN_GUIDE.md`
-- [ ] Docker install from README quick start
-- [ ] Setup page loads at `http://localhost:8765`
-- [ ] OpenAI-compatible backend can be configured against a local private/loopback URL
-- [ ] Microphone prompt appears on localhost
-- [ ] One English voice turn completes
-- [ ] Barge-in stops playback and accepts the next turn
-- [ ] Arabic turn routes to `ar_JO-kareem-medium` when that Piper voice is installed
-- [ ] `/api/status`, `/api/tts`, and `/api/languages` return valid JSON
+## After publication
 
-## Publication Safety
-
-- [ ] `git status --short` is clean
-- [ ] Tracked-file secret scan reports no matching file names (do not print secret values)
-- [ ] No tracked local certs or model weights: `git ls-files 'ops/certs/*' 'models/piper/*.onnx'`
-- [ ] `docs/SECURITY_PUBLICATION_AUDIT.md` reviewed
-- [ ] Release branch targets the public repository's `main`
-
-## GitHub Repository Setup
-
-Recommended description:
-
-```text
-Local-first real-time voice gateway for Ollama and other local LLMs, including local AI agents: browser speech, STT, barge-in, TTS.
-```
-
-Recommended topics:
-
-```text
-voice-ai, local-first, self-hosted, ollama, speech-to-text, text-to-speech, websocket, home-assistant, piper-tts, faster-whisper
-```
-
-Before publishing:
-
-- [ ] Set repository description
-- [ ] Set topics
-- [ ] Add a social preview image if available. Suggested content: Qantara wordmark, "Local voice for Ollama and local LLMs", browser mic -> gateway -> local backend diagram.
-- [ ] Enable Issues
-- [ ] Enable Discussions only if you intend to monitor them
-- [ ] Enable private vulnerability reporting after repository is public
-- [ ] Publish good-first issues from the draft list in `docs/PUBLISHING_READINESS_AUDIT.md`
-
-## Tag and Release
-
-Release tag:
-
-```text
-v0.3.0
-```
-
-Commands:
-
-```bash
-git tag -a v0.3.0 -m "v0.3.0 consolidated platform release"
-git push origin v0.3.0
-gh release create v0.3.0 \
-  --title "v0.3.0 - Consolidated platform release" \
-  --notes-file docs/RELEASE_NOTES_0.3.0.md
-```
-
-Do not tag until the version-correction pull request is merged, CI is green, and
-`VERSION`, `pyproject.toml`, `CHANGELOG.md`, `README.md`, and `ROADMAP.md`
-all agree on `0.3.0`.
+- [ ] Fresh install from the published artifact succeeds.
+- [ ] Release links and documentation resolve.
+- [ ] Version/tag/release are recorded in the project’s normal public channels.
+- [ ] Any correction uses a new version; published artifacts are not silently replaced.

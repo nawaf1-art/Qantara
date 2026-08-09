@@ -96,19 +96,26 @@ async def api_auth_login_handler(request: web.Request) -> web.Response:
         body = await request.json()
     except Exception:
         return web.json_response({"error": "invalid JSON body"}, status=400)
-    token = str(body.get("token", ""))
+    if not isinstance(body, dict):
+        return web.json_response({"error": "invalid JSON body"}, status=400)
+    token = body.get("token", "")
+    if not isinstance(token, str):
+        return web.json_response({"error": "token must be a string"}, status=400)
     if not hmac.compare_digest(token, expected):
         return web.json_response({"error": "unauthorized"}, status=401)
     session_token = request.app.get(AUTH_SESSION_TOKEN_KEY)
     if session_token is None:
         return web.json_response({"error": "auth session unavailable"}, status=500)
     response = web.json_response({"ok": True, "required": True})
+    forwarded_proto = request.headers.get("X-Forwarded-Proto", "").split(",", 1)[
+        0
+    ].strip().lower()
     response.set_cookie(
         AUTH_COOKIE_NAME,
         session_token,
         max_age=12 * 60 * 60,
         httponly=True,
-        secure=request.secure,
+        secure=request.secure or forwarded_proto == "https",
         samesite="Strict",
         path="/",
     )

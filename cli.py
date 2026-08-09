@@ -28,6 +28,8 @@ REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
+from qantara.security import bridge_subprocess_environment, sanitize_public_url  # noqa: E402
+
 # ---------------------------------------------------------------------------
 # Bridge script paths (relative to repo root)
 # ---------------------------------------------------------------------------
@@ -202,7 +204,10 @@ def _classify_backend(backend: str) -> tuple[str, str]:
         return "openai_compatible", value.rstrip("/")
 
     # Unrecognised — treat as literal and let the user know
-    print(f"[qantara] warning: unrecognised backend '{value}', treating as custom URL", flush=True)
+    print(
+        "[qantara] warning: unrecognised backend value; treating it as a custom URL",
+        flush=True,
+    )
     return "custom", value
 
 
@@ -235,6 +240,14 @@ def _apply_env(backend_type: str, url: str, args: argparse.Namespace) -> None:
         if args.agent:
             os.environ.setdefault("QANTARA_OPENCLAW_AGENT_ID", args.agent)
 
+    elif backend_type == "openai_compatible":
+        os.environ["QANTARA_ADAPTER"] = "openai_compatible"
+        if not os.environ.get("QANTARA_OPENAI_BASE_URL"):
+            config_url = getattr(args, "_config_backend_url", "")
+            os.environ["QANTARA_OPENAI_BASE_URL"] = url or config_url
+        if args.model:
+            os.environ.setdefault("QANTARA_OPENAI_MODEL", args.model)
+
     elif backend_type == "custom":
         os.environ["QANTARA_ADAPTER"] = "session_gateway_http"
         if not os.environ.get("QANTARA_BACKEND_BASE_URL"):
@@ -261,7 +274,7 @@ async def _start_bridge(backend_type: str, args: argparse.Namespace) -> None:
         print(f"[qantara] error: bridge script not found for '{backend_type}'", flush=True)
         sys.exit(1)
 
-    env = os.environ.copy()
+    env = bridge_subprocess_environment()
     env["QANTARA_REAL_BACKEND_PORT"] = str(MANAGED_BRIDGE_PORT)
     env["QANTARA_REAL_BACKEND_HOST"] = "127.0.0.1"
     if backend_type == "ollama" and args.model:
@@ -270,11 +283,16 @@ async def _start_bridge(backend_type: str, args: argparse.Namespace) -> None:
         env["QANTARA_OPENCLAW_AGENT_ID"] = args.agent
 
     print(f"[qantara] starting {backend_type} bridge on port {MANAGED_BRIDGE_PORT}...", flush=True)
+    bridge_logs_enabled = os.environ.get("QANTARA_BRIDGE_LOG_OUTPUT", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
     _bridge_proc = await asyncio.create_subprocess_exec(
         sys.executable, script,
         env=env,
-        stdout=None,  # inherit parent stdout so bridge logs are visible
-        stderr=None,  # inherit parent stderr
+        stdout=None if bridge_logs_enabled else asyncio.subprocess.DEVNULL,
+        stderr=None if bridge_logs_enabled else asyncio.subprocess.DEVNULL,
     )
 
 
@@ -287,8 +305,8 @@ async def _wait_for_bridge(timeout: float = 8.0) -> bool:
     client_timeout = aiohttp.ClientTimeout(total=2)
     while time.monotonic() < deadline:
         try:
-            async with aiohttp.ClientSession(timeout=client_timeout) as session:
-                async with session.get(url) as resp:
+            async with aiohttp.ClientSession(timeout=client_timeout, trust_env=False) as session:
+                async with session.get(url, allow_redirects=False) as resp:
                     if resp.status < 500:
                         return True
         except Exception:
@@ -322,50 +340,57 @@ async def _run(args: argparse.Namespace) -> None:
 
     # Apply env vars before importing the gateway module (it reads env at import time)
     _apply_env(backend_type, url, args)
+    runner = None
+    try:
+        # Start bridge subprocess if needed
+        if backend_type in ("ollama", "openclaw"):
+            await _start_bridge(backend_type, args)
+            ready = await _wait_for_bridge()
+            if not ready:
+                print(f"[qantara] warning: {backend_type} bridge did not become healthy in time", flush=True)
+                print("[qantara] continuing anyway — the bridge may still be loading...", flush=True)
 
-    # Start bridge subprocess if needed
-    if backend_type in ("ollama", "openclaw"):
-        await _start_bridge(backend_type, args)
-        ready = await _wait_for_bridge()
-        if not ready:
-            print(f"[qantara] warning: {backend_type} bridge did not become healthy in time", flush=True)
-            print("[qantara] continuing anyway — the bridge may still be loading...", flush=True)
+        # Now import the gateway — it reads QANTARA_* env vars at module level
+        from gateway.transport_spike.server import create_app, create_ssl_context
 
-    # Now import the gateway — it reads QANTARA_* env vars at module level
-    from gateway.transport_spike.server import create_app, create_ssl_context
+        label = backend_type
+        if backend_type == "ollama" and args.model:
+            label = f"ollama ({args.model})"
+        elif backend_type == "openclaw" and args.agent:
+            label = f"openclaw ({args.agent})"
+        elif backend_type == "custom":
+            display_url = sanitize_public_url(
+                url if url.startswith(("http://", "https://")) else f"http://{url}"
+            )
+            label = f"custom ({display_url or 'configured endpoint'})"
 
-    label = backend_type
-    if backend_type == "ollama" and args.model:
-        label = f"ollama ({args.model})"
-    elif backend_type == "openclaw" and args.agent:
-        label = f"openclaw ({args.agent})"
-    elif backend_type == "custom":
-        label = f"custom ({url})"
+        print(f"[qantara] backend: {label}", flush=True)
+        print(f"[qantara] gateway: http://{args.host}:{args.port}", flush=True)
 
-    print(f"[qantara] backend: {label}", flush=True)
-    print(f"[qantara] gateway: http://{args.host}:{args.port}", flush=True)
+        from aiohttp import web
 
-    from aiohttp import web
+        app = create_app()
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, args.host, args.port, ssl_context=create_ssl_context())
+        await site.start()
 
-    app = create_app()
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, args.host, args.port, ssl_context=create_ssl_context())
-    await site.start()
-
-    # Wait until cancelled (SIGINT/SIGTERM)
-    stop_event = asyncio.Event()
-
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop_event.set)
-
-    await stop_event.wait()
-
-    print("\n[qantara] shutting down...", flush=True)
-    await runner.cleanup()
-    await _stop_bridge()
-    print("[qantara] stopped.", flush=True)
+        stop_event = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, stop_event.set)
+            except NotImplementedError:
+                # Windows delivers Ctrl+C as KeyboardInterrupt. The finally
+                # block below still closes the runner and managed bridge.
+                pass
+        await stop_event.wait()
+    finally:
+        print("\n[qantara] shutting down...", flush=True)
+        if runner is not None:
+            await runner.cleanup()
+        await _stop_bridge()
+        print("[qantara] stopped.", flush=True)
 
 
 def main() -> None:

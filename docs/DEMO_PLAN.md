@@ -60,5 +60,5 @@ Use a clean 1280x640 image:
 
 - Left: Qantara name and tagline, "Local-first voice gateway for Ollama and local AI agents".
 - Right: simplified flow, "Browser voice -> Qantara -> local LLM/agent".
-- Bottom: status labels, "Stable local voice path. Experimental MCP and HA paths."
+- Bottom: status labels, "Beta local voice path. Experimental MCP and HA paths."
 - Avoid claiming production readiness.

@@ -1,0 +1,58 @@
+name: Feature proposal
+description: Propose a scoped improvement consistent with Qantara's local-first architecture.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: Describe the problem before proposing an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed outcome
+      description: Explain observable behavior, not just internal technology.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Primary area
+      options:
+        - Gateway / turn lifecycle
+        - Browser / transport
+        - Backend adapter
+        - STT or TTS provider
+        - Voice API / SDK
+        - MCP / OpenClaw
+        - Mesh / Wyoming
+        - Packaging / release / CI
+        - Documentation / project operations
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Local-first, privacy, and security impact
+      description: Note network access, data retention, credentials, downloads, and LAN exposure.
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility and alternatives
+      description: Identify public contracts affected and simpler alternatives considered.
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: I checked the roadmap and existing issues for overlap.
+          required: true
+        - label: The default path remains usable without a required cloud service.
+          required: true

@@ -27,6 +27,7 @@ from gateway.transport_spike.common import (  # noqa: E402
     TLS_KEY_FILE,
 )
 from gateway.transport_spike.http_api import (  # noqa: E402
+    add_security_headers,
     cleanup_bridge,
     mount_static_routes,
     origin_guard_middleware,
@@ -65,10 +66,11 @@ __all__ = [
 
 
 def create_app(runtime: GatewayRuntime | None = None) -> web.Application:
-    # client_max_size covers one-shot /api/v1/transcribe audio uploads;
-    # voice_api enforces its own MAX_AUDIO_BYTES bound on top.
-    app = web.Application(client_max_size=33 * 1024 * 1024)
+    # Keep control-plane JSON small. The one-shot transcription handler clones
+    # its request with its separate 32 MiB audio-specific ceiling.
+    app = web.Application(client_max_size=1024 * 1024)
     app.middlewares.append(origin_guard_middleware)
+    app.on_response_prepare.append(add_security_headers)
     app[APP_RUNTIME_KEY] = runtime or GatewayRuntime()
     auth_token = load_auth_token("QANTARA_AUTH_TOKEN")
     app[AUTH_TOKEN_KEY] = auth_token

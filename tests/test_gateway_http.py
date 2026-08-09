@@ -4,7 +4,7 @@ import os
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from aiohttp import WSServerHandshakeError
+from aiohttp import WSCloseCode, WSMsgType, WSServerHandshakeError
 from aiohttp.test_utils import TestClient, TestServer
 from protocol_fixtures import (
     assert_playback_cleared_payload,
@@ -166,6 +166,58 @@ class GatewayHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["type"], "mock")
         self.assertEqual(body["adapter_kind"], "mock")
 
+    async def test_status_hides_backend_details_until_authenticated(self) -> None:
+        await self._restart_client(
+            {"QANTARA_AUTH_TOKEN": "voice-secret-token-123456"}
+        )
+        public = await self.client.get("/api/status")
+        public_body = await public.json()
+        self.assertEqual(public.status, 200)
+        self.assertTrue(public_body["authentication_required"])
+        self.assertNotIn("url", public_body)
+        self.assertNotIn("model", public_body)
+
+        authenticated = await self.client.get(
+            "/api/status",
+            headers={"Authorization": "Bearer voice-secret-token-123456"},
+        )
+        authenticated_body = await authenticated.json()
+        self.assertEqual(authenticated.status, 200)
+        self.assertEqual(authenticated_body["type"], "mock")
+
+    async def test_login_marks_cookie_secure_behind_https_proxy(self) -> None:
+        await self._restart_client(
+            {"QANTARA_AUTH_TOKEN": "voice-secret-token-123456"}
+        )
+        response = await self.client.post(
+            "/api/auth/login",
+            json={"token": "voice-secret-token-123456"},
+            headers={"X-Forwarded-Proto": "https"},
+        )
+        self.assertEqual(response.status, 200)
+        cookie = response.headers.get("Set-Cookie", "")
+        self.assertIn("HttpOnly", cookie)
+        self.assertIn("SameSite=Strict", cookie)
+        self.assertIn("Secure", cookie)
+
+    async def test_api_responses_include_browser_security_headers(self) -> None:
+        resp = await self.client.get("/api/status")
+        self.assertEqual(resp.headers["X-Content-Type-Options"], "nosniff")
+        self.assertEqual(resp.headers["X-Frame-Options"], "DENY")
+        self.assertEqual(resp.headers["Referrer-Policy"], "no-referrer")
+        self.assertEqual(resp.headers["Cache-Control"], "no-store")
+        self.assertIn("frame-ancestors 'none'", resp.headers["Content-Security-Policy"])
+
+    async def test_rejects_public_host_header(self) -> None:
+        resp = await self.client.get("/api/status", headers={"Host": "evil.example"})
+        self.assertEqual(resp.status, 421)
+
+    async def test_rejects_malformed_host_authority(self) -> None:
+        for host in ("localhost?public.example", "localhost#public.example"):
+            with self.subTest(host=host):
+                resp = await self.client.get("/api/status", headers={"Host": host})
+                self.assertEqual(resp.status, 421)
+
     async def test_admin_runtime_endpoint_exposes_bindings_and_sessions(self) -> None:
         await self._restart_client({"QANTARA_ADMIN_TOKEN": "admin-secret-token-123456"})
         ws = await self.client.ws_connect("/ws")
@@ -306,6 +358,56 @@ class GatewayHTTPTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(resp.status, 200)
 
+    async def test_configure_rejects_same_hostname_on_different_port(self) -> None:
+        base = self.client.make_url("")
+        origin = f"{base.scheme}://{base.host}:{base.port + 1}"
+        resp = await self.client.post(
+            "/api/configure",
+            json={"type": "mock"},
+            headers={"Origin": origin},
+        )
+        self.assertEqual(resp.status, 403)
+
+    async def test_explicit_origin_allowlist_supports_cors_preflight_and_post(self) -> None:
+        await self._restart_client(
+            {"QANTARA_ALLOWED_ORIGINS": "https://dashboard.lan"}
+        )
+        preflight = await self.client.options(
+            "/api/configure",
+            headers={
+                "Origin": "https://dashboard.lan",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+        self.assertEqual(preflight.status, 204)
+        self.assertEqual(
+            preflight.headers["Access-Control-Allow-Origin"],
+            "https://dashboard.lan",
+        )
+
+        with patch(
+            "gateway.transport_spike.http_api.unload_previous_model",
+            new_callable=AsyncMock,
+        ):
+            response = await self.client.post(
+                "/api/configure",
+                json={"type": "mock"},
+                headers={"Origin": "https://dashboard.lan"},
+            )
+        self.assertEqual(response.status, 200)
+        self.assertEqual(
+            response.headers["Access-Control-Allow-Origin"],
+            "https://dashboard.lan",
+        )
+
+    async def test_ws_rejects_same_hostname_on_different_port(self) -> None:
+        base = self.client.make_url("")
+        origin = f"{base.scheme}://{base.host}:{base.port + 1}"
+        with self.assertRaises(WSServerHandshakeError) as ctx:
+            await self.client.ws_connect("/ws", headers={"Origin": origin})
+        self.assertEqual(ctx.exception.status, 403)
+
     async def test_configure_rejects_invalid_json_before_unload(self) -> None:
         with patch("gateway.transport_spike.http_api.unload_previous_model", new_callable=AsyncMock) as unload:
             resp = await self.client.post(
@@ -317,6 +419,17 @@ class GatewayHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp.status, 400)
         self.assertEqual(body["error"], "invalid JSON body")
         unload.assert_not_awaited()
+
+    async def test_state_changing_endpoints_reject_non_object_json(self) -> None:
+        for path in (
+            "/api/configure",
+            "/api/test-url",
+            "/api/test-mcp",
+            "/api/translation_mode",
+        ):
+            with self.subTest(path=path):
+                resp = await self.client.post(path, json=[])
+                self.assertEqual(resp.status, 400)
 
     async def test_configure_rejects_missing_required_url_before_unload(self) -> None:
         with patch("gateway.transport_spike.http_api.unload_previous_model", new_callable=AsyncMock) as unload:
@@ -365,6 +478,13 @@ class GatewayHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status.status, 200)
         self.assertTrue(status_body["required"])
         self.assertFalse(status_body["authenticated"])
+
+        non_object = await self.client.post("/api/auth/login", json=[])
+        self.assertEqual(non_object.status, 400)
+        non_string = await self.client.post(
+            "/api/auth/login", json={"token": ["not", "a", "token"]}
+        )
+        self.assertEqual(non_string.status, 400)
 
         wrong = await self.client.post("/api/auth/login", json={"token": "wrong"})
         self.assertEqual(wrong.status, 401)
@@ -461,6 +581,31 @@ class GatewayHTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ready["allowed_transforms"], ["rate", "tone"])
         await ws.close()
 
+    async def test_websocket_connection_count_is_bounded(self) -> None:
+        self.runtime.max_websocket_connections = 1
+        first = await self.client.ws_connect("/ws")
+        try:
+            with self.assertRaises(WSServerHandshakeError) as context:
+                await self.client.ws_connect("/ws")
+            self.assertEqual(context.exception.status, 503)
+        finally:
+            await first.close()
+
+    async def test_websocket_rejects_non_object_control_without_disconnect(self) -> None:
+        ws = await self.client.ws_connect("/ws")
+        await ws.send_str("[]")
+        await ws.send_json({"type": "session_init", "client_session_id": "object-check"})
+        ready = await ws.receive_json()
+        self.assertEqual(ready["type"], "session_ready")
+        await ws.close()
+
+    async def test_websocket_closes_oversized_audio_frame(self) -> None:
+        ws = await self.client.ws_connect("/ws")
+        await ws.send_bytes(bytes([0x01]) + bytes(64 * 1024 + 2))
+        message = await ws.receive()
+        self.assertEqual(message.type, WSMsgType.CLOSE)
+        self.assertEqual(ws.close_code, WSCloseCode.MESSAGE_TOO_BIG)
+
     async def test_websocket_turn_streams_final_text(self) -> None:
         ws = await self.client.ws_connect("/ws")
         await ws.send_json(
@@ -533,6 +678,24 @@ class GatewayHTTPTests(unittest.IsolatedAsyncioTestCase):
                 break
         self.assertIsNotNone(result, "expected a transcript_result")
         self.assertEqual(result["text"], "", "rejected frame must not enter the PCM buffer")
+        self.assertEqual(result["engine"], "none")
+        await ws.close()
+
+    async def test_websocket_odd_pcm_payload_is_rejected(self) -> None:
+        self.runtime.stt = _CountingSTT()
+        ws = await self.client.ws_connect("/ws")
+        await ws.send_json({"type": "session_init", "client_session_id": "odd-pcm-client"})
+        await ws.receive_json()
+        await ws.receive_json()
+        await ws.send_bytes(bytes([0x01, 0x01]))
+        await ws.send_json({"type": "transcribe_recent_audio", "submit_turn": False})
+        result = None
+        for _ in range(12):
+            msg = await ws.receive_json()
+            if msg.get("type") == "transcript_result":
+                result = msg
+                break
+        self.assertIsNotNone(result)
         self.assertEqual(result["engine"], "none")
         await ws.close()
 

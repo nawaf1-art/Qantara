@@ -3,7 +3,12 @@ from __future__ import annotations
 import unittest
 
 from adapters.openai_compatible import _extract_answer_delta
-from qantara.streaming import iter_ndjson_objects, iter_sse_json_objects
+from qantara.streaming import (
+    StreamLimitError,
+    iter_ndjson_objects,
+    iter_sse_json_objects,
+    iter_text_lines,
+)
 
 
 async def _chunks(values: list[bytes]):
@@ -12,6 +17,29 @@ async def _chunks(values: list[bytes]):
 
 
 class StreamingParserTests(unittest.IsolatedAsyncioTestCase):
+    async def test_text_lines_reject_oversized_unterminated_line(self) -> None:
+        with self.assertRaises(StreamLimitError):
+            _ = [
+                line
+                async for line in iter_text_lines(
+                    _chunks([b"1234", b"5678", b"9"]),
+                    max_line_chars=8,
+                )
+            ]
+
+    async def test_text_lines_preserve_utf8_at_every_split_boundary(self) -> None:
+        encoded = "first 😀 أهلاً\r\nsecond 日本語\nlast".encode()
+        expected = ["first 😀 أهلاً", "second 日本語", "last"]
+        for split_at in range(len(encoded) + 1):
+            with self.subTest(split_at=split_at):
+                actual = [
+                    line
+                    async for line in iter_text_lines(
+                        _chunks([encoded[:split_at], encoded[split_at:]])
+                    )
+                ]
+                self.assertEqual(actual, expected)
+
     async def test_ndjson_preserves_split_utf8_and_multiple_lines(self) -> None:
         encoded = '{"message":{"content":"أهلاً"}}\n{"done":true}'.encode()
         split_at = encoded.index("أ".encode()) + 1

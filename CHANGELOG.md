@@ -4,6 +4,32 @@ All notable changes to Qantara are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reaches `1.0.0`. Until then, minor versions may include breaking changes — see the release notes on each tag.
 
+## [0.3.1] - Unreleased
+
+### Added
+- Reusable release consistency, package-content, and clean-install smoke checks for wheel and source artifacts.
+- A manual tag-only draft-release workflow that produces checksums, SPDX SBOM output, validation evidence, and GitHub provenance attestations from the same validated build.
+- Public privacy, governance, support, release-process, and architectural-debt documentation, plus structured issue forms and CODEOWNERS.
+
+### Changed
+- CI now uses immutable Action commit SHAs, least-privilege permissions, concurrency controls, a lightweight cross-platform test extra, dependency review, and a base-runtime vulnerability audit.
+- The Python source version is `0.3.1`; wheel artifacts now include public protocol and schema resources, while source-only utilities are documented explicitly.
+- Docker uses digest-pinned Python and Ollama images, hash-checked Python dependencies, a hash-pinned spaCy model wheel, a non-root runtime user, and a build context that excludes both common virtual-environment names.
+- Public documentation now uses one pre-1.0 status vocabulary and separates verified behavior from planned work and historical benchmark data.
+
+### Fixed
+- Default event output no longer writes transcripts, assistant text, tool parameters, or credentials to stdout; managed bridge output is opt-in and gateway-only credentials are removed from child environments.
+- Origin checks now compare host and port, and a LAN-aware Host guard rejects public or malformed authorities unless explicitly allowlisted.
+- WebSocket control messages, PCM frames, Voice API text, generated output, backend JSON, MCP progress queues, and incremental stream lines now have explicit bounds.
+- Timed-out OpenClaw discovery and Piper processes are killed and reaped; local outbound probes and adapters do not inherit proxy settings or follow redirects.
+- Backend URL validation rejects embedded credentials, public status payloads sanitize URLs, and HTTP responses include browser security and no-store headers.
+- The CLI now actually configures the OpenAI-compatible adapter when given an HTTP backend URL.
+
+### Upgrade Notes
+- Custom internal DNS names outside the built-in loopback/private/LAN-name policy must be listed in `QANTARA_ALLOWED_HOSTS`.
+- Set `QANTARA_BRIDGE_LOG_OUTPUT=1` only when bridge stdout/stderr is needed for local diagnostics; review that output before sharing it.
+- This pull request prepares `0.3.1` but does not create a tag, publish a release, or upload to PyPI.
+
 ## [0.3.0] - 2026-07-30
 
 ### Changed
@@ -234,7 +260,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - 39 lint issues surfaced by ruff: unused imports, deprecated typing imports, missing `raise … from`, unused variables, import ordering.
 - Version references aligned on `0.1.9-pre` across `VERSION`, `AGENTS.md`, `README.md`, and `ROADMAP.md`.
 
-[Unreleased]: https://github.com/nawaf1-art/Qantara/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/nawaf1-art/Qantara/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/nawaf1-art/Qantara/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/nawaf1-art/Qantara/compare/v0.2.12...v0.3.0
 [0.2.12]: https://github.com/nawaf1-art/Qantara/compare/v0.2.10...v0.2.12
 [0.2.10]: https://github.com/nawaf1-art/Qantara/compare/v0.2.9...v0.2.10

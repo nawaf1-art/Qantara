@@ -15,6 +15,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from gateway.session_backend_prompts import build_voice_turn_context_prompt  # noqa: E402
+from qantara.http_safety import read_bounded_response_text  # noqa: E402
 from qantara.streaming import iter_ndjson_objects  # noqa: E402
 
 DEFAULT_HOST = os.environ.get("QANTARA_REAL_BACKEND_HOST", "127.0.0.1")
@@ -166,18 +167,25 @@ class OllamaSessionBackend:
 
 
 BACKEND = OllamaSessionBackend()
+MAX_TURN_TEXT_CHARS = 16 * 1024
+MAX_ASSISTANT_TEXT_CHARS = 1024 * 1024
 
 
 async def health_handler(_: web.Request) -> web.Response:
     detail = f"ollama session backend ready ({OLLAMA_MODEL})"
     try:
         timeout = aiohttp.ClientTimeout(total=5)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(f"{OLLAMA_BASE_URL}/api/tags") as response:
+        async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
+            async with session.get(
+                f"{OLLAMA_BASE_URL}/api/tags", allow_redirects=False
+            ) as response:
                 if response.status >= 400:
                     return web.json_response({"status": "degraded", "detail": detail}, status=200)
-    except Exception as exc:
-        return web.json_response({"status": "degraded", "detail": f"{detail}; ollama unavailable: {exc}"}, status=200)
+    except Exception:
+        return web.json_response(
+            {"status": "degraded", "detail": f"{detail}; ollama unavailable"},
+            status=200,
+        )
     return web.json_response({"status": "ok", "detail": detail})
 
 
@@ -210,6 +218,8 @@ async def create_turn_handler(request: web.Request) -> web.Response:
     transcript = raw_transcript.strip() if isinstance(raw_transcript, str) else ""
     if not transcript:
         return web.json_response({"error": "empty transcript"}, status=400)
+    if len(transcript) > MAX_TURN_TEXT_CHARS:
+        return web.json_response({"error": "transcript is too long"}, status=413)
 
     turn_context = payload.get("turn_context")
     if turn_context is not None and not isinstance(turn_context, dict):
@@ -233,9 +243,13 @@ async def _ollama_stream_messages(session_state: SessionState, transcript: str, 
     }
 
     timeout = aiohttp.ClientTimeout(total=OLLAMA_TIMEOUT_SECONDS)
-    client = aiohttp.ClientSession(timeout=timeout)
+    client = aiohttp.ClientSession(timeout=timeout, trust_env=False)
     try:
-        response = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
+        response = await client.post(
+            f"{OLLAMA_BASE_URL}/api/chat",
+            json=payload,
+            allow_redirects=False,
+        )
     except Exception:
         await client.close()
         raise
@@ -270,7 +284,7 @@ async def stream_turn_events_handler(request: web.Request) -> web.StreamResponse
     try:
         client, upstream = await _ollama_stream_messages(session_state, turn.transcript, turn.turn_context)
         if upstream.status >= 400:
-            body = await upstream.text()
+            body = await read_bounded_response_text(upstream)
             await response.write((json.dumps({"type": "turn_failed", "message": body or f"ollama error {upstream.status}"}) + "\n").encode("utf-8"))
             await response.write_eof()
             return response
@@ -314,6 +328,8 @@ async def stream_turn_events_handler(request: web.Request) -> web.StreamResponse
             if not delta:
                 continue
 
+            if len(full_text) + len(delta) > MAX_ASSISTANT_TEXT_CHARS:
+                raise RuntimeError("assistant output exceeded the configured limit")
             full_text += delta
             await response.write((json.dumps({"type": "assistant_text_delta", "text": delta, "turn_handle": turn_handle}) + "\n").encode("utf-8"))
 

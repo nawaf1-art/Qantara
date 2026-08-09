@@ -1,6 +1,6 @@
 services:
   ollama:
-    image: ollama/ollama:0.32.3
+    image: ollama/ollama:0.32.3@sha256:ec24bcaa2a810eb74171ce7c517813ef4821ed678988845e8d76cf62467036d4
     container_name: qantara-ollama
     volumes:
       - ollama-data:/root/.ollama
@@ -12,7 +12,7 @@ services:
       start_period: 10s
 
   ollama-pull:
-    image: ollama/ollama:0.32.3
+    image: ollama/ollama:0.32.3@sha256:ec24bcaa2a810eb74171ce7c517813ef4821ed678988845e8d76cf62467036d4
     container_name: qantara-ollama-pull
     depends_on:
       ollama:

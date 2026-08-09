@@ -28,6 +28,8 @@ ACTIVITY_TYPES = ("tool_call", "reading_files", "searching", "thinking", "other"
 # Serialized tool-call parameters above this size are dropped rather than
 # forwarded to the browser; activity events are a glanceable strip, not a log.
 MAX_PARAMETERS_JSON_CHARS = 2048
+MAX_ACTIVITY_SUMMARY_CHARS = 4096
+MAX_TOOL_NAME_CHARS = 256
 
 
 def _clamp_unit(value: Any) -> float | None:
@@ -53,13 +55,13 @@ def make_activity_event(
     event: dict[str, Any] = {
         "type": "assistant_activity",
         "activity_type": activity_type if activity_type in ACTIVITY_TYPES else "other",
-        "summary": str(summary),
+        "summary": summary[:MAX_ACTIVITY_SUMMARY_CHARS] if isinstance(summary, str) else "",
     }
     clamped_progress = _clamp_unit(progress)
     if clamped_progress is not None:
         event["progress"] = clamped_progress
     if isinstance(tool_name, str) and tool_name:
-        event["tool_name"] = tool_name
+        event["tool_name"] = tool_name[:MAX_TOOL_NAME_CHARS]
     if isinstance(parameters, dict):
         try:
             if len(json.dumps(parameters)) <= MAX_PARAMETERS_JSON_CHARS:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from adapters.base import AdapterConfig
 from gateway.transport_spike.runtime import GatewayRuntime, Session
@@ -77,6 +78,17 @@ class BackendSwitchTests(unittest.IsolatedAsyncioTestCase):
         runtime.prune_session_store()
 
         self.assertIsNotNone(runtime.snapshot_for("active-client"))
+
+    async def test_inactive_session_snapshot_store_is_bounded(self) -> None:
+        runtime = _make_runtime()
+        with patch("gateway.transport_spike.runtime.SESSION_STORE_LIMIT", 2):
+            for index in range(4):
+                session = Session(DummyWebSocket(), runtime)
+                session.client_session_id = f"client-{index}"
+                runtime.register_session(session)
+                runtime.release_session(session)
+
+        self.assertEqual(set(runtime._session_store), {"client-2", "client-3"})
 
 
 if __name__ == "__main__":

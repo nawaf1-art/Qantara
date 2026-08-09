@@ -4,6 +4,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from adapters.base import AdapterConfig
@@ -42,6 +43,15 @@ class MCPClientAdapterTests(unittest.IsolatedAsyncioTestCase):
         parts = MCPClientAdapter._split_command(command, windows=True)
 
         self.assertEqual(parts, [r"C:\Program Files\Python\python.exe", r"D:\agent\server.py"])
+
+    def test_text_extraction_stops_at_configured_limit(self) -> None:
+        result = SimpleNamespace(
+            content=[SimpleNamespace(text="123"), SimpleNamespace(text="45")],
+            structuredContent=None,
+        )
+        with patch("adapters.mcp_client.MAX_MCP_TOOL_OUTPUT_CHARS", 4):
+            with self.assertRaisesRegex(RuntimeError, "output exceeded"):
+                MCPClientAdapter._extract_text(result)
 
     async def test_stdio_adapter_lists_tools_and_reports_health(self) -> None:
         adapter = self._adapter()

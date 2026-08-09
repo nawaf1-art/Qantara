@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import sys
 from dataclasses import dataclass
@@ -10,6 +11,107 @@ from providers.voice_registry import (
     default_registry_path,
     filter_registry_voices,
 )
+from qantara.security import bridge_subprocess_environment
+
+MAX_PIPER_AUDIO_BYTES = 64 * 1024 * 1024
+MAX_PIPER_STDERR_BYTES = 256 * 1024
+
+
+class PiperOutputLimitError(RuntimeError):
+    pass
+
+
+async def _read_bounded_stream(
+    stream: asyncio.StreamReader,
+    *,
+    limit: int,
+    label: str,
+) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await stream.read(64 * 1024):
+        total += len(chunk)
+        if total > limit:
+            raise PiperOutputLimitError(
+                f"piper {label} exceeded the configured limit"
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def _communicate_bounded(
+    proc: asyncio.subprocess.Process,
+    input_data: bytes,
+    *,
+    timeout: float,
+) -> tuple[bytes, bytes]:
+    stdin = getattr(proc, "stdin", None)
+    stdout_stream = getattr(proc, "stdout", None)
+    stderr_stream = getattr(proc, "stderr", None)
+    if stdin is None or stdout_stream is None or stderr_stream is None:
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(input_data), timeout=timeout
+            )
+        except BaseException:
+            if proc.returncode is None:
+                proc.kill()
+            with contextlib.suppress(Exception):
+                await proc.communicate()
+            raise
+        if len(stdout) > MAX_PIPER_AUDIO_BYTES:
+            raise PiperOutputLimitError(
+                "piper audio exceeded the configured limit"
+            )
+        if len(stderr) > MAX_PIPER_STDERR_BYTES:
+            raise PiperOutputLimitError(
+                "piper stderr exceeded the configured limit"
+            )
+        return stdout, stderr
+
+    async def write_input() -> None:
+        try:
+            stdin.write(input_data)
+            await stdin.drain()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        stdin.close()
+        with contextlib.suppress(BrokenPipeError, ConnectionResetError):
+            await stdin.wait_closed()
+
+    tasks = [
+        asyncio.create_task(write_input()),
+        asyncio.create_task(
+            _read_bounded_stream(
+                stdout_stream,
+                limit=MAX_PIPER_AUDIO_BYTES,
+                label="audio",
+            )
+        ),
+        asyncio.create_task(
+            _read_bounded_stream(
+                stderr_stream,
+                limit=MAX_PIPER_STDERR_BYTES,
+                label="stderr",
+            )
+        ),
+        asyncio.create_task(proc.wait()),
+    ]
+    try:
+        _, stdout, stderr, _ = await asyncio.wait_for(
+            asyncio.gather(*tasks), timeout=timeout
+        )
+        return stdout, stderr
+    except BaseException:
+        if proc.returncode is None:
+            proc.kill()
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        with contextlib.suppress(Exception):
+            await proc.communicate()
+        raise
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -43,6 +145,7 @@ class PiperTTSProvider(TTSProvider):
     ) -> None:
         self.registry_path = registry_path or os.environ.get("QANTARA_VOICE_REGISTRY") or default_registry_path()
         self.sample_rate = sample_rate
+        self.timeout_seconds = float(os.environ.get("QANTARA_PIPER_TIMEOUT", "60"))
         self.command = [sys.executable, "-m", "piper"]
         self.voices = self._load_voices(voice_path=voice_path, config_path=config_path)
         self.voice_entries = {
@@ -117,11 +220,22 @@ class PiperTTSProvider(TTSProvider):
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=bridge_subprocess_environment(),
         )
 
-        stdout, stderr = await proc.communicate(text.encode("utf-8"))
+        try:
+            stdout, stderr = await _communicate_bounded(
+                proc,
+                text.encode("utf-8"),
+                timeout=self.timeout_seconds,
+            )
+        except TimeoutError as exc:
+            raise RuntimeError(
+                f"piper timed out after {self.timeout_seconds:g} seconds"
+            ) from exc
         if proc.returncode != 0:
-            raise RuntimeError(stderr.decode("utf-8", errors="replace") or "piper failed")
+            detail = stderr[:4096].decode("utf-8", errors="replace")
+            raise RuntimeError(detail or "piper failed")
 
         samples = []
         for i in range(0, len(stdout) - 1, 2):

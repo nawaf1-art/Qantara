@@ -72,9 +72,17 @@ class MinimalInstallTests(unittest.TestCase):
 
 
 class SDKDocumentationTests(unittest.TestCase):
-    def test_readme_has_sdk_example(self) -> None:
+    def test_readme_has_tagged_source_and_sdk_examples(self) -> None:
         readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("pip install qantara", readme)
+        self.assertIn(
+            'pip install "qantara @ git+https://github.com/nawaf1-art/Qantara.git@v0.3.1"',
+            readme,
+        )
+        self.assertIn(
+            'pip install "qantara[speech] @ git+https://github.com/nawaf1-art/Qantara.git@v0.3.1"',
+            readme,
+        )
+        self.assertIn("not published to PyPI", readme)
         self.assertIn("from qantara import VoiceGateway", readme)
 
 

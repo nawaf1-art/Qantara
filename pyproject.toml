@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.31.0"]
 build-backend = "hatchling.build"
 
 [project]
 name = "qantara"
-version = "0.3.0"
+version = "0.3.1"
 description = "Local-first voice gateway for Ollama, local LLMs, and local AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -36,19 +36,36 @@ speech = ["faster-whisper>=1.2,<2", "kokoro>=0.9.4,<0.10", "numpy>=2.0,<3", "sou
 mesh = ["zeroconf>=0.150,<0.151", "wyoming>=1.10,<2"]
 # MCP client adapter + MCP voice server.
 mcp = ["mcp>=1.28,<1.29"]
-chatterbox = ["chatterbox-tts>=0.1.2"]
+chatterbox = ["chatterbox-tts>=0.1.2,<0.2"]
+# Lightweight dependencies required by the repository's unit-test suite.
+# Real speech models and model downloads are intentionally excluded.
+test = [
+    "jsonschema>=4.23,<5",
+    "mcp>=1.28,<1.29",
+    "numpy>=2.0,<3",
+    "wyoming>=1.10,<2",
+    "zeroconf>=0.150,<0.151",
+]
+dev = [
+    "build==1.5.0",
+    "pip-audit==2.10.1",
+    "ruff==0.16.2",
+    "twine==7.0.0",
+]
 
 # The wheel intentionally ships the existing top-level packages (gateway,
 # adapters, providers, discovery) plus the client/identity asset trees next
 # to them, because all internal imports and asset paths resolve relative to
-# the install root. Consolidating everything under the qantara.* namespace
-# is planned for 0.3.x.
+# the install root. A future minor release may consolidate these under the
+# qantara.* namespace after the compatibility plan is approved.
 [tool.hatch.build.targets.wheel]
 packages = ["qantara", "adapters", "gateway", "providers", "discovery"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "client" = "client"
 "identity" = "identity"
+"protocols" = "protocols"
+"schemas" = "schemas"
 
 [tool.hatch.build.targets.sdist]
 include = [
@@ -61,9 +78,27 @@ include = [
     "identity",
     "protocols",
     "schemas",
+    "scripts",
+    "tests",
     "VERSION",
     "README.md",
     "LICENSE",
+    "CHANGELOG.md",
+    "ARCHITECTURE.md",
+    "CODE_OF_CONDUCT.md",
+    "CONTRIBUTING.md",
+    "FEATURES.md",
+    "GOVERNANCE.md",
+    "ROADMAP.md",
+    "SECURITY.md",
+    "SUPPORT.md",
+    "qantara.example.yml",
+    "docs",
+]
+exclude = [
+    "docs/audits",
+    "docs/internal",
+    "docs/SESSION_HANDOFF.md",
 ]
 
 [tool.ruff]

@@ -49,6 +49,10 @@ Qantara is maintained by a small team. Expect response times in the order of day
 
 ## Supported versions
 
-Security fixes target the latest tagged `0.2.x` release and the `main` branch.
-Older `0.2.x` tags may receive a fix only when the maintainers determine that
-an update is practical.
+Security fixes target `main` and the latest tagged release. The immediately
+previous release line may receive a critical fix when the maintainers determine
+that a safe backport is practical. Older tags are unsupported; upgrade before
+reporting an issue that is already fixed in the current release.
+
+Release-preparation branches and untagged version metadata are not supported
+releases. The GitHub Releases page is the source of truth for the latest tag.

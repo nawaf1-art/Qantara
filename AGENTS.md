@@ -143,7 +143,9 @@ QANTARA_ADAPTER=session_gateway_http QANTARA_BACKEND_BASE_URL=http://127.0.0.1:1
 
 ## Current State
 
-Version: `0.3.0` — consolidated platform release covering the Python SDK,
+Version: `0.3.1` — hardening release candidate covering security boundaries,
+release reproducibility, package validation, and public project operations. `0.3.0` was the
+consolidated platform release covering the Python SDK,
 Voice-as-API, Ollama compatibility, and audit hardening. `0.2.6` was the first
 public release.
 

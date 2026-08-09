@@ -1,19 +1,28 @@
-**Summary**
+## Summary
 
-**Linked issue / roadmap item**
+Describe the user-visible outcome and why the change is needed.
 
-**Testing**
+## Linked issue or design
 
-- [ ] `make test` passes locally
-- [ ] Added tests for new behavior (if applicable)
-- [ ] Ran the gateway end-to-end against a real backend (if touching gateway/adapter paths)
-- [ ] Updated README/docs and feature status labels when public behavior changed
+Link the issue/ADR, or explain why this is a small direct fix.
 
-**Checklist**
+## Validation
 
-- [ ] Follows conventions in `AGENTS.md`
-- [ ] Files kept under 300 lines
-- [ ] Type hints on new function signatures
-- [ ] No new cloud-only dependencies
-- [ ] No JS build tooling added
-- [ ] New claims are accurate and do not describe planned work as implemented
+- [ ] Relevant focused tests pass
+- [ ] `python -m unittest discover -s tests -v` passes
+- [ ] `ruff check .` passes
+- [ ] Packaging/release checks run when metadata or artifacts changed
+- [ ] Manual backend/browser/device checks are listed below when relevant
+
+Manual validation and known gaps:
+
+## Compatibility, security, and privacy
+
+- [ ] Public imports, events, environment variables, and resource paths remain compatible, or migration notes are included
+- [ ] No secrets, private data, logs, audio captures, model weights, or certificates are included
+- [ ] Input, output, queue, task, subprocess, and network boundaries were considered
+- [ ] Documentation and feature status changed with public behavior
+
+## AI assistance
+
+Disclose substantial AI-assisted generation or transformation, if any, and confirm the complete diff was human-reviewed:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 
-from aiohttp import WSMsgType, web
+from aiohttp import WSCloseCode, WSMsgType, web
 
 from discovery.scanner import scan_lan
 from gateway.transport_spike.auth import AUTH_TOKEN_KEY, has_valid_auth_token, require_bearer_token
@@ -22,12 +22,30 @@ from gateway.transport_spike.speech import (
     stop_partial_loop,
 )
 
+MAX_WEBSOCKET_MESSAGE_BYTES = 256 * 1024
+MAX_CONTROL_MESSAGE_CHARS = 64 * 1024
+MAX_AUDIO_FRAME_BYTES = 64 * 1024 + 1
+MAX_USER_TEXT_CHARS = 16 * 1024
+MAX_CLIENT_IDENTIFIER_CHARS = 256
+
 
 async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
     if not has_valid_auth_token(request, AUTH_TOKEN_KEY):
         raise web.HTTPUnauthorized()
     runtime: GatewayRuntime = request.app[APP_RUNTIME_KEY]
-    ws = web.WebSocketResponse(max_msg_size=8 * 1024 * 1024, heartbeat=30.0)
+    if not runtime.reserve_websocket_connection():
+        raise web.HTTPServiceUnavailable(text="websocket connection limit reached")
+    try:
+        return await _serve_websocket(request, runtime)
+    finally:
+        runtime.release_websocket_connection()
+
+
+async def _serve_websocket(
+    request: web.Request,
+    runtime: GatewayRuntime,
+) -> web.WebSocketResponse:
+    ws = web.WebSocketResponse(max_msg_size=MAX_WEBSOCKET_MESSAGE_BYTES, heartbeat=30.0)
     await ws.prepare(request)
     session = Session(ws, runtime)
     await session.emit("session_created", "gateway", {})
@@ -36,15 +54,55 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
     try:
         async for msg in ws:
             if msg.type == WSMsgType.TEXT:
+                if len(msg.data) > MAX_CONTROL_MESSAGE_CHARS:
+                    await session.emit(
+                        "recoverable_error",
+                        "gateway",
+                        {"component": "websocket", "message": "control message too large"},
+                    )
+                    await ws.close(code=WSCloseCode.MESSAGE_TOO_BIG, message=b"control message too large")
+                    break
                 try:
                     payload = json.loads(msg.data)
                 except Exception:
                     await session.emit("recoverable_error", "gateway", {"component": "websocket", "message": "malformed JSON"})
                     continue
+                if not isinstance(payload, dict):
+                    await session.emit(
+                        "recoverable_error",
+                        "gateway",
+                        {"component": "websocket", "message": "control message must be an object"},
+                    )
+                    continue
                 message_type = payload.get("type")
+                if not isinstance(message_type, str) or len(message_type) > 64:
+                    await session.emit(
+                        "recoverable_error",
+                        "gateway",
+                        {"component": "control", "message": "invalid control type"},
+                    )
+                    continue
                 if message_type == "session_init":
-                    session.client_name = payload.get("client_name") or session.client_name
-                    session.client_session_id = payload.get("client_session_id") or session.client_session_id
+                    client_name = payload.get("client_name")
+                    client_session_id = payload.get("client_session_id")
+                    if (
+                        client_name is not None
+                        and (not isinstance(client_name, str) or len(client_name) > MAX_CLIENT_IDENTIFIER_CHARS)
+                    ) or (
+                        client_session_id is not None
+                        and (
+                            not isinstance(client_session_id, str)
+                            or len(client_session_id) > MAX_CLIENT_IDENTIFIER_CHARS
+                        )
+                    ):
+                        await session.emit(
+                            "recoverable_error",
+                            "gateway",
+                            {"component": "control", "message": "client identifier is invalid"},
+                        )
+                        continue
+                    session.client_name = client_name or session.client_name
+                    session.client_session_id = client_session_id or session.client_session_id
                     session.runtime.register_session(session)
                     apply_speech_rate(session, payload.get("speech_rate"))
                     transform_details = apply_voice_transforms(
@@ -85,8 +143,15 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
                     await cancel_active_turn(session, "playback_cleared")
                     await ws.send_str(json.dumps({"type": "playback_cleared", "generation": session.playback_generation}))
                 elif message_type in {"submit_mock_turn", "submit_turn"}:
-                    transcript = payload.get("text", "").strip()
-                    if transcript:
+                    raw_transcript = payload.get("text", "")
+                    transcript = raw_transcript.strip() if isinstance(raw_transcript, str) else ""
+                    if len(transcript) > MAX_USER_TEXT_CHARS:
+                        await session.emit(
+                            "recoverable_error",
+                            "gateway",
+                            {"component": "control", "message": "turn text too large"},
+                        )
+                    elif transcript:
                         await start_assistant_turn(session, transcript)
                     else:
                         await session.emit("recoverable_error", "gateway", {"component": "control", "message": "empty mock turn"})
@@ -156,8 +221,23 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
             elif msg.type == WSMsgType.BINARY:
                 if not msg.data:
                     continue
+                if len(msg.data) > MAX_AUDIO_FRAME_BYTES:
+                    await session.emit(
+                        "recoverable_error",
+                        "gateway",
+                        {"component": "transport", "message": "audio frame too large"},
+                    )
+                    await ws.close(code=WSCloseCode.MESSAGE_TOO_BIG, message=b"audio frame too large")
+                    break
                 if msg.data[0] != PCM_KIND:
                     await session.emit("recoverable_error", "gateway", {"component": "transport", "message": f"unknown binary kind {msg.data[0]}"})
+                    continue
+                if (len(msg.data) - 1) % 2:
+                    await session.emit(
+                        "recoverable_error",
+                        "gateway",
+                        {"component": "transport", "message": "malformed PCM16 frame"},
+                    )
                     continue
                 session.frames_in += 1
                 samples = (len(msg.data) - 1) // 2
