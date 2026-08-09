@@ -8,6 +8,7 @@ Qantara `0.3.1` is a hardening and release-readiness update. It keeps the existi
 - Exact origin authority checks, LAN-safe Host validation, browser security headers, and sanitized public URLs.
 - Explicit bounds for WebSocket frames/control data, Voice API text/audio, stream lines, generated text, backend responses, and MCP progress queues.
 - Redirect-disabled, proxy-independent local backend/probe requests and cleanup of timed-out subprocesses.
+- Hash-locked runtime and container manifests updated to `cryptography==50.0.0` for CVE-2026-69247.
 - Reproducible package checks, clean wheel/sdist smoke installs, immutable Action pins, dependency safeguards, and a manual tag-only draft-release workflow.
 - Public privacy, governance, support, architecture-debt, and release-process documentation.
 

@@ -18,6 +18,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Public documentation now uses one pre-1.0 status vocabulary and separates verified behavior from planned work and historical benchmark data.
 
 ### Fixed
+- Hash-locked runtime and container dependency manifests now use `cryptography==50.0.0`, resolving CVE-2026-69247 before publication.
 - Default event output no longer writes transcripts, assistant text, tool parameters, or credentials to stdout; managed bridge output is opt-in and gateway-only credentials are removed from child environments.
 - Origin checks now compare host and port, and a LAN-aware Host guard rejects public or malformed authorities unless explicitly allowlisted.
 - WebSocket control messages, PCM frames, Voice API text, generated output, backend JSON, MCP progress queues, and incremental stream lines now have explicit bounds.

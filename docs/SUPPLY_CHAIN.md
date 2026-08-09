@@ -87,14 +87,23 @@ Do not copy browser profiles, `.env` files, tokens, private keys, transcripts, a
 
 ## Maintainer safeguards outside the repository
 
-Repository owners should enable rules that cannot be expressed solely in source:
+For the `0.3.1` release line, repository settings enforce safeguards that cannot
+be expressed solely in source:
 
-- require pull requests and passing checks for `main`
-- restrict tag creation/deletion for `v*` to release owners
-- prevent force-pushes and branch deletion on protected refs
-- enable private vulnerability reporting and dependency graph features
-- require review for workflow and dependency-lock changes
-- publish a release only after reviewing its draft assets and validation evidence
+- `main` requires a pull request, an up-to-date branch, all nine CI checks, and
+  resolved review conversations; linear history is required and force-pushes or
+  branch deletion are blocked, including for administrators
+- `v*` release-tag creation is restricted to the repository owner, and matching
+  tags cannot be updated or deleted after creation
+- Dependency Graph, vulnerability alerts, Dependabot security updates, secret
+  scanning, push protection, and private vulnerability reporting are enabled
+- release publication remains manual after review of the draft assets and
+  validation evidence
+
+The approval count is intentionally zero while no independent trusted reviewer
+is designated, because GitHub does not allow a pull-request author to approve
+their own change. Increase it to one when another maintainer can reliably review
+release and dependency changes.
 
 ## Reporting a concern
 
