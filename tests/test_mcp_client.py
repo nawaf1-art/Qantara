@@ -4,11 +4,12 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from adapters.base import AdapterConfig
 from adapters.factory import create_adapter
-from adapters.mcp_client import MCPClientAdapter
+from adapters.mcp_client import MCPClientAdapter, _make_mcp_http_client_factory
 
 FIXTURE = Path(__file__).parent / "fixtures" / "mcp_chat_server.py"
 
@@ -42,6 +43,47 @@ class MCPClientAdapterTests(unittest.IsolatedAsyncioTestCase):
         parts = MCPClientAdapter._split_command(command, windows=True)
 
         self.assertEqual(parts, [r"C:\Program Files\Python\python.exe", r"D:\agent\server.py"])
+
+    def test_text_extraction_stops_at_configured_limit(self) -> None:
+        result = SimpleNamespace(
+            content=[SimpleNamespace(text="123"), SimpleNamespace(text="45")],
+            structuredContent=None,
+        )
+        with patch("adapters.mcp_client.MAX_MCP_TOOL_OUTPUT_CHARS", 4):
+            with self.assertRaisesRegex(RuntimeError, "output exceeded"):
+                MCPClientAdapter._extract_text(result)
+
+    async def test_http_factory_preserves_host_sni_and_disables_redirects(self) -> None:
+        import httpx
+
+        factory = _make_mcp_http_client_factory(
+            "agent.local:8443",
+            "agent.local",
+        )
+        client = factory(timeout=httpx.Timeout(1.0))
+
+        class CaptureTransport:
+            sni_hostname = ""
+
+            async def handle_async_request(
+                self,
+                request: httpx.Request,
+            ) -> httpx.Response:
+                self.sni_hostname = str(request.extensions.get("sni_hostname") or "")
+                return httpx.Response(200, request=request)
+
+            async def aclose(self) -> None:
+                return None
+
+        capture = CaptureTransport()
+        client._transport._transport = capture  # type: ignore[attr-defined]
+        request = httpx.Request("GET", "https://127.0.0.1:8443/mcp")
+        await client._transport.handle_async_request(request)  # type: ignore[attr-defined]
+        await client.aclose()
+
+        self.assertFalse(client.follow_redirects)
+        self.assertEqual(client.headers["Host"], "agent.local:8443")
+        self.assertEqual(capture.sni_hostname, "agent.local")
 
     async def test_stdio_adapter_lists_tools_and_reports_health(self) -> None:
         adapter = self._adapter()

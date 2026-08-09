@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/nawaf1-art/Qantara/security/advisories/new
+    about: Report vulnerabilities privately; do not open a public issue.
+  - name: Documentation and troubleshooting
+    url: https://github.com/nawaf1-art/Qantara/blob/main/docs/TROUBLESHOOTING.md
+    about: Review common setup and runtime problems before filing a bug.

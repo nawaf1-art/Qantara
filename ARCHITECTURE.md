@@ -1,59 +1,42 @@
 # Architecture
 
-Qantara is a local-first voice gateway. It sits between browser microphone/speaker clients and one or more AI backends. The gateway owns speech capture, speech recognition, turn-taking, interruption, text-to-speech, playback, and LAN transport. The selected backend owns model inference, tools, and agent behavior.
+Qantara is a local-first voice gateway between browser audio clients and operator-selected model or agent backends. It owns the real-time voice channel; it does not own agent reasoning, tools, long-term memory, or business logic.
 
-Qantara is not an agent framework. OpenAI-compatible local servers, Ollama bridge processes, custom session backends, and the advanced optional OpenClaw bridge all sit behind the same adapter boundary.
-
-## High-Level Topology
+## System topology
 
 ```text
 Browser client
-  microphone + speaker
+  microphone, WebAudio, captions, playback
         |
-        | WebSocket PCM/control events
+        | bounded WebSocket control + PCM16 mono 16 kHz frames
         v
-Qantara gateway
-  VAD / endpointing / STT / session state / TTS / playback control
+Qantara aiohttp gateway
+  auth, VAD, endpointing, session state, interruption, STT, TTS
         |
-        | RuntimeAdapter
+        | RuntimeAdapter contract
         v
-AI backend
-  OpenAI-compatible server, Ollama bridge, custom session service,
-  optional OpenClaw bridge, or mock adapter
+Backend runtime
+  OpenAI-compatible server, Ollama bridge, MCP tool,
+  optional OpenClaw bridge, custom session service, or mock
 ```
 
-## Runtime Boundaries
+The browser client has no model or agent state. The gateway coordinates a turn and adapts audio/text. The backend decides what the assistant does and returns user-facing events.
 
-### Browser Client
+## Ownership
 
-The browser client is deliberately thin:
+| Component | Owns | Must not own |
+|---|---|---|
+| Browser client | Permission prompts, microphone capture, playback queues, visual state | Model credentials, agent memory, STT/TTS models |
+| Gateway session | Audio buffer, VAD/endpointing, turn state, interruption, bounded timeline/transcript snapshots | Backend reasoning or durable user history |
+| STT provider | PCM-to-text conversion and language metadata | Session/adapter decisions |
+| Runtime adapter | Backend session mapping, turn submission, output normalization, cancellation | Browser audio transport |
+| Backend runtime | Inference, tools, backend history, agent policy | Microphone permission or browser playback |
+| TTS provider | Text-to-PCM synthesis and voice resolution | Turn acceptance/cancellation policy |
+| Mesh/Wyoming integration | Optional LAN coordination and satellite framing | Core adapter semantics |
 
-- requests microphone permission
-- captures PCM audio frames
-- sends frames and control events over WebSocket
-- plays PCM audio returned by the gateway
-- renders captions, session state, and debug information
+## Runtime contracts
 
-It does not own model state, agent logic, STT, or TTS.
-
-### Gateway
-
-The gateway owns the real-time voice loop:
-
-- live audio ingress and buffering
-- voice activity detection and endpointing
-- final and partial transcription paths
-- per-session state machine
-- barge-in and playback cancellation
-- language/translation turn context
-- TTS provider selection and voice routing
-- adapter calls to the selected backend
-
-The gateway is implemented as an async `aiohttp` service.
-
-### Backend Adapter
-
-Every backend implements the contract in `adapters/base.py`:
+Every backend adapter implements the explicit interface in `adapters/base.py`:
 
 - `start_or_resume_session`
 - `submit_user_turn`
@@ -61,72 +44,66 @@ Every backend implements the contract in `adapters/base.py`:
 - `cancel_turn`
 - `check_health`
 
-The adapter boundary is what keeps Qantara independent from a specific model runtime or agent framework.
+Public adapter events are specified in [protocols/agent.md](protocols/agent.md). Providers similarly implement `providers/stt/base.py` or `providers/tts/base.py`. New integrations adapt to these contracts rather than reaching into browser or session internals.
 
-## Session State
+The client-visible session states are `idle`, `listening`, `thinking`, `speaking`, and `interrupted`. Current lifecycle behavior is intentionally explicit because turn acceptance, disconnects, late backend output, and barge-in can race. A future consolidation must follow the [turn lifecycle hardening plan](docs/architecture/TURN_LIFECYCLE_HARDENING_PLAN.md).
 
-The active runtime state is represented by `gateway.transport_spike.runtime.Session`. The public client-facing states are:
+## Trust boundaries
 
-- `idle`
-- `listening`
-- `thinking`
-- `speaking`
-- `interrupted`
+### Browser to gateway
 
-State transitions are emitted as session events and mirrored to the browser. The state model is intentionally explicit because interruption and recovery are the hardest parts of a voice UX.
+Browser input is untrusted even on a LAN. The gateway authenticates protected routes when configured, validates Host and Origin authorities, bounds JSON/control/audio inputs, rejects malformed PCM frames, and applies browser security headers. The browser auth session uses an HttpOnly, SameSite cookie; API clients can use a bearer token.
 
-## Barge-In Semantics
+### Gateway to backend/provider
 
-When user speech is detected while assistant output is active, Qantara:
+Backends and speech providers are operator-selected local code or services. Qantara applies time, line, output, session, and queue bounds where practical. Local HTTP clients do not inherit proxy environment variables or follow redirects. Managed bridges inherit the host environment needed for local integrations, but Qantara removes its gateway, admin, and mesh credentials before starting them.
 
-1. clears browser playback immediately
-2. asks the adapter to cancel the active turn when possible
-3. emits `turn_interrupted`
-4. returns the session to a clean state for the next turn
+An adapter can still send a transcript to the service it is configured to call. Local-first describes the default topology, not a guarantee about an operator-supplied endpoint.
 
-Some backends can hard-cancel generation. Others can only ignore late output. The gateway handles both cases through the adapter contract.
+### LAN and reverse proxy
 
-## Speech Providers
+Loopback is the default. LAN use requires a strong auth token and HTTPS/WSS for browser microphone access. The Host policy accepts loopback/private IP literals and conventional LAN names; custom internal DNS names require `QANTARA_ALLOWED_HOSTS`. Exact cross-origin exceptions require `QANTARA_ALLOWED_ORIGINS`.
 
-Speech providers live under `providers/`:
+Qantara is not designed for direct public-internet exposure. A reverse proxy does not replace authentication, network policy, updates, or certificate validation.
 
-- STT providers implement `providers/stt/base.py`
-- TTS providers implement `providers/tts/base.py`
-- provider selection is controlled with `QANTARA_STT_PROVIDER` and `QANTARA_TTS_PROVIDER`
+### Download and release boundary
 
-The provider layer must adapt to the gateway contract. A provider should not force unrelated gateway behavior changes.
+Speech/model providers may contact their upstream artifact hosts on first use. Docker and Python dependency behavior is documented in [Supply chain](docs/SUPPLY_CHAIN.md). Qantara release artifacts are built from an existing tag and accompanied by checksums, an SBOM, validation evidence, and provenance when the release workflow succeeds.
 
-## Transports
+## Data lifecycle
 
-The MVP transport is browser WebSocket with PCM audio frames. The gateway currently serves:
+- PCM input is buffered in memory and truncated to configured limits.
+- Session timelines and transcript snapshots are bounded in memory; Qantara does not provide a durable transcript database.
+- The browser stores non-secret preferences and continuity identifiers locally.
+- Default event logs preserve operational identifiers/counts while redacting free-form speech/model/tool content and credentials.
+- Bridge stdout/stderr is drained but not logged unless `QANTARA_BRIDGE_LOG_OUTPUT=1` is explicitly enabled.
+- External runtimes and the operating system may have their own retention behavior; Qantara cannot delete data owned by those systems.
 
-- `/setup` for first-run backend configuration
-- `/spike` for the voice client
-- `/translate` for the live translator page
-- `/ws` for browser audio/control transport
-- `/api/*` for status, configuration, mesh, languages, and TTS metadata
+See [Privacy](docs/PRIVACY.md) for operator-facing detail.
 
-Future transports such as WebRTC or SIP should live behind the same audio/control contract instead of replacing the adapter layer.
+## Transport and API surfaces
 
-## Local-First Security Boundary
+- `/ws`: full-duplex browser PCM/control transport
+- `/api/v1/speak`: one-shot text-to-audio
+- `/api/v1/transcribe`: one-shot bounded audio-to-text
+- `/api/v1/converse`: bounded text turn streamed as SSE
+- `/api/*`: setup, status, auth, voice control, languages, mesh, and discovery
+- `/setup`, `/spike`, `/translate`, `/identity`: packaged static assets
 
-Qantara is intended for loopback or trusted LAN deployments:
+WebSocket remains the MVP transport. A future WebRTC or SIP transport should implement the same audio/control semantics in a separate transport package rather than replacing the adapter boundary.
 
-- default native bind is loopback
-- Docker publishes on loopback by default
-- public URLs are rejected by backend configuration probes
-- auth tokens are optional for loopback and recommended for LAN
-- TLS is required by browsers for microphone access from other LAN devices
+## Source layout and compatibility debt
 
-See `SECURITY.md` and `docs/SUPPLY_CHAIN.md` for the public trust boundary.
+Qantara currently exposes both the `qantara` SDK package and historical top-level packages (`adapters`, `gateway`, `providers`, `discovery`). The wheel also ships browser, identity, protocol, and schema resources. Moving everything under `qantara.*` is intentionally deferred to a staged migration with compatibility shims; see the [namespace migration ADR](docs/architecture/NAMESPACE_MIGRATION_ADR.md).
 
-## Extension Points
+## Architectural constraints
 
-The safest extension points are:
+- External voice gateway, not an in-process agent plugin
+- Browser-first, full-duplex, headset-first interaction
+- WebSocket PCM transport for the current release line
+- Async aiohttp gateway
+- Explicit adapters and providers
+- Vanilla JavaScript browser client
+- Local functionality without a required cloud service
 
-- add an STT provider in `providers/stt/`
-- add a TTS provider in `providers/tts/`
-- add a backend adapter in `adapters/`
-- add a transport under a future `transports/` package
-
-Avoid changes that couple the gateway to one backend runtime. That would undermine Qantara's purpose as a standalone voice layer.
+Changes to these constraints need an issue and an accepted architecture decision before implementation.

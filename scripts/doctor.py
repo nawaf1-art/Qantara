@@ -17,6 +17,7 @@ from pathlib import Path
 OK = "\033[32mok\033[0m"
 WARN = "\033[33mwarn\033[0m"
 FAIL = "\033[31mfail\033[0m"
+MAX_GATEWAY_RESPONSE_BYTES = 1024 * 1024
 
 
 def row(status: str, name: str, detail: str = "") -> None:
@@ -120,10 +121,27 @@ def cmd_mesh() -> int:
     import time
     import urllib.request
 
+    class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    def read_json_response(response):
+        body = response.read(MAX_GATEWAY_RESPONSE_BYTES + 1)
+        if len(body) > MAX_GATEWAY_RESPONSE_BYTES:
+            raise RuntimeError("gateway response exceeded the configured limit")
+        data = json.loads(body)
+        if not isinstance(data, dict):
+            raise RuntimeError("gateway returned a non-object JSON response")
+        return data
+
     port = os.environ.get("QANTARA_SPIKE_PORT", "8765")
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        _NoRedirectHandler(),
+    )
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/mesh/status", timeout=2) as resp:
-            status = json.loads(resp.read())
+        with opener.open(f"http://127.0.0.1:{port}/api/mesh/status", timeout=2) as resp:
+            status = read_json_response(resp)
     except Exception as exc:
         print(f"mesh: cannot reach gateway on :{port} — {exc}")
         return 2
@@ -132,8 +150,8 @@ def cmd_mesh() -> int:
         return 0
     print(f"mesh: enabled (role={status['role']}, node_id={status['node_id']})")
     print(f"  mesh_port: {status['mesh_port']}  service_type: {status['service_type']}")
-    with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/mesh/peers", timeout=2) as resp:
-        peers_payload = json.loads(resp.read())
+    with opener.open(f"http://127.0.0.1:{port}/api/mesh/peers", timeout=2) as resp:
+        peers_payload = read_json_response(resp)
     peers = peers_payload.get("peers", [])
     if not peers:
         print("  peers: none")

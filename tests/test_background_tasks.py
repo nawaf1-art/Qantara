@@ -42,7 +42,8 @@ class RuntimeRetainTaskTests(unittest.IsolatedAsyncioTestCase):
                 await task
             # done-callback runs after the await; yield once so it fires.
             await asyncio.sleep(0)
-        self.assertTrue(any("background boom" in line for line in captured.output))
+        self.assertTrue(any("error_class=RuntimeError" in line for line in captured.output))
+        self.assertFalse(any("background boom" in line for line in captured.output))
         self.assertNotIn(task, runtime._background_tasks)
 
 
@@ -59,7 +60,8 @@ class OpenClawRetainTaskTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(RuntimeError):
                 await task
             await asyncio.sleep(0)
-        self.assertTrue(any("escalate boom" in line for line in captured.output))
+        self.assertTrue(any("error_class=RuntimeError" in line for line in captured.output))
+        self.assertFalse(any("escalate boom" in line for line in captured.output))
         self.assertNotIn(task, openclaw_server._BACKGROUND_TASKS)
 
 

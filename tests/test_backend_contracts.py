@@ -76,6 +76,22 @@ class BackendContractTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await client.close()
 
+    async def test_fake_backend_rejects_invalid_request_shapes(self) -> None:
+        server = TestServer(create_fake_backend_app())
+        client = TestClient(server)
+        await client.start_server()
+        try:
+            response = await client.post("/sessions", json=[])
+            self.assertEqual(response.status, 400)
+            session_data = await (await client.post("/sessions", json={})).json()
+            response = await client.post(
+                f"/sessions/{session_data['session_handle']}/turns",
+                json={"transcript": {"not": "text"}},
+            )
+            self.assertEqual(response.status, 400)
+        finally:
+            await client.close()
+
     async def test_ollama_backend_contract_streams_upstream_response(self) -> None:
         async def fake_ollama_stream_messages(session_state, transcript, turn_context=None):
             self.assertEqual(transcript, "hello")
@@ -307,6 +323,23 @@ class BackendContractTests(unittest.IsolatedAsyncioTestCase):
                 create_proc.assert_not_called()
             finally:
                 await client.close()
+
+    async def test_openclaw_backend_rejects_non_string_client_session_id(self) -> None:
+        server = TestServer(create_openclaw_backend_app())
+        client = TestClient(server)
+        await client.start_server()
+        try:
+            response = await client.post(
+                "/sessions",
+                json={"client_context": {"client_session_id": ["not", "text"]}},
+            )
+            self.assertEqual(response.status, 400)
+            self.assertEqual(
+                (await response.json())["error"],
+                "client_session_id must be a string",
+            )
+        finally:
+            await client.close()
 
     async def test_openclaw_deep_health_is_explicit(self) -> None:
         payload = {

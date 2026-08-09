@@ -9,6 +9,8 @@ from urllib.parse import quote
 import aiohttp
 from mcp.server.fastmcp import FastMCP
 
+from qantara.http_safety import read_bounded_response_text
+
 REPO_ROOT = Path(__file__).resolve().parent
 
 
@@ -30,16 +32,31 @@ async def _gateway_request(method: str, path: str, payload: dict[str, Any] | Non
     if token:
         headers["Authorization"] = f"Bearer {token}"
     timeout = aiohttp.ClientTimeout(total=float(os.environ.get("QANTARA_MCP_SERVER_TIMEOUT", "30")))
-    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+    async with aiohttp.ClientSession(
+        timeout=timeout,
+        headers=headers,
+        trust_env=False,
+    ) as session:
         url = f"{_gateway_base_url()}{path}"
-        async with session.request(method, url, json=payload) as resp:
+        async with session.request(
+            method,
+            url,
+            json=payload,
+            allow_redirects=False,
+        ) as resp:
+            body = await read_bounded_response_text(resp)
             try:
-                data = await resp.json()
-            except Exception:
-                data = {"error": await resp.text()}
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                if resp.status < 400:
+                    raise RuntimeError("gateway returned invalid JSON") from None
+                data = {"error": body}
             if resp.status >= 400:
-                detail = data.get("error") or data
+                detail = (data.get("error") or data) if isinstance(data, dict) else data
+                detail = str(detail)[:4096]
                 raise RuntimeError(f"gateway returned {resp.status}: {detail}")
+            if not isinstance(data, dict):
+                raise RuntimeError("gateway returned a non-object JSON response")
             return data
 
 

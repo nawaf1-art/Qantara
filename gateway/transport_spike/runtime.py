@@ -23,6 +23,11 @@ from gateway.transport_spike.common import (
     utc_now,
 )
 from providers.factory import create_stt_provider, create_tts_provider
+from qantara.security import (
+    bridge_subprocess_environment,
+    redact_for_logging,
+    sanitize_public_url,
+)
 from qantara.version import __version__
 
 _BRIDGE_SCRIPTS: dict[str, str] = {
@@ -34,6 +39,16 @@ LOGGER = logging.getLogger(__name__)
 SESSION_STATES = {"idle", "listening", "thinking", "speaking", "interrupted"}
 SESSION_TIMELINE_LIMIT = int(os.environ.get("QANTARA_SESSION_TIMELINE_LIMIT", "200"))
 SESSION_TRANSCRIPT_LIMIT = int(os.environ.get("QANTARA_SESSION_TRANSCRIPT_LIMIT", "80"))
+SESSION_STORE_LIMIT = max(1, int(os.environ.get("QANTARA_SESSION_STORE_LIMIT", "256")))
+MAX_WEBSOCKET_CONNECTIONS = max(
+    1,
+    int(os.environ.get("QANTARA_MAX_WEBSOCKET_CONNECTIONS", "64")),
+)
+
+
+def _bridge_environment(overrides: dict[str, str] | None = None) -> dict[str, str]:
+    """Build a least-privilege environment for a managed local bridge."""
+    return bridge_subprocess_environment(overrides)
 
 
 @dataclass(slots=True)
@@ -45,6 +60,8 @@ class BackendBinding:
     url: str = ""
     model: str = ""
     agent: str = ""
+    outbound_host_header: str = ""
+    outbound_server_hostname: str = ""
     managed_bridge_type: str | None = None
     managed_bridge_proc: asyncio.subprocess.Process | None = None
     managed_bridge_port: int | None = None
@@ -89,6 +106,8 @@ class GatewayRuntime:
         self._session_store: dict[str, SessionSnapshot] = {}
         self._active_sessions: dict[str, str] = {}
         self._active_session_refs: dict[str, Any] = {}
+        self.max_websocket_connections = MAX_WEBSOCKET_CONNECTIONS
+        self._websocket_connection_count = 0
         self._next_bridge_port = MANAGED_BRIDGE_PORT
         self._configure_lock = asyncio.Lock()
         # Background tasks must be retained: asyncio only keeps weak
@@ -115,7 +134,10 @@ class GatewayRuntime:
                 return
             exc = done.exception()
             if exc is not None:
-                LOGGER.error("background task failed: %s", exc, exc_info=exc)
+                LOGGER.error(
+                    "background task failed error_class=%s",
+                    type(exc).__name__,
+                )
 
         task.add_done_callback(_on_done)
         return task
@@ -127,7 +149,7 @@ class GatewayRuntime:
     def _print_event(record: dict[str, Any]) -> None:
         import json
 
-        print(json.dumps(record), flush=True)
+        print(json.dumps(redact_for_logging(record), ensure_ascii=False), flush=True)
 
     def _allocate_bridge_port(self) -> int:
         port = self._next_bridge_port
@@ -184,7 +206,7 @@ class GatewayRuntime:
             "type": binding.backend_type,
             "model": binding.model,
             "agent": binding.agent,
-            "url": binding.url,
+            "url": sanitize_public_url(binding.url),
             "adapter_kind": binding.adapter_kind,
             "health": binding.health,
             "managed_bridge": binding.managed_bridge_type,
@@ -203,7 +225,7 @@ class GatewayRuntime:
                     "binding_id": binding.binding_id,
                     "backend_type": binding.backend_type,
                     "adapter_kind": binding.adapter_kind,
-                    "url": binding.url,
+                    "url": sanitize_public_url(binding.url),
                     "model": binding.model,
                     "agent": binding.agent,
                     "health": binding.health,
@@ -306,6 +328,18 @@ class GatewayRuntime:
         self.save_session_state(session)
         self.prune_session_store()
 
+    def reserve_websocket_connection(self) -> bool:
+        if self._websocket_connection_count >= self.max_websocket_connections:
+            return False
+        self._websocket_connection_count += 1
+        return True
+
+    def release_websocket_connection(self) -> None:
+        self._websocket_connection_count = max(
+            0,
+            self._websocket_connection_count - 1,
+        )
+
     def active_voice_sessions(self) -> list[dict[str, Any]]:
         self.prune_session_store()
         return [
@@ -380,6 +414,18 @@ class GatewayRuntime:
         ]
         for client_session_id in expired_clients:
             self._session_store.pop(client_session_id, None)
+        overflow = len(self._session_store) - SESSION_STORE_LIMIT
+        if overflow > 0:
+            inactive = sorted(
+                (
+                    snapshot
+                    for snapshot in self._session_store.values()
+                    if snapshot.client_session_id not in active_client_session_ids
+                ),
+                key=lambda snapshot: snapshot.updated_monotonic_ms,
+            )
+            for snapshot in inactive[:overflow]:
+                self._session_store.pop(snapshot.client_session_id, None)
         self._cleanup_unreferenced_bindings()
 
     async def refresh_binding_health(self, binding: BackendBinding) -> dict[str, Any]:
@@ -399,6 +445,8 @@ class GatewayRuntime:
         mcp_transport: str = "",
         mcp_command: str = "",
         mcp_chat_tool: str = "",
+        outbound_host_header: str = "",
+        outbound_server_hostname: str = "",
     ) -> BackendBinding:
         async with self._configure_lock:
             binding = await self._create_binding(
@@ -409,6 +457,8 @@ class GatewayRuntime:
                 mcp_transport=mcp_transport,
                 mcp_command=mcp_command,
                 mcp_chat_tool=mcp_chat_tool,
+                outbound_host_header=outbound_host_header,
+                outbound_server_hostname=outbound_server_hostname,
             )
             self.default_binding_id = binding.binding_id
             self.prune_session_store()
@@ -423,6 +473,8 @@ class GatewayRuntime:
         mcp_transport: str = "",
         mcp_command: str = "",
         mcp_chat_tool: str = "",
+        outbound_host_header: str = "",
+        outbound_server_hostname: str = "",
     ) -> BackendBinding:
         adapter_kind = "mock"
         env_overrides: dict[str, str] = {}
@@ -481,6 +533,10 @@ class GatewayRuntime:
         config = AdapterConfig(kind=adapter_kind, name=backend_type)
         if adapter_kind in {"session_gateway_http", "openai_compatible"}:
             config.options["base_url"] = url
+            if outbound_host_header:
+                config.options["outbound_host_header"] = outbound_host_header
+            if outbound_server_hostname:
+                config.options["outbound_server_hostname"] = outbound_server_hostname
         if adapter_kind == "openai_compatible" and model:
             config.options["model"] = model
         if adapter_kind == "mcp_client":
@@ -490,6 +546,10 @@ class GatewayRuntime:
                 config.options["url"] = url
             if mcp_command:
                 config.options["command"] = mcp_command
+            if outbound_host_header:
+                config.options["outbound_host_header"] = outbound_host_header
+            if outbound_server_hostname:
+                config.options["outbound_server_hostname"] = outbound_server_hostname
 
         binding = BackendBinding(
             binding_id=str(uuid.uuid4()),
@@ -499,6 +559,8 @@ class GatewayRuntime:
             url=url,
             model=model,
             agent=agent,
+            outbound_host_header=outbound_host_header,
+            outbound_server_hostname=outbound_server_hostname,
             managed_bridge_type=managed_bridge_type,
             managed_bridge_proc=bridge_proc,
             managed_bridge_port=bridge_port,
@@ -521,11 +583,9 @@ class GatewayRuntime:
         script = _BRIDGE_SCRIPTS.get(bridge_type)
         if script is None or not os.path.isfile(script):
             return None
-        env = os.environ.copy()
+        env = _bridge_environment(env_overrides)
         env["QANTARA_REAL_BACKEND_PORT"] = str(port)
         env["QANTARA_REAL_BACKEND_HOST"] = "127.0.0.1"
-        if env_overrides:
-            env.update(env_overrides)
         proc = await asyncio.create_subprocess_exec(
             sys.executable,
             script,
@@ -550,16 +610,22 @@ class GatewayRuntime:
         level: int,
     ) -> None:
         logger = logging.getLogger(f"qantara.bridge.{bridge_type}")
+        log_output = os.environ.get("QANTARA_BRIDGE_LOG_OUTPUT", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
         try:
-            while not stream.at_eof():
-                line = await stream.readline()
-                if not line:
-                    continue
+            if not log_output:
+                while await stream.read(64 * 1024):
+                    pass
+                return
+            while chunk := await stream.read(4096):
                 logger.log(
                     level,
                     "[%s] %s",
                     bridge_type,
-                    line.decode("utf-8", errors="replace").rstrip(),
+                    chunk.decode("utf-8", errors="replace").rstrip(),
                 )
         except Exception as exc:
             LOGGER.debug("bridge log stream ended for %s: %s", bridge_type, exc)
@@ -653,6 +719,13 @@ class GatewayRuntime:
         for binding in list(self._bindings.values()):
             if binding.managed_bridge_proc is not None:
                 await _shutdown_bridge_process(binding.managed_bridge_proc)
+        pending_tasks = [task for task in self._background_tasks if not task.done()]
+        if pending_tasks:
+            _, pending = await asyncio.wait(pending_tasks, timeout=6)
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
 
 
 APP_RUNTIME_KEY: web.AppKey[GatewayRuntime] = web.AppKey("runtime", GatewayRuntime)
@@ -780,8 +853,8 @@ async def health_check_bridge(url: str, retries: int = 30, delay: float = 0.3) -
     timeout = _aiohttp.ClientTimeout(total=2)
     for _ in range(retries):
         try:
-            async with _aiohttp.ClientSession(timeout=timeout) as cs:
-                async with cs.get(f"{url}/health") as resp:
+            async with _aiohttp.ClientSession(timeout=timeout, trust_env=False) as cs:
+                async with cs.get(f"{url}/health", allow_redirects=False) as resp:
                     if resp.status < 500:
                         return {"status": "ok", "detail": "bridge healthy"}
         except Exception:

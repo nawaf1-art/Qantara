@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -29,6 +30,11 @@ OPENCLAW_SUBPROCESS_TIMEOUT_BUFFER_SECONDS = float(os.environ.get("QANTARA_OPENC
 OPENCLAW_HEALTH_MODE = os.environ.get("QANTARA_OPENCLAW_HEALTH_MODE", "shallow").strip().lower()
 OPENCLAW_HEALTH_TIMEOUT_SECONDS = float(os.environ.get("QANTARA_OPENCLAW_HEALTH_TIMEOUT", "25"))
 MAX_SESSIONS = max(1, int(os.environ.get("QANTARA_BACKEND_MAX_SESSIONS", "64")))
+MAX_TURN_TEXT_CHARS = 16 * 1024
+MAX_CLIENT_SESSION_ID_CHARS = 256
+MAX_OPENCLAW_OUTPUT_BYTES = 2 * 1024 * 1024
+MAX_OPENCLAW_STDERR_BYTES = 256 * 1024
+MAX_ASSISTANT_TEXT_CHARS = 1024 * 1024
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 LOG = logging.getLogger("qantara.openclaw")
@@ -64,7 +70,12 @@ class OpenClawSessionBackend:
 
     def create_session(self, client_context: dict | None = None) -> str:
         client_context = client_context or {}
-        client_session_id = (client_context.get("client_session_id") or "").strip()
+        raw_client_session_id = client_context.get("client_session_id")
+        client_session_id = (
+            raw_client_session_id.strip()
+            if isinstance(raw_client_session_id, str)
+            else ""
+        )
         if client_session_id:
             existing_session_handle = self.client_session_map.get(client_session_id)
             if existing_session_handle and existing_session_handle in self.sessions:
@@ -130,8 +141,14 @@ class OpenClawGatewayTimeoutError(RuntimeError):
     pass
 
 
-def _normalize_text(text: str) -> str:
-    return " ".join((text or "").replace("\r", " ").replace("\n", " ").split()).strip()
+class OpenClawOutputLimitError(RuntimeError):
+    pass
+
+
+def _normalize_text(text: object) -> str:
+    if not isinstance(text, str):
+        return ""
+    return " ".join(text.replace("\r", " ").replace("\n", " ").split()).strip()
 
 
 def _build_openclaw_command(
@@ -172,7 +189,10 @@ def _retain_task(task: asyncio.Task) -> asyncio.Task:
             return
         exc = done.exception()
         if exc is not None:
-            LOG.error("background task failed: %s", exc, exc_info=exc)
+            LOG.error(
+                "background task failed error_class=%s",
+                type(exc).__name__,
+            )
 
     task.add_done_callback(_on_done)
     return task
@@ -185,6 +205,87 @@ async def _terminate_process_group(process: asyncio.subprocess.Process, hard: bo
         os.killpg(process.pid, signal.SIGKILL if hard else signal.SIGTERM)
     except ProcessLookupError:
         return
+
+
+async def _read_bounded_stream(
+    stream: asyncio.StreamReader,
+    *,
+    limit: int,
+    label: str,
+) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await stream.read(64 * 1024):
+        total += len(chunk)
+        if total > limit:
+            raise OpenClawOutputLimitError(
+                f"openclaw {label} exceeded the configured limit"
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def _communicate_bounded(
+    process: asyncio.subprocess.Process,
+    *,
+    timeout: float,
+) -> tuple[bytes, bytes]:
+    """Capture child output concurrently with hard memory and time bounds."""
+    stdout_stream = getattr(process, "stdout", None)
+    stderr_stream = getattr(process, "stderr", None)
+    if stdout_stream is None or stderr_stream is None:
+        # Test doubles and unusual subprocess implementations may expose only
+        # communicate(). Real OpenClaw processes always take the bounded path.
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=timeout
+            )
+        except BaseException:
+            await _terminate_process_group(process, hard=True)
+            with contextlib.suppress(Exception):
+                await process.communicate()
+            raise
+        if len(stdout) > MAX_OPENCLAW_OUTPUT_BYTES:
+            raise OpenClawOutputLimitError(
+                "openclaw stdout exceeded the configured limit"
+            )
+        if len(stderr) > MAX_OPENCLAW_STDERR_BYTES:
+            raise OpenClawOutputLimitError(
+                "openclaw stderr exceeded the configured limit"
+            )
+        return stdout, stderr
+
+    tasks = [
+        asyncio.create_task(process.wait()),
+        asyncio.create_task(
+            _read_bounded_stream(
+                stdout_stream,
+                limit=MAX_OPENCLAW_OUTPUT_BYTES,
+                label="stdout",
+            )
+        ),
+        asyncio.create_task(
+            _read_bounded_stream(
+                stderr_stream,
+                limit=MAX_OPENCLAW_STDERR_BYTES,
+                label="stderr",
+            )
+        ),
+    ]
+    try:
+        _, stdout, stderr = await asyncio.wait_for(
+            asyncio.gather(*tasks), timeout=timeout
+        )
+        return stdout, stderr
+    except BaseException:
+        await _terminate_process_group(process, hard=True)
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        with contextlib.suppress(Exception):
+            await process.communicate()
+        raise
 
 
 async def _escalate_cancel(turn_handle: str, process: asyncio.subprocess.Process) -> None:
@@ -218,10 +319,11 @@ async def _run_openclaw_turn(
         )
         BACKEND.active_processes[turn_handle] = process
         try:
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=subprocess_timeout)
+            stdout, stderr = await _communicate_bounded(
+                process,
+                timeout=subprocess_timeout,
+            )
         except TimeoutError:
-            await _terminate_process_group(process, hard=True)
-            await process.communicate()
             elapsed = time.monotonic() - started_at
             LOG.warning(
                 "openclaw_turn_timeout session=%s turn=%s elapsed_s=%.2f timeout_s=%.2f",
@@ -242,35 +344,45 @@ async def _run_openclaw_turn(
     stderr_text = (stderr or b"").decode("utf-8", errors="replace").strip()
     if stderr_text:
         LOG.warning(
-            "openclaw_turn_stderr session=%s turn=%s stderr=%s",
+            "openclaw_turn_stderr session=%s turn=%s stderr_chars=%d",
             session_handle,
             turn_handle,
-            stderr_text[:800],
+            len(stderr_text),
         )
 
     if process.returncode != 0:
         message = (stderr or stdout).decode("utf-8", errors="replace").strip()
         elapsed = time.monotonic() - started_at
         LOG.error(
-            "openclaw_turn_failed session=%s turn=%s rc=%s elapsed_s=%.2f message=%s",
+            "openclaw_turn_failed session=%s turn=%s rc=%s elapsed_s=%.2f message_chars=%d",
             session_handle,
             turn_handle,
             process.returncode,
             elapsed,
-            (message or "")[:800],
+            len(message or ""),
         )
         normalized_message = (message or "").lower()
         if "gateway timeout" in normalized_message:
-            raise OpenClawGatewayTimeoutError(message or "openclaw gateway timeout")
-        raise RuntimeError(message or f"openclaw agent failed with exit code {process.returncode}")
+            raise OpenClawGatewayTimeoutError("openclaw gateway timeout")
+        raise RuntimeError(
+            f"openclaw agent failed with exit code {process.returncode}"
+        )
 
     payload = json.loads(stdout.decode("utf-8", errors="replace"))
+    if not isinstance(payload, dict):
+        raise RuntimeError("openclaw agent returned an invalid JSON object")
     result = payload.get("result") or {}
+    if not isinstance(result, dict):
+        raise RuntimeError("openclaw agent returned an invalid result object")
     payloads = result.get("payloads") or []
+    if not isinstance(payloads, list):
+        raise RuntimeError("openclaw agent returned an invalid payload list")
     texts = [_normalize_text(item.get("text", "")) for item in payloads if isinstance(item, dict)]
     final_text = " ".join(text for text in texts if text).strip()
     if not final_text:
         raise RuntimeError("openclaw agent returned no text payload")
+    if len(final_text) > MAX_ASSISTANT_TEXT_CHARS:
+        raise RuntimeError("openclaw assistant output exceeded the configured limit")
     elapsed = time.monotonic() - started_at
     LOG.info(
         "openclaw_turn_success session=%s turn=%s elapsed_s=%.2f chars=%d",
@@ -312,29 +424,43 @@ async def health_handler(_: web.Request) -> web.Response:
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
         )
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=OPENCLAW_HEALTH_TIMEOUT_SECONDS)
+        stdout, _stderr = await _communicate_bounded(
+            process,
+            timeout=OPENCLAW_HEALTH_TIMEOUT_SECONDS,
+        )
         if process.returncode != 0:
-            message = (stderr or stdout).decode("utf-8", errors="replace").strip()
             return web.json_response(
-                {"status": "degraded", "detail": f"{detail}; {message}", "mode": "deep"},
+                {
+                    "status": "degraded",
+                    "detail": f"{detail}; OpenClaw exited with status {process.returncode}",
+                    "mode": "deep",
+                },
                 status=200,
             )
         payload = json.loads(stdout.decode("utf-8", errors="replace"))
+        if not isinstance(payload, dict):
+            raise RuntimeError("openclaw health returned an invalid JSON object")
         result = payload.get("result") or {}
+        if not isinstance(result, dict):
+            raise RuntimeError("openclaw health returned an invalid result object")
         meta = result.get("meta") or {}
+        if not isinstance(meta, dict):
+            meta = {}
+        agent_meta = meta.get("agentMeta") or {}
+        if not isinstance(agent_meta, dict):
+            agent_meta = {}
         agent_name = (
-            ((meta.get("agentMeta") or {}).get("name"))
+            agent_meta.get("name")
             or payload.get("name")
             or OPENCLAW_AGENT_ID
         )
+        agent_name = _normalize_text(str(agent_name))[:256]
         return web.json_response({"status": "ok", "detail": f"{detail}; agent={agent_name}", "mode": "deep"})
     except Exception as exc:
         if process is not None and process.returncode is None:
             await _terminate_process_group(process, hard=True)
-            try:
+            with contextlib.suppress(Exception):
                 await process.communicate()
-            except Exception:
-                pass
         return web.json_response(
             {"status": "degraded", "detail": f"{detail}; {exc}", "mode": "deep"},
             status=200,
@@ -342,10 +468,26 @@ async def health_handler(_: web.Request) -> web.Response:
 
 
 async def create_session_handler(request: web.Request) -> web.Response:
-    payload = await request.json()
+    try:
+        payload = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid JSON object"}, status=400)
+    if not isinstance(payload, dict):
+        return web.json_response({"error": "invalid JSON object"}, status=400)
     client_context = payload.get("client_context")
+    if client_context is not None and not isinstance(client_context, dict):
+        return web.json_response({"error": "client_context must be an object"}, status=400)
     existing_session_handle = None
-    client_session_id = ((client_context or {}).get("client_session_id") or "").strip()
+    raw_client_session_id = (client_context or {}).get("client_session_id")
+    if raw_client_session_id is not None and not isinstance(
+        raw_client_session_id, str
+    ):
+        return web.json_response(
+            {"error": "client_session_id must be a string"}, status=400
+        )
+    client_session_id = (raw_client_session_id or "").strip()
+    if len(client_session_id) > MAX_CLIENT_SESSION_ID_CHARS:
+        return web.json_response({"error": "client_session_id is too long"}, status=413)
     if client_session_id:
         existing_session_handle = BACKEND.client_session_map.get(client_session_id)
     session_handle = BACKEND.create_session(client_context)
@@ -362,12 +504,24 @@ async def create_turn_handler(request: web.Request) -> web.Response:
     if session_handle not in BACKEND.sessions:
         return web.json_response({"error": "unknown session handle"}, status=404)
 
-    payload = await request.json()
-    transcript = (payload.get("transcript") or "").strip()
+    try:
+        payload = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid JSON object"}, status=400)
+    if not isinstance(payload, dict):
+        return web.json_response({"error": "invalid JSON object"}, status=400)
+    raw_transcript = payload.get("transcript")
+    transcript = raw_transcript.strip() if isinstance(raw_transcript, str) else ""
     if not transcript:
         return web.json_response({"error": "empty transcript"}, status=400)
+    if len(transcript) > MAX_TURN_TEXT_CHARS:
+        return web.json_response({"error": "transcript is too long"}, status=413)
 
-    turn_handle = BACKEND.create_turn(session_handle, transcript, payload.get("turn_context"))
+    turn_context = payload.get("turn_context")
+    if turn_context is not None and not isinstance(turn_context, dict):
+        return web.json_response({"error": "turn_context must be an object"}, status=400)
+
+    turn_handle = BACKEND.create_turn(session_handle, transcript, turn_context)
     return web.json_response({"turn_handle": turn_handle})
 
 
@@ -474,8 +628,27 @@ async def cancel_turn_handler(request: web.Request) -> web.Response:
     return web.json_response({"status": "acknowledged", "mode": "best_effort"})
 
 
+async def cleanup_backend(_app: web.Application) -> None:
+    processes = list(BACKEND.active_processes.values())
+    for process in processes:
+        await _terminate_process_group(process, hard=True)
+    if processes:
+        await asyncio.gather(
+            *(process.wait() for process in processes),
+            return_exceptions=True,
+        )
+    BACKEND.active_processes.clear()
+
+    tasks = [task for task in _BACKGROUND_TASKS if not task.done()]
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
 def create_app() -> web.Application:
     app = web.Application()
+    app.on_cleanup.append(cleanup_backend)
     app.router.add_get("/health", health_handler)
     app.router.add_post("/sessions", create_session_handler)
     app.router.add_post("/sessions/{session_handle}/turns", create_turn_handler)

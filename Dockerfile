@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:229a2c5bfa27522db7815ea81f9bed70af17ccb9de9fc7ad142b1877b5830d36
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -18,11 +18,20 @@ RUN apt-get update \
 
 COPY ops/docker/requirements.txt /tmp/requirements.txt
 
-RUN pip install --index-url https://download.pytorch.org/whl/cpu torch==2.13.0 \
-    && pip install -r /tmp/requirements.txt \
-    && python -m spacy download en_core_web_sm
+RUN python -m pip install \
+        "https://files.pythonhosted.org/packages/5d/95/6b5cb3461ea5673ba0995989746db58eb18b91b54dbf331e72f569540946/pip-26.1.2-py3-none-any.whl#sha256=382ff9f685ee3bc25864f820aa50505825f10f5458ffff07e30a6d96e5715cab" \
+    && python -m pip install --require-hashes -r /tmp/requirements.txt \
+    && python -m pip install \
+        "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85" \
+    && groupadd --gid 10001 qantara \
+    && useradd --uid 10001 --gid qantara --create-home --shell /usr/sbin/nologin qantara
 
-COPY . /app
+COPY --chown=qantara:qantara . /app
+
+ENV HOME=/home/qantara \
+    XDG_CACHE_HOME=/home/qantara/.cache
+
+USER qantara
 
 EXPOSE 8765 19120
 

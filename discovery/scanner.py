@@ -20,6 +20,12 @@ from typing import Any
 
 import aiohttp
 
+from qantara.http_safety import (
+    HTTPResponseLimitError,
+    decode_response_bytes,
+    read_bounded_response_bytes,
+)
+
 # Known AI server ports and their likely types
 KNOWN_PORTS: dict[int, str] = {
     11434: "ollama",
@@ -129,15 +135,16 @@ async def http_get_json(
     """GET a URL and return (status, json_body, latency_ms) or None."""
     start = time.perf_counter()
     try:
-        async with session.get(url) as resp:
-            text = await resp.text()
+        async with session.get(url, allow_redirects=False) as resp:
+            raw = await read_bounded_response_bytes(resp)
+            text = decode_response_bytes(resp, raw)
             latency = (time.perf_counter() - start) * 1000
             try:
                 body = json.loads(text) if text.strip() else None
             except json.JSONDecodeError:
                 body = None
             return resp.status, body, latency
-    except (TimeoutError, aiohttp.ClientError, OSError):
+    except (TimeoutError, aiohttp.ClientError, HTTPResponseLimitError, OSError):
         return None
 
 
@@ -279,7 +286,7 @@ async def scan_lan(progress_callback=None) -> list[DiscoveredBackend]:
 
     timeout = aiohttp.ClientTimeout(total=HTTP_TIMEOUT, connect=TCP_TIMEOUT + 0.2)
 
-    async with aiohttp.ClientSession(timeout=timeout) as session:
+    async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
 
         async def probe_one(host: str, port: int) -> None:
             nonlocal completed

@@ -52,6 +52,21 @@ class MakeActivityEventTests(unittest.TestCase):
         )
         self.assertNotIn("parameters", event)
 
+    def test_activity_text_fields_are_type_checked_and_bounded(self) -> None:
+        event = make_activity_event(
+            activity_type="tool_call",
+            summary="s" * 5000,
+            tool_name="t" * 300,
+        )
+        self.assertEqual(len(event["summary"]), 4096)
+        self.assertEqual(len(event["tool_name"]), 256)
+
+        malformed = make_activity_event(
+            activity_type="thinking",
+            summary={"not": "text"},
+        )
+        self.assertEqual(malformed["summary"], "")
+
 
 class _ActivityAdapter(RuntimeAdapter):
     """Yields one assistant_activity event then completes the turn."""

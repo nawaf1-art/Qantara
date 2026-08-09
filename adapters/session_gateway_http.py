@@ -8,7 +8,13 @@ from typing import Any
 import aiohttp
 
 from adapters.base import AdapterConfig, AdapterHealth, RuntimeAdapter
+from qantara.http_safety import (
+    DEFAULT_MAX_HTTP_RESPONSE_BYTES,
+    read_bounded_response_text,
+)
 from qantara.streaming import iter_text_lines
+
+MAX_BACKEND_JSON_BYTES = DEFAULT_MAX_HTTP_RESPONSE_BYTES
 
 
 class SessionGatewayHTTPAdapter(RuntimeAdapter):
@@ -24,6 +30,12 @@ class SessionGatewayHTTPAdapter(RuntimeAdapter):
         self.base_url = self.config.options.get("base_url") or os.environ.get("QANTARA_BACKEND_BASE_URL", "").rstrip("/")
         self.auth_token = self.config.options.get("auth_token") or os.environ.get("QANTARA_BACKEND_TOKEN")
         self.timeout_seconds = float(self.config.options.get("timeout_seconds") or os.environ.get("QANTARA_BACKEND_TIMEOUT", "30"))
+        self.outbound_host_header = str(
+            self.config.options.get("outbound_host_header") or ""
+        )
+        self.outbound_server_hostname = str(
+            self.config.options.get("outbound_server_hostname") or ""
+        )
 
     @property
     def available(self) -> bool:
@@ -33,7 +45,14 @@ class SessionGatewayHTTPAdapter(RuntimeAdapter):
         headers = {"Content-Type": "application/json"}
         if self.auth_token:
             headers["Authorization"] = f"Bearer {self.auth_token}"
+        if self.outbound_host_header:
+            headers["Host"] = self.outbound_host_header
         return headers
+
+    def _request_kwargs(self) -> dict[str, str]:
+        if self.outbound_server_hostname:
+            return {"server_hostname": self.outbound_server_hostname}
+        return {}
 
     def _url(self, path: str) -> str:
         return f"{self.base_url}{path}"
@@ -66,14 +85,19 @@ class SessionGatewayHTTPAdapter(RuntimeAdapter):
             raise RuntimeError("session gateway backend base URL is not configured")
 
         timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
             async with session.request(
                 method,
                 self._url(path),
                 json=payload,
                 headers=self._headers(),
+                allow_redirects=False,
+                **self._request_kwargs(),
             ) as response:
-                body = await response.text()
+                body = await read_bounded_response_text(
+                    response,
+                    limit=MAX_BACKEND_JSON_BYTES,
+                )
                 if response.status >= 400:
                     raise RuntimeError(f"backend request failed: {response.status} {body}".strip())
                 if not body:
@@ -115,13 +139,18 @@ class SessionGatewayHTTPAdapter(RuntimeAdapter):
             raise RuntimeError("session gateway backend base URL is not configured")
 
         timeout = aiohttp.ClientTimeout(total=self.timeout_seconds)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
             async with session.get(
                 self._url(f"/sessions/{session_handle}/turns/{turn_handle}/events"),
                 headers=self._headers(),
+                allow_redirects=False,
+                **self._request_kwargs(),
             ) as response:
                 if response.status >= 400:
-                    body = await response.text()
+                    body = await read_bounded_response_text(
+                        response,
+                        limit=MAX_BACKEND_JSON_BYTES,
+                    )
                     raise RuntimeError(f"backend stream failed: {response.status} {body}".strip())
 
                 async for line in iter_text_lines(response.content):

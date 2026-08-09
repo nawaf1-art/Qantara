@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import io
 import json
 import logging
@@ -35,6 +36,9 @@ LOGGER = logging.getLogger("qantara.voice_api")
 # One-shot transcription uploads are bounded: this is a request/response
 # convenience API, not a streaming ingest path.
 MAX_AUDIO_BYTES = 32 * 1024 * 1024
+MAX_TEXT_CHARS = 16 * 1024
+MAX_SESSION_ID_CHARS = 256
+MAX_GENERATED_TEXT_CHARS = 1024 * 1024
 
 CONVERSE_TURN_TIMEOUT_SECONDS = float(os.environ.get("QANTARA_VOICE_API_TURN_TIMEOUT", "120"))
 
@@ -46,6 +50,14 @@ _api_sessions: dict[str, str] = {}
 
 def _audit(request: web.Request, detail: str) -> None:
     LOGGER.info("voice_api %s %s %s", request.method, request.path, detail)
+
+
+def _session_log_id(client_session_id: str | None) -> str:
+    """Return a stable diagnostic identifier without logging the client value."""
+    if client_session_id is None:
+        return "ephemeral"
+    digest = hashlib.sha256(client_session_id.encode("utf-8")).hexdigest()[:12]
+    return f"sha256:{digest}"
 
 
 def _runtime(request: web.Request) -> GatewayRuntime:
@@ -72,13 +84,28 @@ async def api_v1_speak_handler(request: web.Request) -> web.Response:
         return auth_error
     try:
         payload = await request.json()
+    except web.HTTPRequestEntityTooLarge:
+        return web.json_response({"ok": False, "error": "body too large"}, status=413)
     except Exception:
         return web.json_response({"ok": False, "error": "body must be JSON"}, status=400)
-    text = str(payload.get("text") or "").strip()
+    if not isinstance(payload, dict):
+        return web.json_response({"ok": False, "error": "body must be a JSON object"}, status=400)
+    raw_text = payload.get("text")
+    if not isinstance(raw_text, str):
+        return web.json_response({"ok": False, "error": "text must be a string"}, status=400)
+    text = raw_text.strip()
     if not text:
         return web.json_response({"ok": False, "error": "text is required"}, status=400)
+    if len(text) > MAX_TEXT_CHARS:
+        return web.json_response({"ok": False, "error": "text is too long"}, status=413)
     voice_id = payload.get("voice_id")
     speech_rate = payload.get("speech_rate")
+    if voice_id is not None and not isinstance(voice_id, str):
+        return web.json_response({"ok": False, "error": "voice_id must be a string"}, status=400)
+    if speech_rate is not None and (
+        isinstance(speech_rate, bool) or not isinstance(speech_rate, (int, float))
+    ):
+        return web.json_response({"ok": False, "error": "speech_rate must be a number"}, status=400)
 
     runtime = _runtime(request)
     if not runtime.tts.available:
@@ -136,7 +163,13 @@ async def api_v1_transcribe_handler(request: web.Request) -> web.Response:
     auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
     if auth_error is not None:
         return auth_error
-    body = await request.read()
+    if request.content_length is not None and request.content_length > MAX_AUDIO_BYTES:
+        return web.json_response({"ok": False, "error": "audio body too large"}, status=413)
+    audio_request = request.clone(client_max_size=MAX_AUDIO_BYTES + 1)
+    try:
+        body = await audio_request.read()
+    except web.HTTPRequestEntityTooLarge:
+        return web.json_response({"ok": False, "error": "audio body too large"}, status=413)
     if len(body) > MAX_AUDIO_BYTES:
         return web.json_response({"ok": False, "error": "audio body too large"}, status=413)
     try:
@@ -205,12 +238,26 @@ async def api_v1_converse_handler(request: web.Request) -> web.StreamResponse:
         return auth_error
     try:
         payload = await request.json()
+    except web.HTTPRequestEntityTooLarge:
+        return web.json_response({"ok": False, "error": "body too large"}, status=413)
     except Exception:
         return web.json_response({"ok": False, "error": "body must be JSON"}, status=400)
-    text = str(payload.get("text") or "").strip()
+    if not isinstance(payload, dict):
+        return web.json_response({"ok": False, "error": "body must be a JSON object"}, status=400)
+    raw_text = payload.get("text")
+    if not isinstance(raw_text, str):
+        return web.json_response({"ok": False, "error": "text must be a string"}, status=400)
+    text = raw_text.strip()
     if not text:
         return web.json_response({"ok": False, "error": "text is required"}, status=400)
-    client_session_id = (str(payload.get("session_id") or "").strip()) or None
+    if len(text) > MAX_TEXT_CHARS:
+        return web.json_response({"ok": False, "error": "text is too long"}, status=413)
+    raw_session_id = payload.get("session_id")
+    if raw_session_id is not None and not isinstance(raw_session_id, str):
+        return web.json_response({"ok": False, "error": "session_id must be a string"}, status=400)
+    client_session_id = (raw_session_id or "").strip() or None
+    if client_session_id is not None and len(client_session_id) > MAX_SESSION_ID_CHARS:
+        return web.json_response({"ok": False, "error": "session_id is too long"}, status=413)
 
     runtime = _runtime(request)
     adapter, session_handle = await _resolve_adapter_session(runtime, client_session_id)
@@ -229,7 +276,8 @@ async def api_v1_converse_handler(request: web.Request) -> web.StreamResponse:
         line = f"event: {event.get('type', 'message')}\ndata: {json.dumps(event)}\n\n"
         await response.write(line.encode("utf-8"))
 
-    _audit(request, f"chars={len(text)} session={client_session_id or 'ephemeral'}")
+    _audit(request, f"chars={len(text)} session={_session_log_id(client_session_id)}")
+    turn_handle: str | None = None
     try:
         try:
             turn_handle = await adapter.submit_user_turn(session_handle, text, {"source": "voice_api", "modality": "text"})
@@ -242,6 +290,8 @@ async def api_v1_converse_handler(request: web.Request) -> web.StreamResponse:
             turn_handle = await adapter.submit_user_turn(session_handle, text, {"source": "voice_api", "modality": "text"})
         await send_event({"type": "turn_accepted", "turn_handle": turn_handle, "session_id": client_session_id})
         saw_final = False
+        saw_completed = False
+        terminal_failure = False
         buffered = ""
         try:
             # Hard deadline that fires even if the adapter yields nothing: a
@@ -251,9 +301,23 @@ async def api_v1_converse_handler(request: web.Request) -> web.StreamResponse:
                 async for event in adapter.stream_assistant_output(session_handle, turn_handle):
                     event_type = event.get("type")
                     if event_type == "assistant_text_delta":
-                        buffered += event.get("text", "")
+                        delta = event.get("text", "")
+                        if not isinstance(delta, str):
+                            raise RuntimeError("adapter returned non-text assistant output")
+                        if len(buffered) + len(delta) > MAX_GENERATED_TEXT_CHARS:
+                            raise RuntimeError("assistant output exceeded the configured limit")
+                        buffered += delta
                     elif event_type == "assistant_text_final":
+                        final_text = event.get("text", "")
+                        if not isinstance(final_text, str):
+                            raise RuntimeError("adapter returned non-text assistant output")
+                        if len(final_text) > MAX_GENERATED_TEXT_CHARS:
+                            raise RuntimeError("assistant output exceeded the configured limit")
                         saw_final = True
+                    elif event_type == "turn_completed":
+                        saw_completed = True
+                    elif event_type in {"turn_failed", "cancel_acknowledged"}:
+                        terminal_failure = True
                     elif event_type == "assistant_activity":
                         # Re-validate through the protocol-v1 builder so the SSE
                         # surface applies the same trust-boundary normalization the
@@ -269,16 +333,26 @@ async def api_v1_converse_handler(request: web.Request) -> web.StreamResponse:
                             confidence=event.get("confidence"),
                         )
                     await send_event(event)
+                    if terminal_failure or saw_completed:
+                        break
         except TimeoutError:
             await send_event({"type": "turn_failed", "message": "turn timed out"})
+            terminal_failure = True
             with contextlib.suppress(Exception):
                 await adapter.cancel_turn(session_handle, turn_handle)
-        if not saw_final and buffered:
-            await send_event({"type": "assistant_text_final", "text": buffered, "completed_via": "buffer_flush"})
-        await send_event({"type": "turn_completed"})
+        if not terminal_failure:
+            if not saw_final and buffered:
+                await send_event({"type": "assistant_text_final", "text": buffered, "completed_via": "buffer_flush"})
+            if not saw_completed:
+                await send_event({"type": "turn_completed"})
     except Exception as exc:
-        await send_event({"type": "turn_failed", "message": str(exc)})
-    await response.write_eof()
+        if turn_handle is not None:
+            with contextlib.suppress(Exception):
+                await adapter.cancel_turn(session_handle, turn_handle)
+        with contextlib.suppress(Exception):
+            await send_event({"type": "turn_failed", "message": str(exc)})
+    with contextlib.suppress(Exception):
+        await response.write_eof()
     return response
 
 

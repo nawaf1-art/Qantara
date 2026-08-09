@@ -17,7 +17,7 @@ Request body (JSON):
 
 | Field | Required | Notes |
 |---|---|---|
-| `text` | yes | The text to speak |
+| `text` | yes | The text to speak (maximum 16,384 characters) |
 | `voice_id` | no | Defaults to the gateway's configured voice |
 | `speech_rate` | no | Clamped to the voice's allowed range |
 
@@ -57,8 +57,8 @@ Request body (JSON):
 
 | Field | Required | Notes |
 |---|---|---|
-| `text` | yes | The user turn |
-| `session_id` | no | Reuse the same value to keep conversation history across calls (bounded store, LRU-evicted) |
+| `text` | yes | The user turn (maximum 16,384 characters) |
+| `session_id` | no | Reuse the same value (maximum 256 characters) to keep conversation history across calls (bounded store, LRU-evicted) |
 
 The stream ends with a `turn_completed` (or `turn_failed`) event. Turns are
 bounded by `QANTARA_VOICE_API_TURN_TIMEOUT` (default 120 s).
@@ -89,7 +89,11 @@ clients live in [docs/examples/clients/](examples/clients/).
 ## Scope notes
 
 - Audio in/out here is one-shot per request. The long-lived bidirectional
-  audio path remains the `/ws` WebSocket transport (a dedicated
-  `/api/v1/stream` WS variant is tracked on the roadmap).
+  audio path remains the `/ws` WebSocket transport. A dedicated Voice API
+  streaming transport is not implemented.
+- Transcription bodies are limited to 32 MiB. Ordinary control JSON uses a
+  smaller application-wide limit, and generated assistant text is bounded.
+- Default audit lines record route, character/sample counts, provider, and
+  timings rather than request or transcript content.
 - `route` targeting of a specific mesh peer is not implemented yet; requests
   run on the node you call.

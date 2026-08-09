@@ -1,37 +1,58 @@
-# Supply Chain & Model Integrity
+# Supply Chain and Artifact Integrity
 
-Qantara runs AI models locally. This document explains what gets downloaded, from where, and how to verify integrity. Review this before using Qantara in a hardened environment.
+Qantara combines ordinary Python packages, large ML wheels, speech/model artifacts, container images, and operator-supplied runtimes. This document distinguishes what the repository pins from what still depends on an upstream mutable reference.
 
-## What Qantara downloads
+## Dependency surfaces
 
-| Artifact | Source | Triggered by | Size |
-|---|---|---|---|
-| `faster-whisper` model (e.g., `base.en`) | HuggingFace Hub (`Systran/faster-whisper-*`) | First STT call | ~100 MB |
-| `Kokoro-82M` model assets + voice packs | HuggingFace Hub (`hexgrad/Kokoro-82M`) | First Kokoro TTS call | ~350 MB |
-| Piper voices (`en_US-lessac-medium.onnx` etc.) | You download manually to `models/piper/` | Pre-installed by user | ~20 MB each |
-| Ollama model (`qwen3.5:2b` by default in Docker) | `registry.ollama.ai` | `docker compose up` or first run | ~2.7 GB |
-| Python/ML dependencies | PyPI via `pip` | `pip install -r requirements.txt` or Docker build | Several GB in the Docker image because speech packages include large ML wheels |
+| Surface | Current safeguard | Remaining operator consideration |
+|---|---|---|
+| Base Python package | Narrow runtime dependency range in `pyproject.toml`; CI strictly audits the resolved third-party base set | Normal package installs resolve compatible releases at install time |
+| Development/test tools | Exact versions in the `dev` extra and CI; CI upgrades to a reviewed `pip` version before installing | Update intentionally through reviewed dependency PRs |
+| Full native speech lock | Generated, version-and-hash locked `gateway/transport_spike/requirements.txt` | Regenerate and review when changing speech packages |
+| Docker Python/ML lock | Generated, version-and-hash locked `ops/docker/requirements.txt`; pip uses `--require-hashes` | Large multi-index lock requires careful regeneration |
+| Docker Python base | Multi-platform image index pinned by SHA256 digest in `Dockerfile` | Debian packages installed during build still come from the configured live apt repository |
+| Docker installer | Exact PyPI `pip` wheel URL and SHA256 in `Dockerfile` | Review the official PyPI artifact and audit result before updating |
+| spaCy English model in Docker | Exact model release URL and SHA256 fragment | Review compatibility when spaCy changes |
+| Ollama container | `ollama/ollama:0.32.3` plus its reviewed multi-architecture manifest digest | Review and update the tag and digest together; Dependabot may propose digest refreshes |
+| GitHub Actions | Every third-party Action invocation is pinned to a full commit SHA with a version comment | Dependabot proposes reviewed updates |
 
-## Who verifies integrity
+## Model downloads
 
-- **HuggingFace Hub downloads** (faster-whisper, Kokoro): the `huggingface_hub` library (used internally by `faster-whisper` and `kokoro`) verifies files by content-addressed ETags. Files are named by commit SHA; a tampered repo would require either HuggingFace compromise or a downgrade attack.
-- **PyPI installs**: pip verifies the exact versions and wheel hashes committed in `gateway/transport_spike/requirements.txt`. The CPU-only PyTorch index and version are pinned in the corresponding `.in` file.
-- **Ollama images**: Ollama models are content-addressed by SHA256 internally; the Ollama registry verifies on pull.
-- **Docker images**: Compose pins the validated `ollama/ollama:0.32.3` version tag. Hardened deployments can pin the matching architecture-specific digest for fully reproducible pulls (`ollama/ollama@sha256:...`).
-- **Piper voices**: you download manually. Verify against the [Piper voices release](https://huggingface.co/rhasspy/piper-voices) SHA256 sums published with each voice.
+| Artifact | Typical source | Trigger |
+|---|---|---|
+| faster-whisper model | Hugging Face Hub | First STT model load unless pre-cached |
+| Kokoro model/voices | Hugging Face Hub or provider dependency | First TTS use unless pre-cached |
+| Piper voice and config | Operator-selected Piper voice source | Manual installation |
+| Ollama model | Ollama registry | `ollama pull` or Compose initialization |
+| Chatterbox assets | Its configured runtime/upstream | Optional provider initialization |
 
-## What Qantara does *not* yet do
+Qantara does not yet maintain a first-party manifest that pins every model repository revision and file digest. Upstream clients may use content-addressed caches, but a model name or branch alone is not an immutable Qantara guarantee. For sensitive environments, pre-download a reviewed revision, record file hashes, transfer it through a trusted channel, and disable runtime egress.
 
-- No first-party SHA256SUMS file for downloaded artifacts. We trust the upstream providers' integrity mechanisms (above). Adding a first-party verifier is tracked for v0.2.x; until then, follow the upstream-verification guidance below.
-- No Sigstore / reproducible-build attestations on Qantara itself.
-- No SBOM generation in CI.
+## Release artifact controls
 
-These are hardening items for v0.3.x+.
+The manual release workflow runs only from an existing matching `vX.Y.Z` tag selected by an owner. It:
 
-## Regenerating Python lock files
+1. verifies tag and source version metadata
+2. runs lint, compilation, and the full lightweight unit suite
+3. builds wheel and sdist once
+4. validates metadata and forbidden/required archive contents
+5. installs each artifact into a clean virtual environment and exercises public routes/resources
+6. creates an SPDX JSON SBOM
+7. writes SHA256 checksums and machine-readable validation evidence
+8. generates GitHub build-provenance attestations
+9. attaches those exact files to a draft GitHub Release
 
-The two runtime lock files are universal locks generated for Qantara's minimum
-supported Python 3.11 from their adjacent `.in` files:
+The workflow does not upload to PyPI and refuses to replace artifacts when a release already exists for the tag. Maintainers review the draft before publication. See [Release process](RELEASE_PROCESS.md).
+
+Until Qantara itself is registered on PyPI, `pip-audit --strict` cannot resolve
+an advisory identity for the local `qantara` distribution. CI therefore installs
+Qantara to resolve its dependency set, uninstalls only that local distribution,
+and audits the third-party packages left in the environment. This is a narrow,
+documented exception—not a vulnerability-ID ignore.
+
+## Regenerating hash locks
+
+The runtime locks are generated from their adjacent `.in` files for the minimum supported Python version:
 
 ```bash
 uv pip compile --universal --generate-hashes --python-version 3.11 \
@@ -45,21 +66,45 @@ uv pip compile --universal --generate-hashes --python-version 3.11 \
   ops/docker/requirements.in
 ```
 
-The `unsafe-best-match` index strategy is required because PyTorch's CPU index
-and PyPI both publish the `torch` package. The universal lock selects
-`2.13.0+cpu` off macOS and the CPU-only `2.13.0` macOS wheels, with every
-resolved artifact hash pinned.
+The PyTorch CPU index also mirrors some transitive packages. Pip treats the two
+indexes as one candidate pool, so every accepted artifact hash selected from
+either reviewed index must be present in the lock. After regeneration, run a
+clean `--require-hashes` install (including a no-cache Docker build) and review
+any additional artifact hash against its actual index URL before committing it.
+Then run tests, package checks, and the dependency audit before merging.
 
-## Manual verification (air-gapped or audit contexts)
+## Offline preparation
 
-If you need to verify downloads yourself before allowing network egress from the gateway host:
+For an egress-restricted deployment:
 
-1. **faster-whisper**: pre-download the model on a trusted machine using the `huggingface_hub` CLI, verify the SHA256 against the HuggingFace Hub API (`https://huggingface.co/api/models/<repo>/revision/<sha>`), then copy into the target host's HuggingFace cache directory (`~/.cache/huggingface/hub/`).
-2. **Kokoro**: same process, targeting `hexgrad/Kokoro-82M`.
-3. **Piper**: download the voice .onnx and .json from `https://huggingface.co/rhasspy/piper-voices`, verify against the published sums, place in `models/piper/`.
-4. **Ollama**: `ollama pull <model>` on a trusted machine, then use `ollama cp` / copy the `~/.ollama/models/` directory.
-5. Run Qantara with network egress disabled; all model calls should succeed from local cache.
+1. Resolve package, container, and model artifacts on a trusted staging machine.
+2. Record SHA256 digests and upstream revisions in deployment records.
+3. Scan artifacts according to your organization’s policy.
+4. Populate the target’s wheelhouse, container store, Hugging Face/provider caches, Piper voice directory, and Ollama model store.
+5. Run Qantara with egress denied and verify startup plus one synthetic turn.
 
-## Reporting a supply-chain concern
+Do not copy browser profiles, `.env` files, tokens, private keys, transcripts, audio captures, or unrelated caches as part of this process.
 
-If you suspect tampering or a malicious artifact in Qantara's own release surface (not an upstream dependency), follow [SECURITY.md](../SECURITY.md).
+## Maintainer safeguards outside the repository
+
+For the `0.3.1` release line, repository settings enforce safeguards that cannot
+be expressed solely in source:
+
+- `main` requires a pull request, an up-to-date branch, all nine CI checks, and
+  resolved review conversations; linear history is required and force-pushes or
+  branch deletion are blocked, including for administrators
+- `v*` release-tag creation is restricted to the repository owner, and matching
+  tags cannot be updated or deleted after creation
+- Dependency Graph, vulnerability alerts, Dependabot security updates, secret
+  scanning, push protection, and private vulnerability reporting are enabled
+- release publication remains manual after review of the draft assets and
+  validation evidence
+
+The approval count is intentionally zero while no independent trusted reviewer
+is designated, because GitHub does not allow a pull-request author to approve
+their own change. Increase it to one when another maintainer can reliably review
+release and dependency changes.
+
+## Reporting a concern
+
+Suspected malicious or tampered Qantara artifacts should be reported privately through [SECURITY.md](../SECURITY.md). Do not post tokens, suspicious payload contents, or private deployment details in a public issue.

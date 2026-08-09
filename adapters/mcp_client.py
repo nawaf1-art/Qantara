@@ -13,6 +13,49 @@ from typing import Any
 from adapters.base import AdapterConfig, AdapterHealth, RuntimeAdapter, make_activity_event
 
 MAX_TURNS_PER_SESSION = 24
+MAX_MCP_TOOL_OUTPUT_CHARS = 1024 * 1024
+MAX_MCP_ACTIVITY_CHARS = 4096
+
+
+def _make_mcp_http_client_factory(
+    host_header: str,
+    server_hostname: str,
+) -> Callable[..., Any]:
+    import httpx
+
+    class PinnedSNITransport(httpx.AsyncBaseTransport):
+        def __init__(self) -> None:
+            self._transport = httpx.AsyncHTTPTransport(trust_env=False)
+
+        async def handle_async_request(
+            self,
+            request: httpx.Request,
+        ) -> httpx.Response:
+            if server_hostname:
+                request.extensions["sni_hostname"] = server_hostname
+            return await self._transport.handle_async_request(request)
+
+        async def aclose(self) -> None:
+            await self._transport.aclose()
+
+    def http_client_factory(
+        headers: dict[str, str] | None = None,
+        timeout: httpx.Timeout | None = None,
+        auth: httpx.Auth | None = None,
+    ) -> httpx.AsyncClient:
+        request_headers = dict(headers or {})
+        if host_header:
+            request_headers["Host"] = host_header
+        return httpx.AsyncClient(
+            headers=request_headers,
+            timeout=timeout,
+            auth=auth,
+            follow_redirects=False,
+            trust_env=False,
+            transport=PinnedSNITransport(),
+        )
+
+    return http_client_factory
 
 
 class MCPClientAdapter(RuntimeAdapter):
@@ -29,6 +72,10 @@ class MCPClientAdapter(RuntimeAdapter):
         self.transport = str(options.get("transport") or os.environ.get("QANTARA_MCP_TRANSPORT", "stdio")).strip().lower()
         self.command = str(options.get("command") or os.environ.get("QANTARA_MCP_COMMAND", "")).strip()
         self.url = str(options.get("url") or os.environ.get("QANTARA_MCP_URL", "")).strip().rstrip("/")
+        self.outbound_host_header = str(options.get("outbound_host_header") or "")
+        self.outbound_server_hostname = str(
+            options.get("outbound_server_hostname") or ""
+        )
         self.chat_tool = str(options.get("chat_tool") or os.environ.get("QANTARA_MCP_CHAT_TOOL", "chat")).strip()
         self.argument_key = str(options.get("argument_key") or os.environ.get("QANTARA_MCP_CHAT_ARG", "")).strip()
         self.timeout_seconds = float(options.get("timeout_seconds") or os.environ.get("QANTARA_MCP_TIMEOUT", "120"))
@@ -90,7 +137,9 @@ class MCPClientAdapter(RuntimeAdapter):
         if turn is None:
             raise ValueError("unknown turn handle")
 
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        # Backpressure prevents a noisy MCP server from accumulating an
+        # unbounded number of progress notifications in gateway memory.
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=32)
 
         async def progress_callback(progress: float, total: float | None, message: str | None) -> None:
             await queue.put(self._activity_event(message, progress, total))
@@ -103,6 +152,8 @@ class MCPClientAdapter(RuntimeAdapter):
                     turn["turn_context"],
                     progress_callback,
                 )
+                if len(text) > MAX_MCP_TOOL_OUTPUT_CHARS:
+                    raise RuntimeError("MCP tool output exceeded the configured limit")
                 await queue.put({"type": "_result", "text": text})
             except Exception as exc:
                 await queue.put({"type": "_error", "message": str(exc)})
@@ -209,7 +260,7 @@ class MCPClientAdapter(RuntimeAdapter):
             from mcp.client.stdio import stdio_client
             from mcp.client.streamable_http import streamablehttp_client
         except ModuleNotFoundError as exc:
-            raise RuntimeError("mcp package is not installed; install mcp==1.27.*") from exc
+            raise RuntimeError("mcp package is not installed; install mcp==1.28.*") from exc
 
         read_timeout = timedelta(seconds=self.timeout_seconds)
         if self.transport == "stdio":
@@ -225,7 +276,19 @@ class MCPClientAdapter(RuntimeAdapter):
         if self.transport == "http":
             if not self.url:
                 raise RuntimeError("QANTARA_MCP_URL is required for HTTP MCP transport")
-            async with streamablehttp_client(self.url, timeout=read_timeout) as (read_stream, write_stream, _):
+            http_client_factory = _make_mcp_http_client_factory(
+                self.outbound_host_header,
+                self.outbound_server_hostname,
+            )
+
+            async with streamablehttp_client(
+                self.url,
+                timeout=read_timeout,
+                headers={"Host": self.outbound_host_header}
+                if self.outbound_host_header
+                else None,
+                httpx_client_factory=http_client_factory,
+            ) as (read_stream, write_stream, _):
                 async with ClientSession(read_stream, write_stream, read_timeout_seconds=read_timeout) as session:
                     yield session
             return
@@ -265,9 +328,13 @@ class MCPClientAdapter(RuntimeAdapter):
     @staticmethod
     def _extract_text(result: Any) -> str:
         chunks: list[str] = []
+        total = 0
         for item in getattr(result, "content", []) or []:
             text = getattr(item, "text", None)
-            if text:
+            if isinstance(text, str) and text:
+                total += len(text) + (1 if chunks else 0)
+                if total > MAX_MCP_TOOL_OUTPUT_CHARS:
+                    raise RuntimeError("MCP tool output exceeded the configured limit")
                 chunks.append(text)
         if chunks:
             return "\n".join(chunks).strip()
@@ -276,8 +343,20 @@ class MCPClientAdapter(RuntimeAdapter):
             for key in ("text", "message", "response", "result"):
                 value = structured.get(key)
                 if isinstance(value, str) and value.strip():
-                    return value.strip()
-            return json.dumps(structured, ensure_ascii=False)
+                    clean = value.strip()
+                    if len(clean) > MAX_MCP_TOOL_OUTPUT_CHARS:
+                        raise RuntimeError(
+                            "MCP tool output exceeded the configured limit"
+                        )
+                    return clean
+            encoded_chunks: list[str] = []
+            total = 0
+            for chunk in json.JSONEncoder(ensure_ascii=False).iterencode(structured):
+                total += len(chunk)
+                if total > MAX_MCP_TOOL_OUTPUT_CHARS:
+                    raise RuntimeError("MCP tool output exceeded the configured limit")
+                encoded_chunks.append(chunk)
+            return "".join(encoded_chunks)
         return ""
 
     def _activity_event(
@@ -293,7 +372,7 @@ class MCPClientAdapter(RuntimeAdapter):
             ratio = progress
         return make_activity_event(
             activity_type="tool_call",
-            summary=summary or "MCP tool activity",
+            summary=(summary or "MCP tool activity")[:MAX_MCP_ACTIVITY_CHARS],
             progress=ratio,
             tool_name=self.chat_tool or None,
         )

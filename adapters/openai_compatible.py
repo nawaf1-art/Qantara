@@ -20,6 +20,11 @@ import aiohttp
 
 from adapters.base import AdapterConfig, AdapterHealth, RuntimeAdapter
 from gateway.session_backend_prompts import build_voice_turn_context_prompt
+from qantara.http_safety import (
+    HTTPResponseLimitError,
+    read_bounded_response_json,
+    read_bounded_response_text,
+)
 from qantara.streaming import iter_sse_json_objects
 
 # Voice-optimized system prompt: short responses, conversational, no markdown.
@@ -29,6 +34,7 @@ DEFAULT_SYSTEM_PROMPT = (
 
 # Max conversation turns to keep (system prompt + last N exchanges).
 MAX_HISTORY_TURNS = 20
+MAX_ASSISTANT_TEXT_CHARS = 1024 * 1024
 
 
 def _normalize_base_url(raw: str) -> str:
@@ -82,6 +88,12 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
             or os.environ.get("QANTARA_OPENAI_BASE_URL", "")
         )
         self.base_url = _normalize_base_url(raw_url)
+        self.outbound_host_header = str(
+            self.config.options.get("outbound_host_header") or ""
+        )
+        self.outbound_server_hostname = str(
+            self.config.options.get("outbound_server_hostname") or ""
+        )
         self.api_key = (
             self.config.options.get("api_key")
             or os.environ.get("QANTARA_OPENAI_API_KEY", "not-needed")
@@ -130,10 +142,18 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
         return bool(self.base_url)
 
     def _headers(self) -> dict[str, str]:
-        return {
+        headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
         }
+        if self.outbound_host_header:
+            headers["Host"] = self.outbound_host_header
+        return headers
+
+    def _request_kwargs(self) -> dict[str, str]:
+        if self.outbound_server_hostname:
+            return {"server_hostname": self.outbound_server_hostname}
+        return {}
 
     async def _resolve_api_prefix(self) -> str:
         """Auto-detect whether the server needs /v1 prefix."""
@@ -141,13 +161,15 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
             return self._api_prefix
 
         timeout = aiohttp.ClientTimeout(total=self.timeout_connect)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
             # Try /v1/models first (most common)
             for prefix in ("/v1", ""):
                 try:
                     async with session.get(
                         f"{self.base_url}{prefix}/models",
                         headers=self._headers(),
+                        allow_redirects=False,
+                        **self._request_kwargs(),
                     ) as resp:
                         if resp.status < 400:
                             self._api_prefix = prefix
@@ -164,14 +186,16 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
         prefix = await self._resolve_api_prefix()
         timeout = aiohttp.ClientTimeout(total=self.timeout_connect)
         try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
                 async with session.get(
                     f"{self.base_url}{prefix}/models",
                     headers=self._headers(),
+                    allow_redirects=False,
+                    **self._request_kwargs(),
                 ) as resp:
                     if resp.status >= 400:
                         return ""
-                    data = await resp.json()
+                    data = await read_bounded_response_json(resp)
                     if not isinstance(data, dict):
                         return ""
                     models = data.get("data", [])
@@ -181,7 +205,13 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
                     if isinstance(first, dict):
                         model_id = first.get("id")
                         return model_id if isinstance(model_id, str) else ""
-        except (aiohttp.ClientError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError):
+        except (
+            aiohttp.ClientError,
+            TimeoutError,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+            HTTPResponseLimitError,
+        ):
             return ""
         return ""
 
@@ -302,17 +332,19 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
         stream_error = ""
 
         try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
                 async with session.post(
                     url,
                     json=payload,
                     headers=self._headers(),
+                    allow_redirects=False,
+                    **self._request_kwargs(),
                 ) as resp:
                     # Store response for cancellation
                     self._active_responses[turn_handle] = resp
 
                     if resp.status >= 400:
-                        body = await resp.text()
+                        body = await read_bounded_response_text(resp)
                         error_msg = _normalize_error(body)
                         self._rollback_user_message(session_handle)
                         self._cleanup_turn(turn_handle)
@@ -340,6 +372,9 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
                         )
                         saw_reasoning = saw_reasoning or event_has_reasoning
                         if content:
+                            if len(full_response) + len(content) > MAX_ASSISTANT_TEXT_CHARS:
+                                stream_error = "assistant output exceeded the configured limit"
+                                break
                             full_response += content
                             yield {
                                 "type": "assistant_text_delta",
@@ -454,21 +489,31 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
         try:
             prefix = await self._resolve_api_prefix()
             timeout = aiohttp.ClientTimeout(total=self.timeout_connect)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
                 async with session.get(
                     f"{self.base_url}{prefix}/models",
                     headers=self._headers(),
+                    allow_redirects=False,
+                    **self._request_kwargs(),
                 ) as resp:
                     if resp.status >= 400:
-                        body = await resp.text()
+                        body = await read_bounded_response_text(resp)
                         return AdapterHealth(
                             status="degraded",
                             degraded=True,
                             detail=_normalize_error(body),
                         )
-                    data = await resp.json()
+                    data = await read_bounded_response_json(resp)
+                    if not isinstance(data, dict):
+                        raise RuntimeError("model endpoint returned a non-object JSON response")
                     models = data.get("data", [])
-                    model_names = [m.get("id", "?") for m in models[:5]]
+                    if not isinstance(models, list):
+                        raise RuntimeError("model endpoint returned an invalid model list")
+                    model_names = [
+                        m.get("id", "?")
+                        for m in models[:5]
+                        if isinstance(m, dict)
+                    ]
                     detail = f"connected; {len(models)} model(s)"
                     if self.model:
                         detail += f"; using {self.model}"

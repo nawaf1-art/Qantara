@@ -14,15 +14,19 @@ identity/                 voice registry and avatar metadata
 schemas/                  protocol and event documentation
 tests/                    unittest suite
 scripts/                  doctor, smoke, benchmark, and model-fetch helpers
-docs/                     public documentation and release audit package
+docs/                     public guides, architecture notes, and release process
 ```
 
 ## Local Setup
 
 ```bash
 python3 -m venv .venv
-./.venv/bin/pip install -r gateway/transport_spike/requirements.txt
+./.venv/bin/pip install -e ".[test,dev]"
 ```
+
+That environment runs the unit/release checks without downloading speech models.
+Install `.[speech]` only when working on local STT/TTS; Piper still requires an
+operator-supplied executable and voice files.
 
 Run the gateway:
 

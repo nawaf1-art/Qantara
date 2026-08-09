@@ -1,0 +1,74 @@
+name: Bug report
+description: Report a reproducible Qantara defect using synthetic, redacted data.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include tokens, private URLs, transcripts, audio, certificate keys, or unredacted logs. Security vulnerabilities belong in private vulnerability reporting.
+  - type: input
+    id: version
+    attributes:
+      label: Qantara version or commit
+      placeholder: v0.3.1 or a full commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment mode
+      options:
+        - Native source checkout
+        - Docker Compose
+        - Python SDK/package artifact
+        - Trusted LAN / reverse proxy
+        - Other supported configuration
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, browser, and relevant hardware class.
+    validations:
+      required: true
+  - type: input
+    id: components
+    attributes:
+      label: Backend and speech providers
+      placeholder: Ollama qwen3.5:2b, faster-whisper, Kokoro
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Use synthetic/non-sensitive input and include the smallest deterministic sequence.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Paste only content-free metadata needed to reproduce the issue.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Safety checks
+      options:
+        - label: I removed credentials, private data, transcripts, audio, and private host details.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true

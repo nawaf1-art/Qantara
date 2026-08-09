@@ -25,7 +25,7 @@ I have been building Qantara, an Apache-2.0 local-first voice gateway for Ollama
 
 It is not a full assistant framework. It is the real-time voice layer: browser mic capture, local STT, endpointing, barge-in, backend adapter, local TTS, and browser playback.
 
-Current status: pre-1.0 but usable. The stable path is browser voice UI + WebSocket pipeline + local STT/TTS + OpenAI-compatible backends. MCP and Home Assistant/Wyoming paths are experimental.
+Current status: pre-1.0 Beta. The primary evaluation path is the browser voice UI + WebSocket pipeline + local STT/TTS + an OpenAI-compatible backend. MCP and Home Assistant/Wyoming paths are Experimental.
 
 Repo: https://github.com/nawaf1-art/Qantara
 
@@ -41,7 +41,7 @@ Qantara is an Apache-2.0 real-time voice gateway for local AI systems. It connec
 
 The goal is to make it easier to add voice to Ollama, OpenAI-compatible local servers, MCP tools, and local agent runtimes without turning the voice layer into the assistant framework.
 
-Current stable pieces: browser voice UI, local STT/TTS, barge-in, Docker/local setup, OpenAI-compatible backend path. MCP and Home Assistant/Wyoming are experimental.
+Current Beta surfaces: browser voice UI, local STT/TTS, barge-in, Docker/local setup, and the OpenAI-compatible backend path. MCP and Home Assistant/Wyoming are Experimental.
 
 Repo: https://github.com/nawaf1-art/Qantara
 ```
