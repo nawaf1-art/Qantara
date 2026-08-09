@@ -101,7 +101,7 @@ jobs:
           path: build/sbom-root
           format: spdx-json
           output-file: dist/qantara-${{ inputs.version }}.spdx.json
-          syft-version: 1.42.3
+          syft-version: v1.42.3
           upload-artifact: false
           upload-release-assets: false
 

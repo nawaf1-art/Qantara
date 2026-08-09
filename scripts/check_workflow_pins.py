@@ -10,6 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 USES_PATTERN = re.compile(r"^\s*-?\s*uses:\s*([^\s#]+)")
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+SYFT_VERSION_PATTERN = re.compile(r"^\s*syft-version:\s*([^\s#]+)")
+VERSION_TAG_PATTERN = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+$")
 
 
 def main() -> int:
@@ -17,6 +19,11 @@ def main() -> int:
     checked = 0
     for workflow in sorted((ROOT / ".github" / "workflows").glob("*.y*ml")):
         for line_number, line in enumerate(workflow.read_text(encoding="utf-8").splitlines(), 1):
+            syft_version = SYFT_VERSION_PATTERN.match(line)
+            if syft_version is not None and VERSION_TAG_PATTERN.fullmatch(syft_version.group(1)) is None:
+                errors.append(
+                    f"{workflow.name}:{line_number}: syft-version must be a v-prefixed semantic version"
+                )
             match = USES_PATTERN.match(line)
             if match is None:
                 continue
