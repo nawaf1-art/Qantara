@@ -122,7 +122,7 @@ Mesh and Wyoming are opt-in and bind to loopback by default. Set the host to `0.
 
 ## URL Safety
 
-The setup page, `/api/configure`, and `/api/test-url` reject public backend URLs and URLs with embedded credentials. Use loopback, private LAN IPs, single-label local hostnames, or hostnames ending in `.local`, `.lan`, or `.home.arpa`. Validated names are pinned to a private address before use, and probes do not follow redirects or inherit proxy variables. This is intentional SSRF and DNS-rebinding protection.
+The setup page, `/api/configure`, and `/api/test-url` reject public backend URLs and URLs with embedded credentials. Use loopback, private LAN IPs, single-label local hostnames, or hostnames ending in `.local`, `.lan`, or `.home.arpa`. Validated names are pinned to a private address before use while retaining the original Host authority and HTTPS server name; probes do not follow redirects or inherit proxy variables. This is intentional SSRF and DNS-rebinding protection.
 
 The inbound Host guard uses the same local/LAN policy. Add an exact custom internal DNS hostname with `QANTARA_ALLOWED_HOSTS`; do not use it to approve a public hostname. Browser Origin checks compare both hostname and port. `QANTARA_ALLOWED_ORIGINS` is an explicit exception list and should contain complete origins such as `https://voice.example.internal`.
 

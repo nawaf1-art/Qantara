@@ -276,6 +276,10 @@ class GatewayHTTPTests(unittest.IsolatedAsyncioTestCase):
 
         async def fake_configure(backend_type: str, *, url: str, **kwargs: object):
             captured["url"] = url
+            captured["host_header"] = str(kwargs.get("outbound_host_header") or "")
+            captured["server_hostname"] = str(
+                kwargs.get("outbound_server_hostname") or ""
+            )
             return SimpleNamespace(
                 adapter_kind="session_gateway_http",
                 url=url,
@@ -301,6 +305,8 @@ class GatewayHTTPTests(unittest.IsolatedAsyncioTestCase):
             captured["url"].startswith("http://192.168.1.50:8080"),
             f"expected pinned IP, got {captured['url']!r}",
         )
+        self.assertEqual(captured["host_header"], "printer.local:8080")
+        self.assertEqual(captured["server_hostname"], "printer.local")
 
     async def test_test_url_probe_does_not_follow_redirects(self) -> None:
         from aiohttp import web as _web

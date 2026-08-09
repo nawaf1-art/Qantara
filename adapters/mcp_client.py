@@ -17,6 +17,47 @@ MAX_MCP_TOOL_OUTPUT_CHARS = 1024 * 1024
 MAX_MCP_ACTIVITY_CHARS = 4096
 
 
+def _make_mcp_http_client_factory(
+    host_header: str,
+    server_hostname: str,
+) -> Callable[..., Any]:
+    import httpx
+
+    class PinnedSNITransport(httpx.AsyncBaseTransport):
+        def __init__(self) -> None:
+            self._transport = httpx.AsyncHTTPTransport(trust_env=False)
+
+        async def handle_async_request(
+            self,
+            request: httpx.Request,
+        ) -> httpx.Response:
+            if server_hostname:
+                request.extensions["sni_hostname"] = server_hostname
+            return await self._transport.handle_async_request(request)
+
+        async def aclose(self) -> None:
+            await self._transport.aclose()
+
+    def http_client_factory(
+        headers: dict[str, str] | None = None,
+        timeout: httpx.Timeout | None = None,
+        auth: httpx.Auth | None = None,
+    ) -> httpx.AsyncClient:
+        request_headers = dict(headers or {})
+        if host_header:
+            request_headers["Host"] = host_header
+        return httpx.AsyncClient(
+            headers=request_headers,
+            timeout=timeout,
+            auth=auth,
+            follow_redirects=False,
+            trust_env=False,
+            transport=PinnedSNITransport(),
+        )
+
+    return http_client_factory
+
+
 class MCPClientAdapter(RuntimeAdapter):
     """Agent-style MCP adapter.
 
@@ -31,6 +72,10 @@ class MCPClientAdapter(RuntimeAdapter):
         self.transport = str(options.get("transport") or os.environ.get("QANTARA_MCP_TRANSPORT", "stdio")).strip().lower()
         self.command = str(options.get("command") or os.environ.get("QANTARA_MCP_COMMAND", "")).strip()
         self.url = str(options.get("url") or os.environ.get("QANTARA_MCP_URL", "")).strip().rstrip("/")
+        self.outbound_host_header = str(options.get("outbound_host_header") or "")
+        self.outbound_server_hostname = str(
+            options.get("outbound_server_hostname") or ""
+        )
         self.chat_tool = str(options.get("chat_tool") or os.environ.get("QANTARA_MCP_CHAT_TOOL", "chat")).strip()
         self.argument_key = str(options.get("argument_key") or os.environ.get("QANTARA_MCP_CHAT_ARG", "")).strip()
         self.timeout_seconds = float(options.get("timeout_seconds") or os.environ.get("QANTARA_MCP_TIMEOUT", "120"))
@@ -231,7 +276,19 @@ class MCPClientAdapter(RuntimeAdapter):
         if self.transport == "http":
             if not self.url:
                 raise RuntimeError("QANTARA_MCP_URL is required for HTTP MCP transport")
-            async with streamablehttp_client(self.url, timeout=read_timeout) as (read_stream, write_stream, _):
+            http_client_factory = _make_mcp_http_client_factory(
+                self.outbound_host_header,
+                self.outbound_server_hostname,
+            )
+
+            async with streamablehttp_client(
+                self.url,
+                timeout=read_timeout,
+                headers={"Host": self.outbound_host_header}
+                if self.outbound_host_header
+                else None,
+                httpx_client_factory=http_client_factory,
+            ) as (read_stream, write_stream, _):
                 async with ClientSession(read_stream, write_stream, read_timeout_seconds=read_timeout) as session:
                     yield session
             return

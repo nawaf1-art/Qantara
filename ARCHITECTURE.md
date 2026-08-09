@@ -56,7 +56,7 @@ Browser input is untrusted even on a LAN. The gateway authenticates protected ro
 
 ### Gateway to backend/provider
 
-Backends and speech providers are operator-selected local code or services. Qantara applies time, line, output, session, and queue bounds where practical. Local HTTP clients do not inherit proxy environment variables or follow redirects. Managed bridge processes receive only the environment needed for their integration; gateway/admin/mesh credentials are removed.
+Backends and speech providers are operator-selected local code or services. Qantara applies time, line, output, session, and queue bounds where practical. Local HTTP clients do not inherit proxy environment variables or follow redirects. Managed bridges inherit the host environment needed for local integrations, but Qantara removes its gateway, admin, and mesh credentials before starting them.
 
 An adapter can still send a transcript to the service it is configured to call. Local-first describes the default topology, not a guarantee about an operator-supplied endpoint.
 

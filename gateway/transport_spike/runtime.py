@@ -60,6 +60,8 @@ class BackendBinding:
     url: str = ""
     model: str = ""
     agent: str = ""
+    outbound_host_header: str = ""
+    outbound_server_hostname: str = ""
     managed_bridge_type: str | None = None
     managed_bridge_proc: asyncio.subprocess.Process | None = None
     managed_bridge_port: int | None = None
@@ -443,6 +445,8 @@ class GatewayRuntime:
         mcp_transport: str = "",
         mcp_command: str = "",
         mcp_chat_tool: str = "",
+        outbound_host_header: str = "",
+        outbound_server_hostname: str = "",
     ) -> BackendBinding:
         async with self._configure_lock:
             binding = await self._create_binding(
@@ -453,6 +457,8 @@ class GatewayRuntime:
                 mcp_transport=mcp_transport,
                 mcp_command=mcp_command,
                 mcp_chat_tool=mcp_chat_tool,
+                outbound_host_header=outbound_host_header,
+                outbound_server_hostname=outbound_server_hostname,
             )
             self.default_binding_id = binding.binding_id
             self.prune_session_store()
@@ -467,6 +473,8 @@ class GatewayRuntime:
         mcp_transport: str = "",
         mcp_command: str = "",
         mcp_chat_tool: str = "",
+        outbound_host_header: str = "",
+        outbound_server_hostname: str = "",
     ) -> BackendBinding:
         adapter_kind = "mock"
         env_overrides: dict[str, str] = {}
@@ -525,6 +533,10 @@ class GatewayRuntime:
         config = AdapterConfig(kind=adapter_kind, name=backend_type)
         if adapter_kind in {"session_gateway_http", "openai_compatible"}:
             config.options["base_url"] = url
+            if outbound_host_header:
+                config.options["outbound_host_header"] = outbound_host_header
+            if outbound_server_hostname:
+                config.options["outbound_server_hostname"] = outbound_server_hostname
         if adapter_kind == "openai_compatible" and model:
             config.options["model"] = model
         if adapter_kind == "mcp_client":
@@ -534,6 +546,10 @@ class GatewayRuntime:
                 config.options["url"] = url
             if mcp_command:
                 config.options["command"] = mcp_command
+            if outbound_host_header:
+                config.options["outbound_host_header"] = outbound_host_header
+            if outbound_server_hostname:
+                config.options["outbound_server_hostname"] = outbound_server_hostname
 
         binding = BackendBinding(
             binding_id=str(uuid.uuid4()),
@@ -543,6 +559,8 @@ class GatewayRuntime:
             url=url,
             model=model,
             agent=agent,
+            outbound_host_header=outbound_host_header,
+            outbound_server_hostname=outbound_server_hostname,
             managed_bridge_type=managed_bridge_type,
             managed_bridge_proc=bridge_proc,
             managed_bridge_port=bridge_port,

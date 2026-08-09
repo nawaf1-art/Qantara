@@ -88,6 +88,12 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
             or os.environ.get("QANTARA_OPENAI_BASE_URL", "")
         )
         self.base_url = _normalize_base_url(raw_url)
+        self.outbound_host_header = str(
+            self.config.options.get("outbound_host_header") or ""
+        )
+        self.outbound_server_hostname = str(
+            self.config.options.get("outbound_server_hostname") or ""
+        )
         self.api_key = (
             self.config.options.get("api_key")
             or os.environ.get("QANTARA_OPENAI_API_KEY", "not-needed")
@@ -136,10 +142,18 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
         return bool(self.base_url)
 
     def _headers(self) -> dict[str, str]:
-        return {
+        headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
         }
+        if self.outbound_host_header:
+            headers["Host"] = self.outbound_host_header
+        return headers
+
+    def _request_kwargs(self) -> dict[str, str]:
+        if self.outbound_server_hostname:
+            return {"server_hostname": self.outbound_server_hostname}
+        return {}
 
     async def _resolve_api_prefix(self) -> str:
         """Auto-detect whether the server needs /v1 prefix."""
@@ -155,6 +169,7 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
                         f"{self.base_url}{prefix}/models",
                         headers=self._headers(),
                         allow_redirects=False,
+                        **self._request_kwargs(),
                     ) as resp:
                         if resp.status < 400:
                             self._api_prefix = prefix
@@ -176,6 +191,7 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
                     f"{self.base_url}{prefix}/models",
                     headers=self._headers(),
                     allow_redirects=False,
+                    **self._request_kwargs(),
                 ) as resp:
                     if resp.status >= 400:
                         return ""
@@ -322,6 +338,7 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
                     json=payload,
                     headers=self._headers(),
                     allow_redirects=False,
+                    **self._request_kwargs(),
                 ) as resp:
                     # Store response for cancellation
                     self._active_responses[turn_handle] = resp
@@ -477,6 +494,7 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
                     f"{self.base_url}{prefix}/models",
                     headers=self._headers(),
                     allow_redirects=False,
+                    **self._request_kwargs(),
                 ) as resp:
                     if resp.status >= 400:
                         body = await read_bounded_response_text(resp)

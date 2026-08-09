@@ -8,6 +8,7 @@ import re
 import socket as _sock
 import time
 from collections import deque
+from dataclasses import dataclass
 from typing import Any
 
 import aiohttp as _aiohttp
@@ -43,6 +44,15 @@ _test_url_call_log: dict[str, deque[float]] = {}
 
 class SetupProbeOutputLimitError(RuntimeError):
     """Raised when a setup helper emits more output than Qantara will retain."""
+
+
+@dataclass(frozen=True, slots=True)
+class SafeOutboundURL:
+    """A validated URL pinned to one address with its original authority."""
+
+    url: str
+    host_header: str
+    server_hostname: str
 
 
 def _check_test_url_rate_limit(client_ip: str) -> bool:
@@ -451,6 +461,17 @@ async def api_admin_runtime_handler(request: web.Request) -> web.Response:
     return web.json_response(runtime.admin_payload())
 
 
+def _binding_request_kwargs(binding: Any) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {}
+    host_header = getattr(binding, "outbound_host_header", "")
+    server_hostname = getattr(binding, "outbound_server_hostname", "")
+    if host_header:
+        kwargs["headers"] = {"Host": host_header}
+    if server_hostname:
+        kwargs["server_hostname"] = server_hostname
+    return kwargs
+
+
 async def unload_previous_model(runtime: GatewayRuntime, binding: Any | None = None) -> None:
     binding = binding or runtime.default_binding()
     if not binding.url or not binding.model:
@@ -463,6 +484,7 @@ async def unload_previous_model(runtime: GatewayRuntime, binding: Any | None = N
                     f"{binding.url}/api/generate",
                     json={"model": binding.model, "keep_alive": 0},
                     allow_redirects=False,
+                    **_binding_request_kwargs(binding),
                 ) as response:
                     await read_bounded_response_bytes(response)
             elif binding.backend_type in ("openai_compatible", "openai"):
@@ -471,6 +493,7 @@ async def unload_previous_model(runtime: GatewayRuntime, binding: Any | None = N
                     f"{base}/api/v0/models/unload",
                     json={"model": binding.model},
                     allow_redirects=False,
+                    **_binding_request_kwargs(binding),
                 ) as response:
                     await read_bounded_response_bytes(response)
     except Exception:
@@ -508,6 +531,7 @@ async def warmup_current_backend(runtime: GatewayRuntime, timeout_s: float = 90.
                     f"{ollama_url}/api/generate",
                     json={"model": binding.model, "keep_alive": "10m", "prompt": ""},
                     allow_redirects=False,
+                    **_binding_request_kwargs(binding),
                 ) as resp:
                     if resp.status >= 400:
                         result["error"] = f"ollama preload returned {resp.status}"
@@ -528,6 +552,7 @@ async def warmup_current_backend(runtime: GatewayRuntime, timeout_s: float = 90.
                         "max_tokens": 1,
                     },
                     allow_redirects=False,
+                    **_binding_request_kwargs(binding),
                 ) as resp:
                     if resp.status >= 400:
                         result["error"] = f"openai warmup returned {resp.status}"
@@ -890,6 +915,7 @@ async def api_test_mcp_handler(request: web.Request) -> web.Response:
     chat_tool = chat_tool_value.strip()
     command = os.environ.get("QANTARA_MCP_COMMAND", "").strip()
     url = url_value.strip().rstrip("/")
+    safe_mcp_url: SafeOutboundURL | None = None
     if len(chat_tool) > MAX_CONFIGURATION_IDENTIFIER_CHARS:
         return web.json_response({"ok": False, "error": "chat tool name is too long"}, status=413)
     if len(url) > MAX_CONFIGURATION_URL_CHARS:
@@ -906,10 +932,10 @@ async def api_test_mcp_handler(request: web.Request) -> web.Response:
             return web.json_response({"ok": False, "error": "missing MCP URL"}, status=400)
         if not url.startswith(("http://", "https://")):
             url = "http://" + url
-        pinned_mcp_url = _safe_outbound_url(url)
-        if pinned_mcp_url is None:
+        safe_mcp_url = _safe_outbound_url(url)
+        if safe_mcp_url is None:
             return web.json_response({"ok": False, "error": "Only private network MCP URLs are allowed"}, status=403)
-        url = pinned_mcp_url
+        url = safe_mcp_url.url
     try:
         from adapters.base import AdapterConfig
         from adapters.mcp_client import MCPClientAdapter
@@ -924,6 +950,12 @@ async def api_test_mcp_handler(request: web.Request) -> web.Response:
                     "url": url,
                     "chat_tool": chat_tool,
                     "timeout_seconds": 10,
+                    "outbound_host_header": (
+                        safe_mcp_url.host_header if transport == "http" else ""
+                    ),
+                    "outbound_server_hostname": (
+                        safe_mcp_url.server_hostname if transport == "http" else ""
+                    ),
                 },
             )
         )
@@ -992,11 +1024,15 @@ async def api_configure_handler(request: web.Request) -> web.Response:
         backend_type in {"custom", "openai_compatible", "openai", "ollama"}
         or (backend_type in {"mcp", "mcp_client"} and mcp_transport == "http")
     )
+    outbound_host_header = ""
+    outbound_server_hostname = ""
     if requires_safe_url and raw_url:
-        pinned_url = _safe_outbound_url(raw_url)
-        if pinned_url is None:
+        safe_url = _safe_outbound_url(raw_url)
+        if safe_url is None:
             return web.json_response({"error": "Only private network URLs are allowed"}, status=403)
-        raw_url = pinned_url
+        raw_url = safe_url.url
+        outbound_host_header = safe_url.host_header
+        outbound_server_hostname = safe_url.server_hostname
     previous_binding = runtime.default_binding()
     try:
         binding = await runtime.configure_backend(
@@ -1007,6 +1043,8 @@ async def api_configure_handler(request: web.Request) -> web.Response:
             mcp_transport=mcp_transport,
             mcp_command=os.environ.get("QANTARA_MCP_COMMAND", "").strip(),
             mcp_chat_tool=mcp_chat_tool,
+            outbound_host_header=outbound_host_header,
+            outbound_server_hostname=outbound_server_hostname,
         )
     except ValueError as exc:
         return web.json_response({"error": str(exc)}, status=400)
@@ -1069,7 +1107,7 @@ def is_safe_url(url: str) -> bool:
     return _resolve_safe_url(url) is not None
 
 
-def _resolve_safe_url(url: str) -> tuple[str, str] | None:
+def _resolve_safe_url(url: str) -> SafeOutboundURL | None:
     import ipaddress as _ipa
     from urllib.parse import urlparse
 
@@ -1092,18 +1130,29 @@ def _resolve_safe_url(url: str) -> tuple[str, str] | None:
             candidates = [_ipa.ip_address(sockaddr[0]) for _, _, _, _, sockaddr in resolved]
         if not candidates or not all(_is_lan_ip(addr) for addr in candidates):
             return None
-        selected = candidates[0]
+        # Prefer IPv4 when both families are available. Many local model
+        # servers listen only on 127.0.0.1/private IPv4 even though mDNS or
+        # localhost resolution returns ::1 first; pinning that first record
+        # would make an otherwise valid LAN backend appear unreachable.
+        selected = next(
+            (candidate for candidate in candidates if candidate.version == 4),
+            candidates[0],
+        )
         selected_host = selected.compressed
         if selected.version == 6:
             selected_host = f"[{selected_host}]"
         if port is not None:
             selected_host = f"{selected_host}:{port}"
-        return parsed._replace(netloc=selected_host).geturl(), parsed.netloc
+        return SafeOutboundURL(
+            url=parsed._replace(netloc=selected_host).geturl(),
+            host_header=parsed.netloc,
+            server_hostname=host,
+        )
     except Exception:
         return None
 
 
-def _safe_outbound_url(raw_url: str) -> str | None:
+def _safe_outbound_url(raw_url: str) -> SafeOutboundURL | None:
     """SSRF-validate ``raw_url`` and return it with the resolved IP pinned into
     the netloc, or ``None`` if it is not a private/loopback target.
 
@@ -1115,7 +1164,7 @@ def _safe_outbound_url(raw_url: str) -> str | None:
     """
     candidate = raw_url if raw_url.startswith(("http://", "https://")) else f"http://{raw_url}"
     resolved = _resolve_safe_url(candidate)
-    return resolved[0] if resolved is not None else None
+    return resolved
 
 
 _ORIGIN_PROTECTED_PATHS = frozenset({"/ws", "/api/discovery/scan"})
@@ -1298,13 +1347,12 @@ async def add_security_headers(
         response.headers["Cache-Control"] = "no-store"
 
 
-def _safe_model_probe_base(raw_url: str) -> tuple[str, dict[str, str]] | None:
+def _safe_model_probe_base(raw_url: str) -> tuple[str, dict[str, str], str] | None:
     resolved = _resolve_safe_url(raw_url)
     if resolved is None:
         return None
-    safe_url, host_header = resolved
-    base = safe_url[:-3] if safe_url.endswith("/v1") else safe_url
-    return base, {"Host": host_header}
+    base = resolved.url[:-3] if resolved.url.endswith("/v1") else resolved.url
+    return base, {"Host": resolved.host_header}, resolved.server_hostname
 
 
 async def api_test_url_handler(request: web.Request) -> web.Response:
@@ -1334,7 +1382,7 @@ async def api_test_url_handler(request: web.Request) -> web.Response:
     safe_probe = _safe_model_probe_base(raw_url)
     if safe_probe is None:
         return web.json_response({"ok": False, "error": "Only private network URLs are allowed"}, status=403)
-    base, headers = safe_probe
+    base, headers, server_hostname = safe_probe
     timeout = _aiohttp.ClientTimeout(total=5)
     for prefix in ("/v1", ""):
         try:
@@ -1343,7 +1391,10 @@ async def api_test_url_handler(request: web.Request) -> web.Response:
                 # at this URL; following a 302 would let it redirect us to a
                 # public/metadata host and defeat the SSRF guard.
                 async with cs.get(
-                    f"{base}{prefix}/models", headers=headers, allow_redirects=False
+                    f"{base}{prefix}/models",
+                    headers=headers,
+                    allow_redirects=False,
+                    server_hostname=server_hostname,
                 ) as resp:
                     if resp.status < 400:
                         data = await read_bounded_response_json(resp)
