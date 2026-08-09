@@ -92,14 +92,26 @@ jobs:
           python -m pip uninstall --yes qantara
           python -m pip_audit --strict
 
+      - name: Prepare wheel contents for SBOM
+        run: python -m zipfile -e dist/*.whl build/sbom-root
+
       - name: Generate SPDX SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
-          path: dist
+          path: build/sbom-root
           format: spdx-json
           output-file: dist/qantara-${{ inputs.version }}.spdx.json
+          syft-version: 1.42.3
           upload-artifact: false
           upload-release-assets: false
+
+      - name: Validate SPDX SBOM contents
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          python scripts/check_spdx_sbom.py \
+            --expected-version "$RELEASE_VERSION" \
+            dist/qantara-${RELEASE_VERSION}.spdx.json
 
       - name: Write checksums and validation evidence
         env:
@@ -111,7 +123,13 @@ jobs:
             --commit "$GITHUB_SHA" \
             --output dist/release-validation.json \
             dist/*.whl dist/*.tar.gz dist/*.spdx.json
-          sha256sum dist/*.whl dist/*.tar.gz dist/*.spdx.json dist/release-validation.json > dist/SHA256SUMS
+          (
+            cd dist
+            sha256sum *.whl *.tar.gz *.spdx.json release-validation.json > SHA256SUMS
+          )
+          python scripts/check_checksum_manifest.py \
+            dist/SHA256SUMS \
+            dist/*.whl dist/*.tar.gz dist/*.spdx.json dist/release-validation.json
 
       - name: Attest release artifacts
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2

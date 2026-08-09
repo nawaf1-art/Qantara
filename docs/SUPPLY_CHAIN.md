@@ -37,7 +37,7 @@ The manual release workflow runs only from an existing matching `vX.Y.Z` tag sel
 3. builds wheel and sdist once
 4. validates metadata and forbidden/required archive contents
 5. installs each artifact into a clean virtual environment and exercises public routes/resources
-6. creates an SPDX JSON SBOM
+6. unpacks the built wheel, creates an SPDX JSON SBOM from its package metadata, and validates that the Qantara component and required runtime dependency inventory are present
 7. writes SHA256 checksums and machine-readable validation evidence
 8. generates GitHub build-provenance attestations
 9. attaches those exact files to a draft GitHub Release
