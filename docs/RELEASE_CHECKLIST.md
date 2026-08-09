@@ -24,6 +24,8 @@ Use this checklist together with [RELEASE_PROCESS.md](RELEASE_PROCESS.md). It is
 - [ ] Owner creates the exact protected `vX.Y.Z` tag on the intended commit.
 - [ ] Manual release workflow is dispatched from that tag with matching `X.Y.Z` input.
 - [ ] Draft assets include wheel, sdist, checksums, SPDX SBOM, validation evidence, and provenance.
+- [ ] `sha256sum --check SHA256SUMS` succeeds from the release download directory without path rewriting.
+- [ ] The SPDX SBOM identifies `qantara` at the release version and includes the required `aiohttp` runtime dependency.
 - [ ] Checksums and validation commit/tag are reviewed independently.
 - [ ] Draft notes contain upgrade/security guidance and no unsupported claims.
 - [ ] GitHub Release is published manually; PyPI remains a separate explicit decision.

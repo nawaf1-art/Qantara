@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import sys
@@ -47,6 +48,76 @@ class ReleaseToolingTests(unittest.TestCase):
         ):
             with self.subTest(path=path):
                 self.assertTrue(module._has_forbidden_path(path))
+
+    def test_checksum_manifest_requires_downloadable_basenames(self) -> None:
+        module = _load_script("check_checksum_manifest.py")
+        with tempfile.TemporaryDirectory(prefix="qantara-checksum-test-") as temp_dir:
+            temp = Path(temp_dir)
+            artifact = temp / "qantara-0.3.1.whl"
+            artifact.write_bytes(b"wheel")
+            digest = hashlib.sha256(b"wheel").hexdigest()
+            manifest = temp / "SHA256SUMS"
+            manifest.write_text(f"{digest}  qantara-0.3.1.whl\n", encoding="utf-8")
+            self.assertEqual(module.check_manifest(manifest, [artifact]), [])
+
+            manifest.write_text(f"{digest}  dist/qantara-0.3.1.whl\n", encoding="utf-8")
+            errors = module.check_manifest(manifest, [artifact])
+            self.assertTrue(any("basename" in error for error in errors))
+
+    def test_spdx_checker_requires_qantara_component_and_runtime_dependency(self) -> None:
+        module = _load_script("check_spdx_sbom.py")
+        document = {
+            "spdxVersion": "SPDX-2.3",
+            "dataLicense": "CC0-1.0",
+            "packages": [
+                {
+                    "name": "qantara",
+                    "SPDXID": "SPDXRef-Package-qantara",
+                    "versionInfo": "0.3.1",
+                    "licenseDeclared": "Apache-2.0",
+                    "filesAnalyzed": True,
+                    "externalRefs": [
+                        {
+                            "referenceType": "purl",
+                            "referenceLocator": "pkg:pypi/qantara@0.3.1",
+                        }
+                    ],
+                },
+                {
+                    "name": "aiohttp",
+                    "SPDXID": "SPDXRef-Package-aiohttp",
+                    "externalRefs": [
+                        {
+                            "referenceType": "purl",
+                            "referenceLocator": "pkg:pypi/aiohttp@3.14.3",
+                        }
+                    ],
+                },
+            ],
+            "relationships": [
+                {
+                    "spdxElementId": "SPDXRef-DocumentRoot",
+                    "relatedSpdxElement": "SPDXRef-Package-qantara",
+                    "relationshipType": "CONTAINS",
+                }
+            ],
+        }
+        self.assertEqual(
+            module.validate_spdx_document(
+                document,
+                expected_name="qantara",
+                expected_version="0.3.1",
+            ),
+            [],
+        )
+
+        document["packages"] = [document["packages"][1]]
+        errors = module.validate_spdx_document(
+            document,
+            expected_name="qantara",
+            expected_version="0.3.1",
+        )
+        self.assertTrue(any("exactly one" in error for error in errors))
 
     def test_generated_release_evidence_matches_public_schema(self) -> None:
         schema = json.loads(

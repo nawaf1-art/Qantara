@@ -47,7 +47,7 @@ def main() -> int:
             "clean_wheel_install",
             "clean_sdist_install",
             "dependency_audit",
-            "sbom_generated",
+            "sbom_content_check",
         ],
         "artifacts": [
             {

@@ -46,9 +46,9 @@ Review the draft:
 
 - tag and commit are exact
 - wheel/sdist names and versions are correct
-- `SHA256SUMS` matches downloaded assets
+- `SHA256SUMS` matches downloaded assets and uses basenames so standard verification works in the download directory
 - `release-validation.json` reports the expected commit and checks
-- SPDX SBOM and provenance links are present
+- SPDX SBOM identifies Qantara at the release version, includes its runtime dependency inventory, and has provenance links
 - notes accurately separate changes, upgrade requirements, security fixes, and known gaps
 
 Only a release owner publishes the draft.
