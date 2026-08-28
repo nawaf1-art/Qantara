@@ -1,5 +1,8 @@
 # Publishing Readiness Audit
 
+> [!NOTE]
+> **Historical snapshot — not current product guidance.** This audit records first-release readiness in April 2026. Its 95/100 score, open items, test counts, packaging state, and recommended tag were superseded by later releases.
+
 Date: 2026-04-24
 
 ## Verdict

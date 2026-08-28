@@ -1,42 +1,27 @@
 # Fake Session Backend
 
-This is a tiny local backend that implements [`SESSION_GATEWAY_CONTRACT.md`](../../SESSION_GATEWAY_CONTRACT.md).
+This deterministic local backend exercises the generic session HTTP adapter against the current [`adapters/CONTRACT.md`](../../adapters/CONTRACT.md) and [`protocols/agent.md`](../../protocols/agent.md) semantics.
 
-Purpose:
-
-- validate the `session_gateway_http` adapter end to end
-- avoid binding Qantara to the user's current local OpenClaw agents
-- provide a repeatable backend for session, turn, stream, and cancel behavior
+It is intended for repeatable session, turn, stream, and cancellation checks without a model or agent runtime.
 
 ## Run
 
-From the repo root:
+From the repository root:
 
 ```bash
-QANTARA_FAKE_BACKEND_HOST=127.0.0.1 QANTARA_FAKE_BACKEND_PORT=19110 ./.venv/bin/python gateway/fake_session_backend/server.py
+QANTARA_FAKE_BACKEND_HOST=127.0.0.1 \
+QANTARA_FAKE_BACKEND_PORT=19110 \
+./.venv/bin/python gateway/fake_session_backend/server.py
 ```
 
-## Pair With The Spike
-
-In another terminal:
-
-```bash
-QANTARA_ADAPTER=session_gateway_http \
-QANTARA_BACKEND_BASE_URL=http://127.0.0.1:19110 \
-QANTARA_SPIKE_HOST=127.0.0.1 \
-QANTARA_SPIKE_PORT=8765 \
-./.venv/bin/python gateway/transport_spike/server.py
-```
-
-Or for LAN HTTPS:
+Pair it with the gateway in another terminal:
 
 ```bash
 QANTARA_ADAPTER=session_gateway_http \
 QANTARA_BACKEND_BASE_URL=http://127.0.0.1:19110 \
-QANTARA_AUTH_TOKEN="$(openssl rand -hex 24)" \
-QANTARA_SPIKE_HOST=0.0.0.0 \
-QANTARA_SPIKE_PORT=9443 \
-QANTARA_TLS_CERT=ops/certs/qantara-cert.pem \
-QANTARA_TLS_KEY=ops/certs/qantara-key.pem \
 ./.venv/bin/python gateway/transport_spike/server.py
 ```
+
+This manual pairing starts the lower-level gateway server directly so the explicit adapter variables remain authoritative.
+
+For LAN HTTPS, add a strong auth token and follow [`ops/README.md`](../../ops/README.md) rather than publishing the native port directly.
