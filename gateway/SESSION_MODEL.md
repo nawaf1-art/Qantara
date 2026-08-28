@@ -1,229 +1,85 @@
 # Session Model
 
-## Purpose
+This document describes the current gateway session model. The implementation is in [`gateway/transport_spike/runtime.py`](transport_spike/runtime.py); browser and adapter event semantics are defined in [`protocols/agent.md`](../protocols/agent.md).
 
-This document defines the minimum session model for the custom Qantara gateway during M0 and M1.
+## Ownership
 
-The model is intentionally limited to:
+The gateway owns connection lifecycle, audio buffers, endpointing, playback, interruption, adapter turn coordination, bounded timelines/transcripts, and continuity snapshots. A backend adapter owns its opaque runtime session and turn handles. The browser owns permissions, capture, playback queues, and presentation.
 
-- one browser client
-- one active voice session
-- one active speaker at a time
-- no binding to a specific downstream runtime implementation yet
+Qantara does not provide a durable conversation database. Continuity state is bounded in memory and expires.
 
-## Session Ownership
+## Identity
 
-The gateway owns:
+An active connection has a gateway `session_id`. The browser can also provide a stable `client_session_id` so selected voice/translation preferences and a compatible backend session handle can be resumed after reconnect.
 
-- connection lifecycle
-- transport state
-- playback state
-- interruption state
-- speech pipeline coordination state
-- event timeline emission
+A reconnect creates a new active gateway session. A stored backend handle is reused only when the snapshot belongs to the same backend binding; changing the configured backend invalidates that mapping.
 
-The downstream runtime does not own browser transport or playback behavior.
+## Client-visible states
 
-## Session Identity
+The implemented public state vocabulary is:
 
-Each session should have:
+| State | Meaning |
+|---|---|
+| `idle` | Session exists without an active voice turn |
+| `listening` | Microphone input is accepted and the gateway is waiting for or collecting speech |
+| `thinking` | A finalized user turn is being accepted or processed by the backend |
+| `speaking` | Assistant output is being synthesized, queued, or played |
+| `interrupted` | Playback/generation handling was interrupted before returning to listening |
 
-- `session_id`
-- `client_id`
-- `connection_id`
-- `created_at`
-- `last_activity_at`
-- `status`
+Internal tasks and event details are richer than this five-state UI vocabulary. New UI states must not be invented by adapters.
 
-`connection_id` should change on reconnect. `session_id` should remain stable if the reconnect is treated as session continuation.
+## Turn lifecycle
 
-## Session States
+A normal voice turn is:
 
-### `idle`
+```text
+listening
+  -> speech detected and buffered
+  -> endpoint accepted
+  -> STT final transcript
+  -> thinking
+  -> adapter session start/resume
+  -> user turn submission
+  -> assistant event stream
+  -> TTS/playback
+  -> speaking
+  -> listening
+```
 
-The session exists but audio streaming has not started yet.
+An interruption can stop playback immediately, request adapter cancellation, and force-cancel the in-flight task after the configured grace period if the adapter does not cooperate. Late output from a cancelled or superseded turn must not become a second terminal result.
 
-### `connecting`
+## Backend bindings
 
-The browser socket is established and the gateway is negotiating or validating the session.
+Each active session references a backend binding containing the public backend type, adapter configuration, adapter instance, sanitized endpoint metadata, health, and optional managed-bridge process.
 
-### `ready`
+Runtime reconfiguration creates a new default binding. Existing references are retained only while active sessions or resumable snapshots need them; unreferenced bindings and managed bridges are cleaned up.
 
-The session is healthy and able to accept audio input or playback output.
+## Bounded state
 
-### `listening`
+Current defaults include:
 
-The gateway is receiving microphone audio and waiting for speech or continuing to monitor speech.
+- at most 64 simultaneous WebSocket connections
+- at most 256 resumable session snapshots
+- at most 200 timeline items per session
+- at most 80 transcript items per session
 
-### `user_speaking`
+The configuration reference lists the environment variables that change supported ceilings. Bounds are deployment controls, not a durable retention promise.
 
-Speech is currently active according to the gateway's speech boundary logic.
+## Snapshot contents
 
-### `endpoint_pending`
+A resumable snapshot can retain:
 
-Speech appears to have ended and the gateway is waiting for the configured silence or endpoint condition to finalize the turn.
+- client session id and backend binding id
+- compatible runtime session handle
+- selected/requested voice and speech rate
+- pitch, tone, and expressiveness preferences
+- primary language and translation settings
+- client label and last-update time
 
-### `submitting`
+Per-turn input language is not restored because it is detected or selected for each new turn.
 
-The final user turn is being sent to the downstream runtime adapter.
+## Observability and privacy
 
-### `awaiting_output`
+Session control payloads expose operational state and counters. Transcript and timeline control endpoints are authenticated when auth is configured and remain bounded in memory. Default logs redact free-form speech/model/tool content and credentials.
 
-The downstream runtime has accepted the turn and the gateway is waiting for assistant output.
-
-### `speaking`
-
-The gateway is sending assistant audio to the browser.
-
-### `interrupted`
-
-User speech or an explicit control event interrupted assistant playback or generation handling.
-
-### `recovering`
-
-The session hit a transport, playback, STT, TTS, or adapter error and is attempting controlled recovery.
-
-### `closed`
-
-The session is terminated and should not accept new input.
-
-## State Transition Rules
-
-- `idle -> connecting`
-  Trigger: client begins session bootstrap
-
-- `connecting -> ready`
-  Trigger: session accepted and transport initialized
-
-- `ready -> listening`
-  Trigger: microphone stream starts
-
-- `listening -> user_speaking`
-  Trigger: speech start detected
-
-- `user_speaking -> endpoint_pending`
-  Trigger: speech drops below threshold and endpoint timer begins
-
-- `endpoint_pending -> listening`
-  Trigger: endpoint aborted because speech resumed or transcript is discarded
-
-- `endpoint_pending -> submitting`
-  Trigger: final transcript accepted for turn submission
-
-- `submitting -> awaiting_output`
-  Trigger: adapter accepts the turn
-
-- `awaiting_output -> speaking`
-  Trigger: first speakable assistant output is available
-
-- `speaking -> interrupted`
-  Trigger: user speech, explicit stop, or playback cancel event
-
-- `interrupted -> user_speaking`
-  Trigger: interruption is caused by fresh user speech
-
-- `speaking -> listening`
-  Trigger: assistant output and playback complete normally
-
-- `any active state -> recovering`
-  Trigger: recoverable transport or pipeline error
-
-- `recovering -> ready`
-  Trigger: cleanup succeeds
-
-- `any state -> closed`
-  Trigger: terminal shutdown or unrecoverable error
-
-## Minimum Per-Session Data
-
-### Identity
-
-- `session_id`
-- `client_id`
-- `connection_id`
-
-### Transport
-
-- `socket_state`
-- `input_audio_format`
-- `output_audio_format`
-- `last_input_frame_at`
-- `last_output_frame_at`
-
-### Speech Input
-
-- `speech_state`
-- `speech_started_at`
-- `speech_ended_at`
-- `endpoint_deadline_at`
-- `partial_transcript`
-- `final_transcript`
-
-### Downstream Turn
-
-- `current_turn_id`
-- `turn_submit_started_at`
-- `turn_submit_completed_at`
-- `adapter_request_state`
-
-### Assistant Output
-
-- `assistant_text_buffer`
-- `assistant_output_started_at`
-- `assistant_output_completed_at`
-- `tts_chunking_mode`
-
-### Playback
-
-- `playback_state`
-- `playback_started_at`
-- `playback_stopped_at`
-- `playback_queue_depth`
-
-### Interruption
-
-- `interruption_state`
-- `interruption_detected_at`
-- `interruption_source`
-- `cancel_requested`
-- `cancel_acknowledged_at`
-
-### Observability
-
-- `event_sequence`
-- `metrics_snapshot`
-- `last_error`
-
-## Cancellation Ownership
-
-The gateway owns cancellation tokens for:
-
-- playback stop
-- pending TTS work
-- downstream generation cancel requests
-
-The session model should allow playback cancel to succeed even if downstream generation cancel is unavailable.
-
-## Browser Coordination Events
-
-At minimum, the browser should be able to observe:
-
-- session accepted
-- session ready
-- listening
-- user speaking
-- thinking or awaiting output
-- assistant speaking
-- interrupted
-- degraded or recovering
-- closed
-
-These are UI-facing states, not a replacement for the internal state machine.
-
-## Runtime Readiness Target
-
-This model is ready for local gateway use when:
-
-- the states are sufficient for the browser voice transport
-- interruption behavior has an explicit home in the model
-- the adapter boundary can attach cleanly without leaking transport concerns
+The planned lifecycle consolidation work is documented separately in [`docs/architecture/TURN_LIFECYCLE_HARDENING_PLAN.md`](../docs/architecture/TURN_LIFECYCLE_HARDENING_PLAN.md); that plan does not redefine current shipped behavior.

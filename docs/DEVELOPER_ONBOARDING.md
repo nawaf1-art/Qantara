@@ -1,114 +1,131 @@
 # Developer Onboarding
 
-This guide is for contributors who want to modify Qantara.
+This guide is for contributors who want to modify Qantara without breaking its local-first, pre-1.0 contracts.
 
-## Repository Shape
+## Repository shape
 
 ```text
+qantara/                  public Python facade and security/http helpers
 adapters/                 backend adapter contract and implementations
-gateway/transport_spike/  main aiohttp gateway and WebSocket transport
-gateway/*_backend/        managed session backend bridge processes
+gateway/transport_spike/  primary aiohttp gateway and WebSocket transport
+gateway/*_backend/        session-backend bridge processes
 providers/                STT/TTS provider interfaces and implementations
 client/                   setup, voice, and translation browser pages
 identity/                 voice registry and avatar metadata
-schemas/                  protocol and event documentation
+protocols/                versioned public protocol specifications
+schemas/                  public JSON schemas
 tests/                    unittest suite
-scripts/                  doctor, smoke, benchmark, and model-fetch helpers
-docs/                     public guides, architecture notes, and release process
+scripts/                  validation, doctor, smoke, benchmark, and asset helpers
+docs/                     current guides, maintainer material, releases, and snapshots
 ```
 
-## Local Setup
+Start with [Documentation governance](DOCUMENTATION_GOVERNANCE.md), [Architecture](../ARCHITECTURE.md), and the relevant component contract before changing behavior.
+
+## Local setup
 
 ```bash
 python3 -m venv .venv
 ./.venv/bin/pip install -e ".[test,dev]"
 ```
 
-That environment runs the unit/release checks without downloading speech models.
-Install `.[speech]` only when working on local STT/TTS; Piper still requires an
-operator-supplied executable and voice files.
+That environment runs unit, documentation, release, and package checks without downloading speech models. Install `.[speech]` only when working on local STT/TTS. It installs faster-whisper and Kokoro; Piper's Python runtime and voice files remain operator-supplied.
 
-Run the gateway:
+Run the source-checkout launcher:
 
 ```bash
-make spike-run-venv
+./.venv/bin/python cli.py --backend mock
 ```
 
-Run with Docker:
+Run the complete Docker evaluation stack:
 
 ```bash
 docker compose up
 ```
 
-## Validation Commands
+## Validation commands
 
 ```bash
-# Full suite
-make test
+# Full unit suite
+python -m unittest discover -s tests -v
 
-# One module
-./.venv/bin/python -m unittest tests.test_gateway_http -v
+# Focused module/class
+python -m unittest tests.test_gateway_http -v
+python -m unittest tests.test_interruption.BargeInTests -v
 
-# One class
-./.venv/bin/python -m unittest tests.test_interruption.BargeInTests -v
-
-# Lint
+# Lint and compile
 ruff check .
+python -m compileall -q qantara adapters gateway providers discovery tests
 
-# Launch benchmark
-./.venv/bin/python scripts/bench_launch.py --arabic
+# Release/documentation invariants
+python scripts/check_release_consistency.py
+python scripts/check_workflow_pins.py
+python scripts/check_docs_links.py
+python scripts/check_docs_consistency.py
+python scripts/check_tracked_artifacts.py
+
+# Build/package evidence
+python -m build
+python -m twine check dist/*
+python scripts/check_package_artifacts.py dist/*
+
+# Optional benchmark
+python scripts/bench_launch.py --arabic
 ```
 
-## Code Conventions
+`make test` remains a convenient unit-test wrapper. CI is authoritative for the cross-platform matrix and clean artifact installs.
 
-- Python 3.11+ with type hints on new function signatures.
-- Async gateway code uses `aiohttp`.
-- Browser code is vanilla JS. Do not add npm, webpack, Vite, React, or similar tooling.
-- Config variables use the `QANTARA_` prefix.
-- Keep new files focused. Split large modules when practical.
-- Do not add cloud-only dependencies. Cloud backends may be optional adapters, but the default project must remain local-first.
+## Code conventions
 
-## Where to Add Things
+- Python 3.11+ with type hints on new public/function boundaries.
+- Async gateway and HTTP code uses `aiohttp`.
+- Browser code is vanilla JavaScript; do not add npm, webpack, Vite, React, or similar tooling.
+- Operator configuration uses the `QANTARA_` prefix and must be documented in [Configuration](CONFIGURATION.md).
+- Keep files focused; split large modules when it reduces lifecycle or ownership ambiguity.
+- Do not add a cloud-only dependency to the default path. Cloud-compatible backends may remain optional adapters.
+- Preserve loopback-safe defaults and explicit bounds.
 
-Add a backend adapter:
+## Where to add things
 
-1. Implement `adapters/base.py:RuntimeAdapter`.
-2. Register it in `adapters/factory.py`.
-3. Add tests mirroring `tests/test_backend_contracts.py`.
-4. Document env vars and limitations.
+### Backend adapter
 
-Add an STT provider:
+1. Implement `adapters/base.py:RuntimeAdapter` and follow [`adapters/CONTRACT.md`](../adapters/CONTRACT.md).
+2. Register the selector/aliases in `adapters/factory.py`.
+3. Add focused contract, failure, cancellation, and bounded-state tests.
+4. Update adapter/component docs, configuration, feature matrix, architecture, and changelog as required by the governance matrix.
+
+### STT provider
 
 1. Implement `providers/stt/base.py:STTProvider`.
 2. Register it in `providers/factory.py`.
-3. Add a test with known audio or a small provider fixture.
+3. Add a deterministic fixture or clearly bounded real-provider test.
+4. Document package/model requirements, availability behavior, and supported platforms.
 
-Add a TTS provider:
+### TTS provider
 
 1. Implement `providers/tts/base.py:TTSProvider`.
-2. Return PCM samples and a `VoiceSpec`.
-3. Add registry entries only if voices are redistributable or downloaded by script.
+2. Return PCM samples plus a `VoiceSpec` and preserve provider sample rate.
+3. Add registry entries only for redistributable assets or assets fetched by an explicit script.
+4. Document voice/model licensing, transforms, fallbacks, and resource cost.
 
-Add setup UI:
+### Setup or browser UI
 
-- Edit `client/setup/index.html`.
-- Keep it framework-free.
-- Check syntax with:
+Edit the relevant HTML file under `client/` and keep it framework-free. For setup-page JavaScript syntax:
 
 ```bash
 awk '/<script>/{flag=1;next}/<\\/script>/{flag=0}flag' client/setup/index.html > /tmp/qantara-setup.js
 node --check /tmp/qantara-setup.js
 ```
 
-## Pull Request Expectations
+## Documentation ownership
 
-Before opening a PR:
+A behavior change owns its documentation change in the same pull request. Current guidance must be reconciled against implementation/tests; historical snapshots are preserved with the standard warning marker rather than silently rewritten into current status.
 
-- run the relevant focused tests
-- run `make test`
-- run `ruff check .`
-- update docs for behavior changes
+Before opening a pull request:
+
+- run focused tests, the full unit suite, lint, and the documentation checks
+- update every document required by the governance matrix
 - avoid unrelated refactors
-- note any manual testing in the PR body
+- record real/manual validation and untested surfaces in the PR body
+- use a new version for corrections to published artifacts; never rewrite release evidence
 
-See `CONTRIBUTING.md` and `AGENTS.md` for the full contributor and agent guidance.
+See [`CONTRIBUTING.md`](../CONTRIBUTING.md) and [`AGENTS.md`](../AGENTS.md) for contributor and repository-agent rules.

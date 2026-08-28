@@ -1,70 +1,55 @@
 # Gateway Runtime
 
-This directory contains Qantara's aiohttp gateway runtime and WebSocket transport.
-The `transport_spike` package name is historical; the code is now the primary
-local gateway used by the browser client.
+This directory contains Qantara's primary aiohttp gateway and WebSocket transport. The `transport_spike` package name is historical; this is the shipped local gateway used by the browser client, Voice API, and Python SDK.
 
-Current purpose:
+## Responsibilities
 
-- accept a browser WebSocket session
-- emit timeline-style events
-- receive inbound PCM16 frames
-- run speech-to-text, backend adapter turns, text-to-speech, and playback
-- support turn-taking, interruption, language routing, and LAN access
+- serve setup, voice, translation, identity, status, control, and Voice API routes
+- accept bounded WebSocket control messages and PCM16 mono 16 kHz frames
+- coordinate VAD, endpointing, STT, adapter turns, TTS, playback, and barge-in
+- maintain bounded active-session state and resumable snapshots
+- enforce auth, Host/Origin policy, browser headers, URL safety, and request limits
+- start optional mesh/Wyoming services and managed local backend bridges
 
-## Run
-
-Install dependencies:
+## Recommended source run
 
 ```bash
-pip install -r gateway/transport_spike/requirements.txt
+python3 -m venv .venv
+./.venv/bin/pip install -e ".[speech]"
+./.venv/bin/python cli.py --backend mock
 ```
 
-Start the gateway:
+Open `http://127.0.0.1:8765`. The historical `/spike` path remains available for compatibility.
+
+For a local OpenAI-compatible server:
 
 ```bash
-python3 gateway/transport_spike/server.py
+./.venv/bin/python cli.py \
+  --backend http://127.0.0.1:11434 \
+  --model qwen3.5:2b
 ```
 
-The gateway listens on:
+See [`docs/CLI.md`](../../docs/CLI.md) for launcher behavior and [`docs/CONFIGURATION.md`](../../docs/CONFIGURATION.md) for all runtime settings.
 
-```text
-ws://127.0.0.1:8765/ws
-```
+## Speech providers
 
-The gateway also serves the browser client at:
+The default selections are faster-whisper STT and Piper TTS. They are real provider boundaries, not placeholder transcript/tone fallbacks:
 
-```text
-http://127.0.0.1:8765/spike
-```
+- faster-whisper must be installed and able to load the configured model
+- Piper requires the Python module/executable plus an available voice model/config pair
+- Kokoro is installed by the `speech` extra and can be selected with `QANTARA_TTS_PROVIDER=kokoro`
+- Chatterbox is an Experimental separate extra
 
-## Optional Piper TTS
+Provider/model absence is reported as unavailable or an error; the mock backend only replaces downstream reasoning, not missing STT/TTS assets. The browser UI can still be inspected without proving a complete speech installation.
 
-If Piper is installed locally and a voice model path is available, Qantara can synthesize assistant text with Piper instead of using the synthetic fallback.
+## LAN use
 
-Set:
+Loopback is the default. Browser microphone use from another device requires HTTPS/WSS, certificate trust, and a strong `QANTARA_AUTH_TOKEN`. Follow [`ops/README.md`](../../ops/README.md); do not expose the gateway directly to the public internet.
 
-```bash
-export QANTARA_PIPER_MODEL=/absolute/path/to/voice.onnx
-```
+## Contracts
 
-If Piper is unavailable, the gateway falls back to the synthetic tone path automatically.
-
-## Optional faster-whisper STT
-
-If `faster-whisper` is installed, Qantara can transcribe the recent microphone buffer.
-
-Optional model selection:
-
-```bash
-export QANTARA_WHISPER_MODEL=small
-```
-
-Recommended compatibility defaults:
-
-```bash
-export QANTARA_WHISPER_DEVICE=cpu
-export QANTARA_WHISPER_COMPUTE=int8
-```
-
-If faster-whisper is unavailable, Qantara returns a fallback placeholder transcript instead of failing the whole session.
+- Architecture: [`ARCHITECTURE.md`](../../ARCHITECTURE.md)
+- Session model: [`gateway/SESSION_MODEL.md`](../SESSION_MODEL.md)
+- Adapter contract: [`adapters/CONTRACT.md`](../../adapters/CONTRACT.md)
+- Agent protocol: [`protocols/agent.md`](../../protocols/agent.md)
+- Voice API: [`docs/VOICE_API.md`](../../docs/VOICE_API.md)

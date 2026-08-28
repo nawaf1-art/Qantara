@@ -6,7 +6,7 @@ Qantara releases are owner-controlled. Automation validates and prepares a draft
 
 - The release candidate is reviewed through a pull request against `main`.
 - Required checks pass on the intended commit.
-- Version metadata and changelog are final.
+- Version metadata, current documentation, feature status, changelog, and release notes are final.
 - The repository owner has enabled branch protection for `main` and restricted creation/deletion of `v*` tags.
 
 Rulesets are repository settings, not source files. Owners must verify them in GitHub before each release cycle.
@@ -15,17 +15,26 @@ Rulesets are repository settings, not source files. Owners must verify them in G
 
 1. Set the next version in `VERSION` and `pyproject.toml`.
 2. Add the first changelog heading as `## [X.Y.Z] - Unreleased` during review.
-3. Update README/roadmap source-version markers and any versioned install examples.
-4. Run the commands in [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
-5. Merge only after CI passes and the public diff is reviewed.
+3. Update README/roadmap source-version markers, `docs/RELEASE_NOTES_X.Y.Z.md`, and versioned install examples.
+4. Reconcile current guidance using [Documentation governance](DOCUMENTATION_GOVERNANCE.md); label—not reinterpret—historical snapshots.
+5. Run every source-preparation and pull-request item in [Release checklist](RELEASE_CHECKLIST.md).
+6. Merge only after CI passes and the public diff is reviewed.
 
-`scripts/check_release_consistency.py --expected X.Y.Z` prevents common metadata drift.
-`scripts/check_tracked_artifacts.py` rejects tracked credentials, certificates,
-model weights, audio captures, logs, caches, and unexpectedly large files.
+Required local invariants include:
+
+```bash
+python scripts/check_release_consistency.py --expected X.Y.Z
+python scripts/check_workflow_pins.py
+python scripts/check_docs_links.py
+python scripts/check_docs_consistency.py
+python scripts/check_tracked_artifacts.py
+```
+
+The documentation checks validate repository-wide local links, index/classification coverage, historical markers, startup-precedence wording, current release-note presence, and selected package/documentation contracts. They supplement rather than replace behavior review.
 
 ## Create the tag
 
-A release owner creates `vX.Y.Z` on the reviewed commit. Prefer a signed annotated tag when the owner’s signing setup is established:
+A release owner creates `vX.Y.Z` on the reviewed commit. Prefer a signed annotated tag when the owner's signing setup is established:
 
 ```bash
 git switch main
@@ -46,10 +55,11 @@ Review the draft:
 
 - tag and commit are exact
 - wheel/sdist names and versions are correct
-- `SHA256SUMS` matches downloaded assets and uses basenames so standard verification works in the download directory
+- published install examples name artifacts that actually exist
+- `SHA256SUMS` matches downloaded assets and uses basenames
 - `release-validation.json` reports the expected commit and checks
 - SPDX SBOM identifies Qantara at the release version, includes its runtime dependency inventory, and has provenance links
-- notes accurately separate changes, upgrade requirements, security fixes, and known gaps
+- notes accurately separate changes, upgrade requirements, security fixes, current feature status, and known gaps
 
 Only a release owner publishes the draft.
 
@@ -61,6 +71,6 @@ The current workflow does not publish to PyPI. Adding PyPI requires a separate r
 
 - Before publication: delete the draft if necessary, fix source through a new PR, and create a new tag/version when the original tag has been shared externally.
 - After publication: do not replace assets. Publish a corrective release and advisory/changelog note.
-- For a compromised credential or artifact: rotate credentials, preserve evidence privately, use the security process, and revoke/yank only through the relevant registry’s documented mechanism.
+- For a compromised credential or artifact: rotate credentials, preserve evidence privately, use the security process, and revoke/yank only through the relevant registry's documented mechanism.
 
 Release evidence format is documented in [releases/README.md](releases/README.md).

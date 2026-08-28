@@ -58,23 +58,32 @@ Windows PowerShell uses `.venv\Scripts\python.exe` in place of `./.venv/bin/pyth
 | Mode | Intended use | Includes |
 |---|---|---|
 | Docker Compose | Complete local evaluation | Gateway, speech dependencies, Ollama bridge, pinned Ollama release line |
-| Source + `.[speech]` | Native browser voice development | Gateway, faster-whisper, Kokoro dependencies; Piper executable/voices remain operator-supplied |
+| Source + `.[speech]` | Native browser voice development | Gateway, CLI, faster-whisper, Kokoro dependencies; Piper executable/voices remain operator-supplied |
 | Source + `.[mcp]` | MCP client/server development | MCP adapter and voice-control server dependencies |
 | Source + `.[mesh]` | Multi-device and Home Assistant labs | Zeroconf mesh and Wyoming dependencies |
-| Base package | Embedding and package/API checks | `aiohttp`, Python SDK, gateway assets; no speech models |
+| GitHub Release wheel | Reproducible SDK/package evaluation | `aiohttp`, Python SDK, gateway assets; optional extras available, no model assets |
 | `.[chatterbox]` | Expressive TTS experiments | Optional Chatterbox runtime; resource-heavy and Experimental |
 
-The [installation guide](docs/INSTALLATION_AND_FIRST_RUN_GUIDE.md#extras-reference)
-is the authoritative extras/platform matrix.
+The [installation guide](docs/INSTALLATION_AND_FIRST_RUN_GUIDE.md#extras-reference) is the authoritative extras/platform matrix.
 
-Qantara is not published to PyPI as of this release line. Use a tagged GitHub source reference or a GitHub Release artifact after the release is published:
+Qantara is not published to PyPI in this release line. The published `v0.3.1` GitHub Release contains the validated wheel, source archive, `SHA256SUMS`, SPDX SBOM, and `release-validation.json`. Verify the downloaded artifact, then install the wheel directly:
+
+```bash
+python -m pip install \
+  "qantara @ https://github.com/nawaf1-art/Qantara/releases/download/v0.3.1/qantara-0.3.1-py3-none-any.whl"
+
+python -m pip install \
+  "qantara[speech] @ https://github.com/nawaf1-art/Qantara/releases/download/v0.3.1/qantara-0.3.1-py3-none-any.whl"
+```
+
+A tagged source install remains available when a source build is specifically desired:
 
 ```bash
 pip install "qantara @ git+https://github.com/nawaf1-art/Qantara.git@v0.3.1"
 pip install "qantara[speech] @ git+https://github.com/nawaf1-art/Qantara.git@v0.3.1"
 ```
 
-The wheel exposes `qantara.VoiceGateway`, gateway/adapters/providers, browser and identity assets, and the public protocol/schema resources. Root development utilities such as `cli.py`, `mcp_server.py`, Docker files, and repository tests are source-checkout surfaces.
+The wheel exposes `qantara.VoiceGateway`, gateway/adapters/providers, browser and identity assets, and public protocol/schema resources. Root utilities such as `cli.py`, `mcp_server.py`, Docker files, operations examples, tests, and development scripts require a source checkout.
 
 ### Python SDK
 
@@ -84,6 +93,8 @@ from qantara import VoiceGateway
 gateway = VoiceGateway(host="127.0.0.1", port=8765)
 gateway.run()
 ```
+
+See the [Python SDK reference](docs/PYTHON_SDK.md) for application construction, configuration timing, and package boundaries.
 
 ## How it fits together
 
@@ -101,7 +112,7 @@ Local model or agent backend
   OpenAI-compatible · Ollama bridge · MCP · OpenClaw · custom · mock
 ```
 
-The gateway owns the voice loop. Adapters implement five explicit operations: start/resume a session, submit a user turn, stream assistant output, cancel a turn, and report health. See [Architecture](ARCHITECTURE.md) and [agent protocol v1](protocols/agent.md).
+The gateway owns the voice loop. Adapters implement five explicit operations: start/resume a session, submit a user turn, stream assistant output, cancel a turn, and report health. See [Architecture](ARCHITECTURE.md), the [adapter contract](adapters/CONTRACT.md), and [agent protocol v1](protocols/agent.md).
 
 ## Supported surfaces
 
@@ -109,11 +120,14 @@ The gateway owns the voice loop. Adapters implement five explicit operations: st
 |---|---|---|
 | Browser WebSocket voice path | Beta | Primary headset-first interface; PCM16 mono 16 kHz |
 | VAD, endpointing, auto-submit, barge-in | Beta | Covered by lifecycle and interruption tests |
+| Source-checkout CLI | Beta | High-level backend/YAML launcher; environment variables override flags |
 | OpenAI-compatible adapter | Beta | Local `/v1/chat/completions` servers, including Ollama-compatible mode |
+| Session HTTP adapter | Beta | Custom local backends implementing Qantara's session contract |
 | Ollama session bridge | Beta | Native Ollama streaming contract path |
 | Piper and Kokoro TTS | Beta | Local engines; model/runtime installation varies |
 | faster-whisper STT | Beta | Local model download on first use unless pre-cached |
 | Voice-as-API | Beta | Speak, transcribe, and converse endpoints |
+| Python SDK | Beta | Embeddable aiohttp application; base wheel excludes speech models |
 | MCP client and voice server | Experimental | Stdio and streamable HTTP paths |
 | OpenClaw bridge | Experimental | Advanced, host-side optional integration |
 | Mesh and Wyoming satellite | Experimental | Validate authentication and LAN behavior for each deployment |
@@ -150,23 +164,9 @@ Read [Privacy](docs/PRIVACY.md), [Security](SECURITY.md), and [Supply chain](doc
 
 ## Configuration
 
-Configuration uses `QANTARA_` environment variables. Common settings include:
+Configuration uses `QANTARA_` environment variables, an optional YAML file, CLI flags, and runtime setup choices. For CLI startup values, the implemented precedence is environment variables over explicit flags, then YAML, then defaults.
 
-```text
-QANTARA_ADAPTER
-QANTARA_OPENAI_BASE_URL
-QANTARA_OPENAI_MODEL
-QANTARA_STT_PROVIDER
-QANTARA_TTS_PROVIDER
-QANTARA_AUTH_TOKEN
-QANTARA_ADMIN_TOKEN
-QANTARA_SPIKE_HOST
-QANTARA_SPIKE_PORT
-QANTARA_ALLOWED_HOSTS
-QANTARA_ALLOWED_ORIGINS
-```
-
-Do not put tokens in command history, screenshots, issue reports, or checked-in files. See [Configuration](docs/CONFIGURATION.md) for the full reference.
+Do not put tokens in command history, screenshots, issue reports, or checked-in files. See [Configuration](docs/CONFIGURATION.md) and the [CLI reference](docs/CLI.md).
 
 ## Validation
 
@@ -177,22 +177,25 @@ python -m pip install ".[test,dev]"
 python -m unittest discover -s tests -v
 ruff check .
 python scripts/check_release_consistency.py
+python scripts/check_docs_links.py
+python scripts/check_docs_consistency.py
 python -m build
 python -m twine check dist/*
 python scripts/check_package_artifacts.py dist/*
 ```
 
-CI runs the unit suite on Python 3.11/3.12 across Ubuntu, macOS, and Windows. It separately checks lint, compilation, metadata consistency, wheel/sdist contents, clean artifact installs, dependency changes, and the base dependency set.
+CI runs the unit suite on Python 3.11/3.12 across Ubuntu, macOS, and Windows. It separately checks lint, compilation, release/documentation consistency, wheel/sdist contents, clean artifact installs, dependency changes, and the base dependency set.
 
 Published releases are prepared manually from an existing owner-selected tag. The workflow rebuilds once, repeats release checks, generates checksums and an SPDX SBOM, records validation evidence, creates provenance attestations, and opens a draft GitHub Release. It does not publish to PyPI.
 
 ## Documentation
 
+- [Documentation index](docs/README.md) and [governance/completeness contract](docs/DOCUMENTATION_GOVERNANCE.md)
 - [Quickstart](docs/QUICKSTART.md)
 - [Installation and first run](docs/INSTALLATION_AND_FIRST_RUN_GUIDE.md)
+- [CLI launcher](docs/CLI.md) and [configuration](docs/CONFIGURATION.md)
+- [Python SDK](docs/PYTHON_SDK.md) and [Voice API](docs/VOICE_API.md)
 - [Architecture and trust boundaries](ARCHITECTURE.md)
-- [Configuration](docs/CONFIGURATION.md)
-- [Voice API](docs/VOICE_API.md)
 - [Ollama compatibility](docs/OLLAMA_COMPATIBILITY.md)
 - [MCP](docs/MCP.md)
 - [Mesh](docs/MESH.md) and [Home Assistant/Wyoming](docs/HOMEASSISTANT.md)
@@ -202,6 +205,6 @@ Published releases are prepared manually from an existing owner-selected tag. Th
 
 ## Contributing
 
-Small fixes, tests, provider/adapter improvements, and documentation corrections are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md), use the issue templates, and discuss architecture changes before implementation. Security reports belong in GitHub’s private vulnerability-reporting flow, not a public issue.
+Small fixes, tests, provider/adapter improvements, and documentation corrections are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md), use the issue templates, and discuss architecture changes before implementation. Security reports belong in GitHub's private vulnerability-reporting flow, not a public issue.
 
 Qantara is licensed under [Apache 2.0](LICENSE).

@@ -1,76 +1,54 @@
-# Ops
+# Operations: Trusted-LAN HTTPS
 
-This directory contains operational setup for running Qantara outside a local-only browser session.
+This directory contains the supported operational examples for using Qantara from another device on a trusted local network. The native and Docker defaults remain loopback-only.
 
-The immediate purpose is enabling `HTTPS` on the LAN so browser microphone access works on other devices.
+Browser microphone access normally requires either `localhost` or a secure HTTPS origin. A phone, tablet, or second computer therefore needs HTTPS/WSS plus certificate trust.
 
-## Why HTTPS Matters
+## Security boundary
 
-Browser microphone access usually requires a secure context.
+Qantara is not documented as a public-internet service. Before changing a bind address from loopback:
 
-What this means for Qantara:
+1. Set a unique random `QANTARA_AUTH_TOKEN` of at least 24 characters.
+2. Terminate HTTPS with a certificate trusted by each client device.
+3. Limit firewall/routing exposure to the intended trusted network.
+4. Keep backend model/agent services private; expose only the gateway path required by clients.
+5. Review exact Host and Origin policy when a reverse proxy or custom internal DNS name is used.
 
-- `http://127.0.0.1` is acceptable for local testing on the same machine
-- `http://192.168.x.x` is usually not acceptable for microphone access from another device
-- for LAN use on other devices, Qantara should be served over `https://`
-- when served over HTTPS, the client must connect to the gateway with `wss://`
+Do not commit tokens, private keys, generated certificates, public URLs, or machine-specific paths.
 
-The browser client already supports `wss://` automatically when the page is served over HTTPS.
+## Recommended topology: Caddy
 
-## Recommended Approach
-
-Use a reverse proxy in front of the Python gateway and terminate TLS there.
-
-Recommended first choice:
-
-- `Caddy`
-
-Why:
-
-- simple configuration
-- automatic HTTPS support when certificate trust is set up correctly
-- easy reverse proxy behavior for a single local service
-
-If Caddy is not available, Qantara can also run the current spike directly with a self-signed certificate using Python's TLS support. That is less convenient than a trusted local CA, but it removes the `ERR_SSL_PROTOCOL_ERROR` class of failure.
-
-## Gateway Topology
-
-Recommended topology:
-
-1. Run the Qantara spike gateway internally on a local port such as `8899`
-2. Put `Caddy` in front of it
-3. Expose a hostname such as `qantara.local`
-4. Access the spike at `https://qantara.local`
-
-Traffic shape:
+Run the Qantara gateway on loopback and place Caddy in front of it:
 
 ```text
 browser -> https://qantara.local -> Caddy -> http://127.0.0.1:8899
-browser websocket -> wss://qantara.local/ws -> Caddy -> ws://127.0.0.1:8899/ws
+browser -> wss://qantara.local/ws -> Caddy -> ws://127.0.0.1:8899/ws
 ```
 
-## Example Caddy Setup
+The included [`Caddyfile`](Caddyfile) is the starting point. A typical flow is:
 
-See:
+1. Make `qantara.local` resolve to the Qantara host on the trusted LAN.
+2. Start Qantara on `127.0.0.1:8899` with authentication enabled.
+3. Start Caddy with the repository configuration.
+4. Install/trust Caddy's local CA on each client device.
+5. Open `https://qantara.local` and grant microphone permission.
 
-- [`Caddyfile`](Caddyfile)
+Example gateway start:
 
-Example flow:
+```bash
+QANTARA_AUTH_TOKEN="$(openssl rand -hex 24)" \
+QANTARA_SPIKE_HOST=127.0.0.1 \
+QANTARA_SPIKE_PORT=8899 \
+./.venv/bin/python cli.py --backend mock
+```
 
-1. Make `qantara.local` resolve to the machine running Qantara
-2. Run the Python spike on `127.0.0.1:8899`
-3. Start Caddy with the provided config
-4. Trust the generated local CA on devices that need browser mic access
+Store a stable production token through the host's secret-management mechanism rather than copying a generated shell value between sessions.
 
-## Direct TLS Fallback
+## Direct TLS fallback
 
-If you do not have Caddy installed, you can generate a self-signed certificate and run the Python spike directly over HTTPS.
+Qantara can terminate TLS directly when a reverse proxy is not available. The template is [`openssl-qantara.cnf`](openssl-qantara.cnf).
 
-Config template:
-
-- [`openssl-qantara.cnf`](openssl-qantara.cnf)
-
-Example certificate generation:
+Generate a short-lived local certificate:
 
 ```bash
 mkdir -p ops/certs
@@ -81,44 +59,40 @@ openssl req -x509 -nodes -days 30 \
   -config ops/openssl-qantara.cnf
 ```
 
-Then run the spike with TLS:
+Start the gateway:
 
 ```bash
+QANTARA_AUTH_TOKEN="$(openssl rand -hex 24)" \
 QANTARA_SPIKE_HOST=0.0.0.0 \
 QANTARA_SPIKE_PORT=9443 \
 QANTARA_TLS_CERT=ops/certs/qantara-cert.pem \
 QANTARA_TLS_KEY=ops/certs/qantara-key.pem \
-./.venv/bin/python gateway/transport_spike/server.py
+./.venv/bin/python cli.py --backend mock
 ```
 
-Open:
+Open `https://<trusted-lan-ip>:9443`. The certificate must contain the hostname/IP used by the browser and must be trusted on the client. Windows trust notes are in [`TRUST_CERT_WINDOWS.md`](TRUST_CERT_WINDOWS.md).
 
-```text
-https://<your-lan-ip>:9443/spike
-```
+## Host and Origin policy
 
-Important:
+The inbound Host guard accepts loopback, private LAN addresses, single-label local names, and names ending in `.local`, `.lan`, or `.home.arpa`.
 
-- a self-signed certificate still has to be trusted by the client device
-- if the device does not trust the certificate, browser microphone access may still be blocked
-- the best path remains a locally trusted CA or proper internal TLS setup
+- Add an exact extra internal hostname with `QANTARA_ALLOWED_HOSTS` only when it still resolves inside the trusted network.
+- Add an exact full origin to `QANTARA_ALLOWED_ORIGINS` only when a deliberate proxy topology causes browser Origin to differ from request authority.
+- Do not use either setting to approve a public hostname casually.
 
-Windows trust help:
+## Docker exposure
 
-- [`TRUST_CERT_WINDOWS.md`](TRUST_CERT_WINDOWS.md)
+Docker publishes to `127.0.0.1:8765` by default. Changing `QANTARA_DOCKER_BIND` is an explicit exposure decision and still requires authentication and HTTPS/WSS for another device's microphone.
 
-## Practical Notes
+## Mesh and Wyoming
 
-- A self-signed certificate that the device does not trust will still cause browser problems
-- The cleanest developer path is a locally trusted CA or internal PKI
-- Do not expose the spike broadly to the internet in its current state
+Mesh and Wyoming are separate Experimental services. They bind to loopback unless explicitly changed. Use a shared `QANTARA_MESH_TOKEN` on every mesh node when enabling LAN frames, and expose Wyoming only to the Home Assistant network segment that needs it. See [`docs/MESH.md`](../docs/MESH.md) and [`docs/HOMEASSISTANT.md`](../docs/HOMEASSISTANT.md).
 
-## Current Repo State
+## Verification
 
-This operational setup is for the current M0 spike only.
-
-It does not change the architecture decision:
-
-- Qantara still remains a custom async gateway
-- the current runtime path still remains mock-based
-- this only makes LAN browser testing practical
+- Confirm `https://` loads without a certificate warning.
+- Confirm the auth unlock flow is required.
+- Confirm microphone permission succeeds and the WebSocket uses `wss://`.
+- Confirm the gateway/backend status exposes no token or credential.
+- Confirm the service is unreachable from networks that are not intended to use it.
+- Run the browser voice loop and barge-in checks from [`docs/QUICKSTART.md`](../docs/QUICKSTART.md).

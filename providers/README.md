@@ -1,15 +1,31 @@
 # Providers
 
-Qantara uses a provider plugin system for speech-to-text and text-to-speech.
+Qantara uses explicit provider boundaries for speech-to-text and text-to-speech. Provider selection changes speech implementation without changing the gateway/adapter contract.
 
-## Selection
+## Defaults and selections
 
-- `QANTARA_STT_PROVIDER=faster_whisper`
-- `QANTARA_TTS_PROVIDER=piper`
-- `QANTARA_TTS_PROVIDER=kokoro`
-- `QANTARA_TTS_PROVIDER=chatterbox`
+- Default STT: `faster_whisper`
+- Default TTS: `piper`
 
-These are the current defaults.
+Supported selectors:
+
+```text
+QANTARA_STT_PROVIDER=faster_whisper
+QANTARA_TTS_PROVIDER=piper
+QANTARA_TTS_PROVIDER=kokoro
+QANTARA_TTS_PROVIDER=chatterbox
+```
+
+`faster_whisper`, Piper, and Kokoro are Beta surfaces; Chatterbox is Experimental. See [`docs/FEATURES.md`](../docs/FEATURES.md).
+
+## Installation boundary
+
+- `.[speech]` installs faster-whisper, Kokoro, NumPy, and SoundFile.
+- Piper remains operator-supplied: its Python module/executable and voice files are not installed by the `speech` extra.
+- `.[chatterbox]` installs the separate resource-heavy Chatterbox runtime.
+- First use can download model assets according to the selected provider.
+
+See [`docs/INSTALLATION_AND_FIRST_RUN_GUIDE.md`](../docs/INSTALLATION_AND_FIRST_RUN_GUIDE.md) and [`docs/CONFIGURATION.md`](../docs/CONFIGURATION.md).
 
 ## Layout
 
@@ -26,42 +42,29 @@ providers/
     └── piper.py
 ```
 
-## How To Add An STT Provider
+## Adding an STT provider
 
-1. Copy `providers/stt/faster_whisper.py`.
-2. Subclass `providers/stt/base.py:STTProvider`.
-3. Implement:
-   - `available`
-   - `transcribe(samples, sample_rate) -> STTResult`
-4. Register the provider in `providers/factory.py`.
-5. Document the env var name and local setup requirements.
+1. Implement `providers/stt/base.py:STTProvider`.
+2. Provide `available` and `transcribe(samples, sample_rate) -> STTResult`.
+3. Register the selector in `providers/factory.py`.
+4. Add availability, transcription, concurrency, and cleanup tests.
+5. Document dependencies, model downloads, variables, languages, and status.
 
-## How To Add A TTS Provider
+## Adding a TTS provider
 
-1. Copy `providers/tts/piper.py`.
-2. Subclass `providers/tts/base.py:TTSProvider`.
-3. Implement:
-   - `available`
-   - `default_voice_id`
-   - `list_available_voices()`
-   - `resolve_voice(voice_id)`
-   - `synthesize(text, voice_id=None, speech_rate=None, expressiveness=None)`
-4. Register the provider in `providers/factory.py`.
-5. Keep it local-first. Do not add a cloud-only dependency.
+1. Implement `providers/tts/base.py:TTSProvider`.
+2. Provide availability, voice listing/resolution, and synthesis.
+3. Return valid PCM samples plus the resolved `VoiceSpec`.
+4. Register the selector in `providers/factory.py`.
+5. Add voice, sample-rate, bounds, timeout, and cleanup tests.
+6. Document dependencies, assets, variables, limitations, and status.
 
-## Kokoro Notes
+## Kokoro notes
 
-- Provider file: `providers/tts/kokoro.py`
-- Local package: `pip install kokoro>=0.9.4 soundfile`
-- Optional voice override: `QANTARA_KOKORO_VOICE=af_heart`
-- Optional model repo override: `QANTARA_KOKORO_REPO_ID=hexgrad/Kokoro-82M`
-- Optional device override: `QANTARA_KOKORO_DEVICE=cpu`
-- Kokoro outputs `24000 Hz` audio, so the gateway must respect the provider sample rate.
-- First run downloads the model and language assets locally, so cold-start latency is expected.
-- `espeak-ng` improves fallback pronunciation and may be required for best results on some systems.
+- `QANTARA_KOKORO_VOICE` overrides the voice id.
+- `QANTARA_KOKORO_REPO_ID` overrides the model repository.
+- `QANTARA_KOKORO_DEVICE` selects the device.
+- Kokoro emits 24 kHz audio; the gateway preserves the provider sample rate.
+- Cold-start downloads and `espeak-ng` availability can affect startup and pronunciation.
 
-## Notes
-
-- Providers should be single-file integrations where practical.
-- Provider-specific configuration should use `QANTARA_` environment variables.
-- Keep gateway behavior stable when swapping providers. The provider layer should adapt to the gateway contract, not force the gateway to change.
+Providers must remain local-capable by default. A cloud-only speech dependency is not acceptable as the required path.
