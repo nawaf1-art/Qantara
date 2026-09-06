@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling==1.31.0"]
+requires = ["hatchling==1.32.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -47,9 +47,9 @@ test = [
     "zeroconf>=0.150,<0.151",
 ]
 dev = [
-    "build==1.5.0",
+    "build==1.6.0",
     "pip-audit==2.10.1",
-    "ruff==0.16.2",
+    "ruff==0.16.5",
     "twine==7.0.0",
 ]
 
