@@ -29,7 +29,17 @@ class ReleaseToolingTests(unittest.TestCase):
     def test_release_versions_are_consistent(self) -> None:
         module = _load_script("check_release_consistency.py")
         versions = module.release_versions()
-        self.assertEqual(set(versions.values()), {"0.3.1"})
+        expected = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        self.assertEqual(set(versions.values()), {expected}, versions)
+        # Install docs and workflow literals are covered, not just metadata.
+        self.assertTrue(any("wheel filename" in label for label in versions))
+        self.assertTrue(any("tagged git install" in label for label in versions))
+
+    def test_release_consistency_flags_hard_coded_workflow_versions(self) -> None:
+        module = _load_script("check_release_consistency.py")
+        self.assertIsNotNone(module.WORKFLOW_FORBIDDEN.search("--expected 0.3.1 dist/*.whl"))
+        self.assertIsNone(module.WORKFLOW_FORBIDDEN.search('--expected "$(cat VERSION)" dist/*.whl'))
+        self.assertIsNone(module.WORKFLOW_FORBIDDEN.search('--expected "$RELEASE_VERSION"'))
 
     def test_external_workflow_actions_are_sha_pinned(self) -> None:
         module = _load_script("check_workflow_pins.py")
