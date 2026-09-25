@@ -500,6 +500,8 @@ def apply_speech_rate(session: Session, requested_speech_rate: float | int | str
         value = float(requested_speech_rate) if requested_speech_rate is not None else session.speech_rate
     except (TypeError, ValueError):
         value = session.speech_rate
+    if not math.isfinite(value):
+        value = session.speech_rate
     session.speech_rate = _clamp_speech_rate(value)
     session.runtime.save_session_state(session)
     return session.speech_rate
@@ -513,14 +515,18 @@ def apply_voice_transforms(
 ) -> dict[str, object]:
     try:
         if requested_pitch is not None:
-            session.voice_pitch = float(requested_pitch)
+            pitch = float(requested_pitch)
+            # "nan"/"inf" would be stored and then emitted as invalid JSON.
+            if math.isfinite(pitch):
+                session.voice_pitch = pitch
     except (TypeError, ValueError):
         session.voice_pitch = 0.0
     if requested_tone is not None:
         session.voice_tone = str(requested_tone).strip() or "neutral"
     if requested_expressiveness is not None:
         try:
-            session.expressiveness = _clamp_unit_interval(float(requested_expressiveness))
+            expressiveness = float(requested_expressiveness)
+            session.expressiveness = _clamp_unit_interval(expressiveness) if math.isfinite(expressiveness) else None
         except (TypeError, ValueError):
             session.expressiveness = None
         # Honor allowed_transforms: only retain expressiveness if voice allows.
