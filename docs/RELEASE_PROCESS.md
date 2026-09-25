@@ -15,7 +15,7 @@ Rulesets are repository settings, not source files. Owners must verify them in G
 
 1. Set the next version in `VERSION` and `pyproject.toml`.
 2. Add the first changelog heading as `## [X.Y.Z] - Unreleased` during review.
-3. Update README/roadmap source-version markers, `docs/RELEASE_NOTES_X.Y.Z.md`, and versioned install examples.
+3. Update README/roadmap source-version markers, `docs/RELEASE_NOTES_X.Y.Z.md`, and versioned install examples. `scripts/check_release_consistency.py` lists every current-release literal it enforces (README, ROADMAP, docs index and governance, install guide, quickstart, release download URLs, wheel/sdist names, tagged git installs); workflows read `VERSION` and must not hard-code a version.
 4. Reconcile current guidance using [Documentation governance](DOCUMENTATION_GOVERNANCE.md); label—not reinterpret—historical snapshots.
 5. Run every source-preparation and pull-request item in [Release checklist](RELEASE_CHECKLIST.md).
 6. Merge only after CI passes and the public diff is reviewed.
@@ -28,6 +28,7 @@ python scripts/check_workflow_pins.py
 python scripts/check_docs_links.py
 python scripts/check_docs_consistency.py
 python scripts/check_tracked_artifacts.py
+python scripts/check_lock_hashes.py   # network: PyPI + PyTorch index metadata
 ```
 
 The documentation checks validate repository-wide local links, index/classification coverage, historical markers, startup-precedence wording, current release-note presence, and selected package/documentation contracts. They supplement rather than replace behavior review.
@@ -51,6 +52,12 @@ In GitHub Actions, select **Prepare draft release**, choose the existing `vX.Y.Z
 
 The workflow builds once and uses those exact artifacts for checks, clean installs, checksums, SBOM, validation evidence, provenance, and draft-release attachment. It refuses to overwrite an existing release for the tag.
 
+It runs as three jobs:
+
+- `validate` installs the test and build tooling with a read-only token and no dependency cache, runs every check, builds the artifacts, generates the SBOM from a clean install of the built wheel, writes checksums and evidence, and uploads `dist/` as a workflow artifact.
+- `docker` (the reusable `docker.yml` workflow) builds the image natively on amd64 and arm64 and smoke-tests `/api/status`.
+- `publish` needs both, holds the only `contents: write`, `id-token: write` and `attestations: write` permissions, installs nothing from PyPI, re-verifies the checksums, attests, and creates the draft release. Release notes come from `gh release create --generate-notes`; there is no release-drafter.
+
 Review the draft:
 
 - tag and commit are exact
@@ -58,7 +65,7 @@ Review the draft:
 - published install examples name artifacts that actually exist
 - `SHA256SUMS` matches downloaded assets and uses basenames
 - `release-validation.json` reports the expected commit and checks
-- SPDX SBOM identifies Qantara at the release version, includes its runtime dependency inventory, and has provenance links
+- SPDX SBOM identifies Qantara at the release version, lists what `pip install` of the wheel installs (aiohttp and its dependencies, not the Docker lock), and has provenance links
 - notes accurately separate changes, upgrade requirements, security fixes, current feature status, and known gaps
 
 Only a release owner publishes the draft.

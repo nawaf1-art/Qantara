@@ -24,12 +24,17 @@ RUN python -m pip install \
     && python -m pip install \
         "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85" \
     && groupadd --gid 10001 qantara \
-    && useradd --uid 10001 --gid qantara --create-home --shell /usr/sbin/nologin qantara
+    && useradd --uid 10001 --gid qantara --create-home --shell /usr/sbin/nologin qantara \
+    && install -d -o qantara -g qantara -m 0750 /home/qantara/.cache /home/qantara/.cache/huggingface
 
-COPY --chown=qantara:qantara . /app
+# Application files stay root-owned and read-only for the runtime user; only
+# the model cache under $HOME/.cache is writable (mount a volume there, see
+# docker-compose.yml, so Whisper/Kokoro weights survive `compose down`).
+COPY . /app
 
 ENV HOME=/home/qantara \
-    XDG_CACHE_HOME=/home/qantara/.cache
+    XDG_CACHE_HOME=/home/qantara/.cache \
+    HF_HOME=/home/qantara/.cache/huggingface
 
 USER qantara
 

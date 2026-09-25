@@ -1,0 +1,76 @@
+Qantara
+Copyright the Qantara maintainers.
+
+Qantara is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This NOTICE lists third-party components that Qantara installs, bundles
+into its Docker image, or loads at runtime whose licenses carry obligations
+beyond Apache-2.0/MIT/BSD attribution. It is an informational summary, not
+legal advice; each component's own license text governs. License data was
+taken from the packages' published metadata for the versions pinned in
+ops/docker/requirements.txt.
+
+Qantara's own wheel depends only on aiohttp (Apache-2.0 AND MIT) and its
+permissively licensed dependencies. The components below arrive through the
+optional extras (speech, mesh, mcp, chatterbox), the hash-locked Docker
+requirements, or the Docker base image.
+
+Copyleft components
+-------------------
+
+* espeak-ng (GPL-3.0-or-later)
+  Installed from Debian packages in the Docker image and used by the Kokoro
+  phonemizer for grapheme-to-phoneme conversion. Bundled as a shared library
+  by the espeakng-loader wheel (the loader itself is MIT).
+  https://github.com/espeak-ng/espeak-ng
+
+* phonemizer-fork (GPL-3.0-or-later)
+  Transitive dependency of misaki/kokoro (speech extra, Docker image).
+  https://pypi.org/project/phonemizer-fork/
+
+* FFmpeg libraries bundled in PyAV (av) wheels (LGPL-2.1-or-later; some
+  builds may enable GPL-licensed components)
+  PyAV itself is BSD-3-Clause. faster-whisper uses it to decode audio.
+  https://pyav.org/ and https://ffmpeg.org/legal.html
+
+* libsndfile (LGPL-2.1-or-later)
+  Bundled in soundfile wheels (soundfile itself is BSD-3-Clause) and
+  installed from Debian packages in the Docker image.
+  https://libsndfile.github.io/libsndfile/
+
+* zeroconf (LGPL-2.1-or-later)
+  Mesh extra and Docker image; imported only when the mesh is enabled.
+  https://github.com/python-zeroconf/python-zeroconf
+
+* num2words (LGPL-2.1)
+  Transitive dependency of misaki/kokoro (speech extra, Docker image).
+  https://github.com/savoirfairelinux/num2words
+
+* certifi (MPL-2.0) and tqdm (MPL-2.0 AND MIT)
+  Transitive dependencies (Hugging Face tooling, HTTP clients).
+
+Operator-supplied components
+----------------------------
+
+* Piper TTS runtime and voices. Qantara does not install the Piper runtime;
+  current piper-tts releases are GPL-3.0-or-later. Each Piper voice model has
+  its own license stated in its model card; review it before redistribution.
+* Speech and language models downloaded at first use (faster-whisper/Whisper
+  weights, MIT; Kokoro-82M weights, Apache-2.0; spaCy en_core_web_sm, MIT) and
+  any Ollama or other LLM model you pull carry their own licenses.
+
+Notable permissive components
+-----------------------------
+
+* PyTorch (BSD-3-Clause and bundled third-party licenses), CPU build from
+  https://download.pytorch.org/whl/cpu in the Docker image.
+* CTranslate2 and faster-whisper (MIT), onnxruntime (MIT), Kokoro and misaki
+  (Apache-2.0), spaCy and thinc (MIT), Hugging Face transformers, tokenizers
+  and huggingface-hub (Apache-2.0), NumPy (BSD-3-Clause with bundled
+  OpenBLAS and compiler runtime libraries), mcp (MIT), httpx (BSD-3-Clause).
+* Python and the python:3.12-slim Docker base image (PSF-2.0 and Debian
+  package licenses; see /usr/share/doc/*/copyright inside the image).
+
+Redistributing the Docker image, or a bundle that includes the speech extra,
+means redistributing the components above under their respective licenses,
+including making corresponding source available where the GPL/LGPL require it.

@@ -1,7 +1,10 @@
 # Qantara configuration file.
 # Copy to qantara.yml and edit to match your setup.
 #
-# Precedence (highest wins): env vars > CLI flags > config file > defaults.
+# Precedence (highest wins): explicit CLI flags > environment variables >
+# this file > built-in defaults. Unknown keys are reported as warnings.
+# Values may be quoted ("..." or '...'); a "#" starts a comment only at the
+# start of a value or after whitespace.
 
 backend:
   type: openai_compatible    # openai_compatible | ollama | openclaw | custom | mock
