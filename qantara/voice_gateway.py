@@ -16,8 +16,10 @@ class VoiceGateway:
 
     Args:
         host: Interface to bind. Keep the loopback default unless you have
-            set QANTARA_AUTH_TOKEN — exposing the gateway on a LAN without a
-            token logs a startup warning.
+            set QANTARA_AUTH_TOKEN. Without a token the gateway only accepts
+            loopback ``Host`` headers (plus QANTARA_ALLOWED_HOSTS), so LAN
+            clients get HTTP 421, and binding a non-loopback host logs a
+            startup warning.
         port: TCP port for the HTTP/WebSocket server.
         runtime: Optional pre-built GatewayRuntime. When omitted, the runtime
             is created from environment configuration on first use.
@@ -41,7 +43,7 @@ class VoiceGateway:
         """
         from gateway.transport_spike.server import create_app
 
-        return create_app(self._runtime)
+        return create_app(self._runtime, bind_host=self.host)
 
     def run(self) -> None:
         """Start the gateway and block until interrupted.

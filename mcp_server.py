@@ -60,6 +60,15 @@ async def _gateway_request(method: str, path: str, payload: dict[str, Any] | Non
             return data
 
 
+def _configured_server_host() -> str:
+    """QANTARA_MCP_SERVER_HOST, with empty/blank normalized to loopback.
+
+    asyncio binds *all* interfaces for an empty host, so an empty value must
+    never reach FastMCP/uvicorn as-is.
+    """
+    return os.environ.get("QANTARA_MCP_SERVER_HOST", "").strip() or "127.0.0.1"
+
+
 def _json_resource(data: dict[str, Any]) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True)
 
@@ -68,7 +77,7 @@ mcp = FastMCP(
     "qantara-voice",
     instructions="Control a local Qantara browser voice session. Audio remains in Qantara; MCP is control-plane only.",
     log_level=os.environ.get("QANTARA_MCP_SERVER_LOG_LEVEL", "ERROR"),
-    host=os.environ.get("QANTARA_MCP_SERVER_HOST", "127.0.0.1"),
+    host=_configured_server_host(),
     port=int(os.environ.get("QANTARA_MCP_SERVER_PORT", "8766")),
     streamable_http_path=os.environ.get("QANTARA_MCP_SERVER_PATH", "/mcp"),
 )
@@ -268,8 +277,11 @@ async def qantara_mesh_peers() -> str:
 
 
 def _is_loopback_host(host: str) -> bool:
+    # "", "0.0.0.0" and "::" bind every interface, so they are NOT loopback.
     host = (host or "").strip().strip("[]")
-    if host in {"127.0.0.1", "::1", "localhost", ""}:
+    if host in {"", "0.0.0.0", "::"}:
+        return False
+    if host.lower() == "localhost":
         return True
     try:
         import ipaddress
@@ -303,8 +315,9 @@ def main() -> None:
     transport = os.environ.get("QANTARA_MCP_SERVER_TRANSPORT", "stdio").strip().lower()
     if transport not in {"stdio", "streamable-http", "http"}:
         raise SystemExit(f"unsupported QANTARA_MCP_SERVER_TRANSPORT: {transport}")
-    host = os.environ.get("QANTARA_MCP_SERVER_HOST", "127.0.0.1")
+    host = _configured_server_host()
     _require_safe_http_binding(transport, host)
+    mcp.settings.host = host
     mcp.run("streamable-http" if transport == "http" else transport)
 
 
