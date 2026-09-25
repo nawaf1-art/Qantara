@@ -44,6 +44,12 @@ def _venv_python(root: Path) -> Path:
     return root / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 
+def _venv_script(root: Path, name: str) -> Path:
+    if os.name == "nt":
+        return root / "Scripts" / f"{name}.exe"
+    return root / "bin" / name
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("artifact", type=Path)
@@ -72,6 +78,18 @@ def main() -> int:
         env = os.environ.copy()
         env["QANTARA_EXPECTED_VERSION"] = args.expected
         subprocess.run([str(python), "-I", "-c", SMOKE_CODE], check=True, env=env)
+        # Console scripts are installed and runnable from the clean venv.
+        for script in ("qantara", "qantara-doctor"):
+            result = subprocess.run(
+                [str(_venv_script(environment, script)), "--help"],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            if "usage:" not in result.stdout:
+                raise SystemExit(f"{script} --help printed no usage text")
+        print("console scripts qantara and qantara-doctor passed --help")
     return 0
 
 

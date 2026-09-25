@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Validate that a release SPDX document describes the Qantara wheel."""
+"""Validate that a release SPDX document describes the Qantara wheel.
+
+The SBOM must be generated from a clean install of the built wheel (the wheel
+plus its declared runtime dependencies), not from lock files or the source
+tree. Packages that only the Docker lock or optional extras bring in (torch,
+transformers, ...) therefore indicate a mis-generated SBOM.
+"""
 
 from __future__ import annotations
 
@@ -8,6 +14,20 @@ import json
 import sys
 from pathlib import Path
 from typing import Any
+
+# Present in ops/docker/requirements.txt / optional extras but never installed
+# by `pip install qantara`. Seeing one means the SBOM scanned a lock file.
+NON_RUNTIME_PACKAGES = frozenset(
+    {
+        "faster-whisper",
+        "kokoro",
+        "mcp",
+        "spacy",
+        "torch",
+        "transformers",
+        "zeroconf",
+    }
+)
 
 
 def _package_purls(package: dict[str, Any]) -> set[str]:
@@ -75,6 +95,19 @@ def validate_spdx_document(
         for candidate in aiohttp_packages
     ):
         errors.append("aiohttp package is missing a versioned PyPI purl")
+
+    unexpected = sorted(
+        {
+            str(candidate.get("name", "")).casefold()
+            for candidate in package_objects
+            if str(candidate.get("name", "")).casefold() in NON_RUNTIME_PACKAGES
+        }
+    )
+    if unexpected:
+        errors.append(
+            "SBOM lists packages the wheel does not install "
+            f"({', '.join(unexpected)}); generate it from a clean wheel install"
+        )
 
     package_id = package.get("SPDXID")
     relationships = document.get("relationships")

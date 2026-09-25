@@ -122,7 +122,7 @@ def _required_members(path: Path) -> tuple[str, ...]:
     )
     if path.suffix == ".whl":
         return common
-    return (*common, "pyproject.toml", "README.md", "LICENSE", "CHANGELOG.md")
+    return (*common, "pyproject.toml", "README.md", "LICENSE", "NOTICE", "CHANGELOG.md", "cli.py", "mcp_server.py")
 
 
 def check_artifact(path: Path) -> list[str]:
@@ -148,6 +148,16 @@ def check_artifact(path: Path) -> list[str]:
     for required in _required_members(path):
         if required.lower() not in normalized:
             errors.append(f"required archive member missing: {required}")
+    if path.suffix == ".whl":
+        # Lock files are deployment inputs; shipping them makes SBOM scanners
+        # report the Docker stack as wheel dependencies.
+        for name in sorted(normalized):
+            if PurePosixPath(name).name.startswith("requirements") and name.endswith((".txt", ".in")):
+                errors.append(f"lock file must not ship in the wheel: {name}")
+        if not any(name.endswith(".dist-info/licenses/notice") for name in normalized):
+            errors.append("required archive member missing: *.dist-info/licenses/NOTICE")
+        if not any(name.endswith(".dist-info/entry_points.txt") for name in normalized):
+            errors.append("required archive member missing: *.dist-info/entry_points.txt (console scripts)")
 
     print(f"inspected {path.name}: {len(members)} files, {total_size} expanded bytes")
     return errors
