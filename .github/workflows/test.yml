@@ -38,6 +38,7 @@ jobs:
           python scripts/check_release_consistency.py
           python scripts/check_workflow_pins.py
           python scripts/check_docs_links.py
+          python scripts/check_docs_consistency.py
           python scripts/check_tracked_artifacts.py
 
       - name: Run Ruff

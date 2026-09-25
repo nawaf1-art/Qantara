@@ -1,5 +1,8 @@
 # Repository Cleanup Report
 
+> [!NOTE]
+> **Historical snapshot — not current product guidance.** This report records the 2026-04-24 publication cleanup. Several packaging and release statements were superseded by later releases.
+
 Date: 2026-04-24
 
 ## Summary

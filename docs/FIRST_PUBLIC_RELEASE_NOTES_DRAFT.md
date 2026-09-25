@@ -1,5 +1,8 @@
 # Release Notes: v0.2.6
 
+> [!NOTE]
+> **Historical snapshot — not current product guidance.** This was the draft for Qantara's first public release. Use the changelog, current feature matrix, and tagged release notes for current behavior and installation.
+
 Qantara is a local-first real-time voice gateway for Ollama, local LLMs, and local AI agents. It turns a browser on your LAN into a full-duplex voice interface with local STT, local TTS, interruption handling, and backend adapters for local LLM engines and agent runtimes.
 
 ## Highlights
