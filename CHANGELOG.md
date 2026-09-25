@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [0.4.0] - Unreleased
 
-Remediation release for the 2026-09-24 platform audit ([report](docs/audits/QANTARA-audit-2026-09-24.md)). It contains breaking changes; read **Upgrade Notes** before upgrading. See also the [0.4.0 release notes](docs/RELEASE_NOTES_0.4.0.md).
+Remediation release for the 2026-09-24 platform audit. It contains breaking changes; read **Upgrade Notes** before upgrading. See also the [0.4.0 release notes](docs/RELEASE_NOTES_0.4.0.md).
 
 ### Added
 - Console scripts `qantara` (the launcher), `qantara doctor [--mesh]`, and `qantara-doctor`, installed by every wheel, tagged-source, and editable install. `make doctor ARGS=--mesh`, `make lock`, and `make lock-check` wrap the same tools in a source checkout.
