@@ -8,6 +8,8 @@ import re
 import time
 import unicodedata
 import uuid
+from dataclasses import dataclass
+from typing import Any
 
 from adapters.base import make_activity_event
 from gateway.transport_spike.common import (
@@ -705,18 +707,35 @@ async def _run_turn_cancel(session: Session, turn: TurnState, turn_task: asyncio
         await asyncio.wait({adapter_cancel}, timeout=ADAPTER_CANCEL_WAIT_SECONDS)
 
 
-async def speak_text(
+@dataclass(slots=True)
+class _SpeechPlan:
+    """A synthesised (or failed) segment, ready to play."""
+
+    source_text: str
+    spoken_text: str
+    selected_voice_id: str | None
+    resolved_voice: Any
+    fallback_reason: str | None
+    effective_speech_rate: float
+    engine: str
+    tts_started_ms: float
+    samples: list[int] | None = None
+    synthesis_ms: float | None = None
+    synthesized_voice: Any = None
+    synthesized_fallback: str | None = None
+    error: Exception | None = None
+
+
+async def _prepare_speech(
     session: Session,
     text: str,
-    expected_generation: int | None = None,
     voice_id: str | None = None,
     language: str | None = None,
-) -> None:
-    if expected_generation is not None and expected_generation != session.playback_generation:
-        return
+) -> _SpeechPlan | None:
+    """Normalise and synthesise ``text`` without sending anything."""
     spoken_text = normalize_tts_text(text, language=language)
     if not spoken_text:
-        return
+        return None
     tts = session.runtime.tts
     engine = tts.kind if tts.available else "synthetic"
     resolved_voice = None
@@ -727,25 +746,75 @@ async def speak_text(
             resolved_voice, fallback_reason = tts.resolve_voice(selected_voice_id)
         except Exception:
             resolved_voice = None
-    session.last_tts_started_ms = time.monotonic() * 1000
-    await session.emit("tts_chunk_ready", "playback", {"char_count": len(spoken_text), "engine": engine, "source_char_count": len(text)})
-    effective_speech_rate = effective_speech_rate_for_voice(session, resolved_voice)
-    transform_status, ignored_transforms = _build_transform_status(session, resolved_voice, active_rate=effective_speech_rate) if resolved_voice is not None else ({"voice_defaults": {}, "allowed_transforms": [], "active_transforms": {"rate": effective_speech_rate, "pitch": session.voice_pitch, "tone": session.voice_tone}}, [])
-    if not await safe_send_str(session, {"type": "tts_status", "engine": engine, "available": tts.available, "voice_id": resolved_voice.voice_id if resolved_voice is not None else session.voice_id, "requested_voice_id": session.requested_voice_id or session.voice_id, "speech_rate": effective_speech_rate, "sample_rate": resolved_voice.sample_rate if resolved_voice is not None else TARGET_SAMPLE_RATE, **transform_status, "ignored_transforms": ignored_transforms, "reason": fallback_reason if resolved_voice is not None else (None if tts.available else "tts provider unavailable or no voice configured")}):
-        return
+    plan = _SpeechPlan(
+        source_text=text,
+        spoken_text=spoken_text,
+        selected_voice_id=selected_voice_id,
+        resolved_voice=resolved_voice,
+        fallback_reason=fallback_reason,
+        effective_speech_rate=effective_speech_rate_for_voice(session, resolved_voice),
+        engine=engine,
+        tts_started_ms=time.monotonic() * 1000,
+    )
     if tts.available:
         try:
             synthesis_started_ms = time.monotonic() * 1000
-            samples, resolved_voice, fallback_reason = await tts.synthesize(spoken_text, voice_id=selected_voice_id, speech_rate=effective_speech_rate, expressiveness=session.expressiveness)
-            synthesis_ms = round((time.monotonic() * 1000) - synthesis_started_ms, 3)
-            # The resolved voice is per segment (a turn may pick a voice for its
-            # output language); it must not stick to the session (V-9).
-            await session.emit("tts_chunk_ready", "playback", {"char_count": len(spoken_text), "engine": tts.kind, "sample_count": len(samples), "synthesis_ms": synthesis_ms, "voice_id": resolved_voice.voice_id, "requested_voice_id": session.requested_voice_id or resolved_voice.voice_id, "speech_rate": effective_speech_rate, "session_speech_rate": session.speech_rate, "fallback_reason": fallback_reason, "source_char_count": len(text)})
-            await send_pcm_samples(session, samples, resolved_voice.sample_rate, f"{tts.kind}_tts", engine=tts.kind, tts_started_ms=session.last_tts_started_ms, synthesis_ms=synthesis_ms, expected_generation=expected_generation)
-            return
+            samples, synthesized_voice, synthesized_fallback = await tts.synthesize(spoken_text, voice_id=selected_voice_id, speech_rate=plan.effective_speech_rate, expressiveness=session.expressiveness)
+            plan.synthesis_ms = round((time.monotonic() * 1000) - synthesis_started_ms, 3)
+            plan.samples = samples
+            plan.synthesized_voice = synthesized_voice
+            plan.synthesized_fallback = synthesized_fallback
         except Exception as exc:
-            await session.emit("recoverable_error", "playback", {"component": "tts", "message": str(exc), "engine": tts.kind})
-            await safe_send_str(session, {"type": "tts_status", "engine": "synthetic", "available": False, "reason": f"{tts.kind} failed: {exc}"})
+            plan.error = exc
+    return plan
+
+
+async def _play_speech(session: Session, plan: _SpeechPlan, expected_generation: int | None = None) -> None:
+    """Send a prepared segment: status messages, then paced audio frames."""
+    if expected_generation is not None and expected_generation != session.playback_generation:
+        return
+    tts = session.runtime.tts
+    resolved_voice = plan.resolved_voice
+    session.last_tts_started_ms = plan.tts_started_ms
+    await session.emit("tts_chunk_ready", "playback", {"char_count": len(plan.spoken_text), "engine": plan.engine, "source_char_count": len(plan.source_text)})
+    effective_speech_rate = plan.effective_speech_rate
+    transform_status, ignored_transforms = _build_transform_status(session, resolved_voice, active_rate=effective_speech_rate) if resolved_voice is not None else ({"voice_defaults": {}, "allowed_transforms": [], "active_transforms": {"rate": effective_speech_rate, "pitch": session.voice_pitch, "tone": session.voice_tone}}, [])
+    if not await safe_send_str(session, {"type": "tts_status", "engine": plan.engine, "available": tts.available, "voice_id": resolved_voice.voice_id if resolved_voice is not None else session.voice_id, "requested_voice_id": session.requested_voice_id or session.voice_id, "speech_rate": effective_speech_rate, "sample_rate": resolved_voice.sample_rate if resolved_voice is not None else TARGET_SAMPLE_RATE, **transform_status, "ignored_transforms": ignored_transforms, "reason": plan.fallback_reason if resolved_voice is not None else (None if tts.available else "tts provider unavailable or no voice configured")}):
+        return
+    if not tts.available:
+        return
+    if plan.error is not None:
+        exc = plan.error
+        await session.emit("recoverable_error", "playback", {"component": "tts", "message": str(exc), "engine": tts.kind})
+        await safe_send_str(session, {"type": "tts_status", "engine": "synthetic", "available": False, "reason": f"{tts.kind} failed: {exc}"})
+        return
+    voice = plan.synthesized_voice
+    samples = plan.samples or []
+    # The resolved voice is per segment (a turn may pick a voice for its
+    # output language); it must not stick to the session (V-9).
+    await session.emit("tts_chunk_ready", "playback", {"char_count": len(plan.spoken_text), "engine": tts.kind, "sample_count": len(samples), "synthesis_ms": plan.synthesis_ms, "voice_id": voice.voice_id, "requested_voice_id": session.requested_voice_id or voice.voice_id, "speech_rate": effective_speech_rate, "session_speech_rate": session.speech_rate, "fallback_reason": plan.synthesized_fallback, "source_char_count": len(plan.source_text)})
+    try:
+        await send_pcm_samples(session, samples, voice.sample_rate, f"{tts.kind}_tts", engine=tts.kind, tts_started_ms=plan.tts_started_ms, synthesis_ms=plan.synthesis_ms, expected_generation=expected_generation)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        await session.emit("recoverable_error", "playback", {"component": "tts", "message": str(exc), "engine": tts.kind})
+        await safe_send_str(session, {"type": "tts_status", "engine": "synthetic", "available": False, "reason": f"{tts.kind} failed: {exc}"})
+
+
+async def speak_text(
+    session: Session,
+    text: str,
+    expected_generation: int | None = None,
+    voice_id: str | None = None,
+    language: str | None = None,
+) -> None:
+    if expected_generation is not None and expected_generation != session.playback_generation:
+        return
+    plan = await _prepare_speech(session, text, voice_id=voice_id, language=language)
+    if plan is None:
+        return
+    await _play_speech(session, plan, expected_generation)
 
 
 async def _await_previous_speech(previous_task: asyncio.Task | None) -> None:
@@ -767,6 +836,22 @@ def _track_speech_task(session: Session, task: asyncio.Task) -> asyncio.Task:
     return task
 
 
+async def _await_previous_start(previous_task: asyncio.Task | None, previous_ready: asyncio.Event | None) -> None:
+    """Wait until the previous segment has started playing (or ended)."""
+    if previous_task is None or previous_task.done() or previous_task is asyncio.current_task():
+        return
+    if previous_ready is None:
+        await asyncio.wait({previous_task})
+        return
+    if previous_ready.is_set():
+        return
+    ready_waiter = asyncio.ensure_future(previous_ready.wait())
+    try:
+        await asyncio.wait({previous_task, ready_waiter}, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        ready_waiter.cancel()
+
+
 async def _run_speech_segment(
     previous_task: asyncio.Task | None,
     session: Session,
@@ -774,11 +859,29 @@ async def _run_speech_segment(
     expected_generation: int,
     voice_id: str | None = None,
     language: str | None = None,
+    previous_ready: asyncio.Event | None = None,
+    ready: asyncio.Event | None = None,
 ) -> None:
-    await _await_previous_speech(previous_task)
-    if expected_generation != session.speech_generation:
-        return
-    await speak_text(session, text, expected_generation=expected_generation, voice_id=voice_id, language=language)
+    try:
+        # One segment of look-ahead (V-3): synthesise while the previous
+        # segment is playing. ``previous_ready`` is set when the previous
+        # segment starts playing, so the TTS engine never runs more than one
+        # sentence ahead of what the user hears.
+        await _await_previous_start(previous_task, previous_ready)
+        if expected_generation != session.speech_generation:
+            return
+        plan = await _prepare_speech(session, text, voice_id=voice_id, language=language)
+        await _await_previous_speech(previous_task)
+        if ready is not None:
+            ready.set()
+        # A barge-in during synthesis or the previous playback discards the
+        # prepared audio here.
+        if plan is None or expected_generation != session.speech_generation:
+            return
+        await _play_speech(session, plan, expected_generation)
+    finally:
+        if ready is not None:
+            ready.set()
 
 
 def enqueue_speech(
@@ -792,8 +895,11 @@ def enqueue_speech(
     if not text.strip():
         return
     previous_task = session.speech_task
+    previous_ready = session.speech_tail_ready
+    ready = asyncio.Event()
+    session.speech_tail_ready = ready
     generation = frozen_generation if frozen_generation is not None else session.speech_generation
-    _track_speech_task(session, asyncio.create_task(_run_speech_segment(previous_task, session, text, generation, voice_id, language)))
+    _track_speech_task(session, asyncio.create_task(_run_speech_segment(previous_task, session, text, generation, voice_id, language, previous_ready, ready)))
 
 
 async def _run_control_speech_segment(
@@ -834,6 +940,9 @@ def enqueue_control_speech(
     if not text.strip():
         return
     previous_task = session.speech_task
+    # Control speech does not look ahead: the next segment waits for it to
+    # finish entirely.
+    session.speech_tail_ready = None
     generation = frozen_generation if frozen_generation is not None else session.speech_generation
     _track_speech_task(session, asyncio.create_task(
         _run_control_speech_segment(previous_task, session, text, generation, voice_id)

@@ -787,6 +787,9 @@ class Session:
         # Every pending speech segment, so a barge-in can cancel the whole
         # queue, not just the tail.
         self.speech_tasks: set[asyncio.Task] = set()
+        # Set once the last enqueued segment has been synthesised, so the
+        # next one can synthesise while it plays (one segment look-ahead).
+        self.speech_tail_ready: asyncio.Event | None = None
         self.speech_generation = 0
         self.turns_completed = 0
         self.client_name = "qantara-browser"
