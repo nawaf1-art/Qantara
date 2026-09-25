@@ -86,6 +86,9 @@
     .backend-card:hover { border-color: var(--accent); background: var(--accent-light); }
     .backend-card.selected { border-color: var(--accent); background: var(--accent-light); box-shadow: 0 0 0 1px var(--accent); }
     .backend-card.unavailable { opacity: 0.55; cursor: default; }
+    .backend-card:focus-visible, .lan-card:focus-visible, .agent-option:focus-within {
+      outline: 2px solid var(--accent); outline-offset: 2px;
+    }
     .backend-card.unavailable:hover { border-color: var(--line); background: rgba(255,255,255,0.5); }
 
     .backend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
@@ -267,7 +270,7 @@
         <input id="auth-token-input" type="password" autocomplete="current-password" placeholder="QANTARA_AUTH_TOKEN">
         <button id="auth-login-btn" class="test-btn">Unlock</button>
       </div>
-      <div id="auth-status" class="status-msg"></div>
+      <div id="auth-status" class="status-msg" role="status" aria-live="polite"></div>
     </div>
 
     <div id="setup-content" hidden>
@@ -285,7 +288,7 @@
       <div id="config-area" class="config-area"></div>
 
       <button id="start-btn" class="start-btn" disabled>Start Talking</button>
-      <div id="status-msg" class="status-msg"></div>
+      <div id="status-msg" class="status-msg" role="status" aria-live="polite"></div>
     </div>
 
     <!-- Warmup overlay (shown between /api/configure and the redirect to /spike) -->
@@ -308,7 +311,7 @@
         Scan your local network for AI servers. Only private IP ranges are scanned.
       </p>
       <button class="scan-btn" id="scan-lan-btn">Scan Network</button>
-      <div id="scan-progress" class="lan-progress" style="display:none;"></div>
+      <div id="scan-progress" class="lan-progress" style="display:none;" aria-live="polite"></div>
       <div id="scan-progress-bar" class="lan-progress-bar" style="display:none;">
         <div id="scan-progress-fill" class="lan-progress-fill"></div>
       </div>
@@ -351,6 +354,19 @@
 
     var saved = null;
     try { saved = JSON.parse(localStorage.getItem("qantara_backend")); } catch (_) {}
+    // Saved settings are restored at most once, and never after the user has
+    // started interacting with the page (audit U-4).
+    var restoreDone = false;
+    var userInteracted = false;
+    var pendingModelRestore = null;
+    var testSeq = 0;
+
+    function markUserInteraction(ev) {
+      if (ev && ev.isTrusted === false) return;
+      userInteracted = true;
+    }
+    document.addEventListener("pointerdown", markUserInteraction, true);
+    document.addEventListener("keydown", markUserInteraction, true);
 
     var currentProbeStream = null;
     ensureAuthenticated();
@@ -441,7 +457,7 @@
         completedProbes = 0;
         probeRowsByType = {};
         var listContainer = document.getElementById("probe-list");
-        if (listContainer) listContainer.innerHTML = "";
+        if (listContainer) listContainer.textContent = "";
         updateProgress("Detecting backends — 0 of " + totalProbes);
       });
 
@@ -451,7 +467,14 @@
         if (!listContainer) return;
         var row = document.createElement("div");
         row.className = "probe-row pending";
-        row.innerHTML = '<span>' + data.name + '</span><span class="probe-status">checking…</span>';
+        var nameEl = document.createElement("span");
+        nameEl.textContent = data.name;
+        var statusEl = document.createElement("span");
+        statusEl.className = "probe-status";
+        statusEl.textContent = "checking…";
+        row.appendChild(nameEl);
+        row.appendChild(statusEl);
+        row._status = statusEl;
         listContainer.appendChild(row);
         probeRowsByType[data.type] = row;
       });
@@ -473,8 +496,7 @@
         if (row) {
           row.classList.remove("pending");
           var label = probeStatusLabel(data.type, data.result);
-          var status = row.querySelector(".probe-status");
-          if (status) status.textContent = label;
+          if (row._status) row._status.textContent = label;
           if (data.result && data.result.error) {
             row.classList.add("done-error");
           } else if (data.type === "openai_compatible") {
@@ -509,7 +531,12 @@
         .then(function (r) { return r.json(); })
         .then(handleBackendsPayload)
         .catch(function () {
-          listEl.innerHTML = '<div class="loading" style="color:var(--red)">Cannot reach gateway. Is the server running?</div>';
+          listEl.textContent = "";
+          var err = document.createElement("div");
+          err.className = "loading";
+          err.style.color = "var(--red)";
+          err.textContent = "Cannot reach gateway. Is the server running?";
+          listEl.appendChild(err);
         });
     }
 
@@ -525,13 +552,17 @@
         showGettingStarted();
         startPolling();
       } else {
-        document.getElementById("getting-started-area").innerHTML = "";
+        document.getElementById("getting-started-area").textContent = "";
         stopPolling();
       }
       renderBackends();
-      if (saved && saved.type) {
+      if (!restoreDone && !userInteracted && saved && saved.type) {
         var match = backends.find(function (b) { return b.type === saved.type && b.available; });
-        if (match) { selectBackend(saved.type); restoreSavedConfig(saved); }
+        if (match) {
+          restoreDone = true;
+          selectBackend(saved.type);
+          restoreSavedConfig(saved);
+        }
       }
     }
 
@@ -551,29 +582,110 @@
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     }
 
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text != null) node.textContent = text;
+      return node;
+    }
+
+    function legacyCopy(text) {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (_) { ok = false; }
+      document.body.removeChild(ta);
+      return ok;
+    }
+
+    // navigator.clipboard only exists on secure pages; plain-HTTP LAN pages
+    // fall back to execCommand, then to asking the user to copy by hand.
+    function copyText(text, button) {
+      function done(ok) {
+        button.textContent = ok ? "Copied" : "Select and copy";
+        setTimeout(function () { button.textContent = "Copy"; }, 1500);
+      }
+      if (navigator.clipboard && window.isSecureContext !== false && typeof navigator.clipboard.writeText === "function") {
+        navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(legacyCopy(text)); });
+      } else {
+        done(legacyCopy(text));
+      }
+    }
+
+    function makeCmdBox(cmd, style) {
+      var box = el("div", "cmd-box");
+      if (style) box.style.margin = style;
+      box.appendChild(el("code", null, cmd));
+      var btn = el("button", "copy-btn", "Copy");
+      btn.type = "button";
+      btn.setAttribute("aria-label", "Copy command: " + cmd);
+      btn.addEventListener("click", function () { copyText(cmd, btn); });
+      box.appendChild(btn);
+      return box;
+    }
+
+    function makeActivatable(node, handler) {
+      node.setAttribute("role", "button");
+      node.setAttribute("tabindex", "0");
+      node.addEventListener("click", handler);
+      node.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter" || ev.key === " " || ev.key === "Spacebar") {
+          if (ev.preventDefault) ev.preventDefault();
+          handler(ev);
+        }
+      });
+    }
+    window._qantaraMakeActivatable = makeActivatable;
+
     function showGettingStarted() {
       var area = document.getElementById("getting-started-area");
-      area.innerHTML = "";
-      var div = document.createElement("div");
-      div.className = "getting-started";
+      area.textContent = "";
+      var div = el("div", "getting-started");
       div.style.marginBottom = "18px";
-      div.innerHTML =
-        '<h3>No AI backend detected</h3>' +
-        '<p>Qantara needs an AI backend to generate responses. The easiest way to start:</p>' +
-        '<p><strong>1.</strong> Install Ollama from <a href="https://ollama.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent)">ollama.com</a></p>' +
-        '<p><strong>2.</strong> Download a model:</p>' +
-        '<div class="cmd-box"><code>ollama pull qwen3.5:2b</code><button class="copy-btn" onclick="navigator.clipboard.writeText(\'ollama pull qwen3.5:2b\')">Copy</button></div>' +
-        '<p><strong>3.</strong> Come back \u2014 Qantara detects it automatically.</p>' +
-        '<div><button class="scan-btn" onclick="location.reload()">Scan Again</button></div>';
+      div.appendChild(el("h3", null, "No AI backend detected"));
+      div.appendChild(el("p", null, "Qantara needs an AI backend to generate responses. The easiest way to start:"));
+      var step1 = el("p");
+      step1.appendChild(el("strong", null, "1."));
+      step1.appendChild(document.createTextNode(" Install Ollama from "));
+      var link = el("a", null, "ollama.com");
+      link.href = "https://ollama.com";
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.style.color = "var(--accent)";
+      step1.appendChild(link);
+      div.appendChild(step1);
+      var step2 = el("p");
+      step2.appendChild(el("strong", null, "2."));
+      step2.appendChild(document.createTextNode(" Download a model:"));
+      div.appendChild(step2);
+      div.appendChild(makeCmdBox("ollama pull qwen3.5:2b"));
+      var step3 = el("p");
+      step3.appendChild(el("strong", null, "3."));
+      step3.appendChild(document.createTextNode(" Come back \u2014 Qantara detects it automatically."));
+      div.appendChild(step3);
+      var again = el("div");
+      var scan = el("button", "scan-btn", "Scan Again");
+      scan.type = "button";
+      scan.addEventListener("click", function () { location.reload(); });
+      again.appendChild(scan);
+      div.appendChild(again);
       area.appendChild(div);
     }
 
     function renderBackends() {
-      listEl.innerHTML = "";
+      var active = document.activeElement;
+      var focusedType = active && active.dataset ? active.dataset.backendType : null;
+      listEl.textContent = "";
       backends.forEach(function (b) {
         var card = document.createElement("div");
         card.className = "backend-card" + (b.available ? "" : " unavailable");
         if (b.type === selectedType) card.className += " selected";
+        card.dataset.backendType = b.type;
 
         var dot = document.createElement("div");
         dot.className = "backend-dot " + (b.available ? "available" : "unavailable");
@@ -601,9 +713,21 @@
         card.appendChild(info);
 
         if (b.available) {
-          card.addEventListener("click", function () { selectBackend(b.type); });
+          makeActivatable(card, function () {
+            markUserInteraction();
+            pendingModelRestore = null;
+            selectBackend(b.type);
+            var again = Array.prototype.find.call(listEl.children, function (c) {
+              return c.dataset && c.dataset.backendType === b.type;
+            });
+            if (again && again.focus) again.focus();
+          });
+          card.setAttribute("aria-pressed", b.type === selectedType ? "true" : "false");
+        } else {
+          card.setAttribute("aria-disabled", "true");
         }
         listEl.appendChild(card);
+        if (focusedType && focusedType === b.type && card.focus) card.focus();
       });
     }
 
@@ -659,7 +783,7 @@
     }
 
     function renderConfig() {
-      configEl.innerHTML = "";
+      configEl.textContent = "";
       var b = backends.find(function (x) { return x.type === selectedType; });
       if (!b) return;
 
@@ -710,12 +834,26 @@
       directionalPair.id = "cfg-directional-pair";
       directionalPair.style.marginLeft = "22px";
       directionalPair.style.display = dirToggle.checked ? "block" : "none";
-      function buildLangOptions() {
-        return Object.keys(LANGS).map(function (iso) { return '<option value="' + iso + '">' + LANGS[iso] + '</option>'; }).join("");
+      function buildLangSelect(id) {
+        var select = document.createElement("select");
+        select.id = id;
+        Object.keys(LANGS).forEach(function (iso) {
+          var opt = document.createElement("option");
+          opt.value = iso;
+          opt.textContent = LANGS[iso];
+          select.appendChild(opt);
+        });
+        return select;
       }
-      directionalPair.innerHTML =
-        '<label style="margin-right:8px">From <select id="cfg-directional-source">' + buildLangOptions() + '</select></label>' +
-        '<label>To <select id="cfg-directional-target">' + buildLangOptions() + '</select></label>';
+      var fromLabel = document.createElement("label");
+      fromLabel.style.marginRight = "8px";
+      fromLabel.appendChild(document.createTextNode("From "));
+      fromLabel.appendChild(buildLangSelect("cfg-directional-source"));
+      var toLabel = document.createElement("label");
+      toLabel.appendChild(document.createTextNode("To "));
+      toLabel.appendChild(buildLangSelect("cfg-directional-target"));
+      directionalPair.appendChild(fromLabel);
+      directionalPair.appendChild(toLabel);
       group.appendChild(directionalPair);
       var savedSrc = localStorage.getItem("qantara_directional_source") || "en";
       var savedTgt = localStorage.getItem("qantara_directional_target") || "ar";
@@ -798,12 +936,9 @@
     function renderOllamaConfig(b) {
       var models = b.models || [];
       if (models.length === 0) {
-        var noModels = document.createElement("div");
-        noModels.className = "config-group";
-        noModels.innerHTML =
-          '<label>No models installed in Ollama</label>' +
-          '<div class="cmd-box" style="margin:6px 0"><code>ollama pull qwen3.5:2b</code>' +
-          '<button class="copy-btn" onclick="navigator.clipboard.writeText(\'ollama pull qwen3.5:2b\')">Copy</button></div>';
+        var noModels = el("div", "config-group");
+        noModels.appendChild(el("label", null, "No models installed in Ollama"));
+        noModels.appendChild(makeCmdBox("ollama pull qwen3.5:2b", "6px 0"));
         configEl.appendChild(noModels);
         return;
       }
@@ -858,7 +993,7 @@
         sel.appendChild(opt);
       });
 
-      sel.addEventListener("change", function () { startBtn.disabled = !isConfigValid(); });
+      sel.addEventListener("change", function () { markUserInteraction(); startBtn.disabled = !isConfigValid(); });
       group.appendChild(sel);
 
       var note = document.createElement("div");
@@ -878,22 +1013,22 @@
       note.textContent = "Advanced optional bridge for an existing OpenClaw setup. Qantara stays the voice gateway; OpenClaw owns the agent runtime.";
       configEl.appendChild(note);
 
+      function commandGroup(label, cmd) {
+        var group = el("div", "config-group");
+        group.appendChild(el("label", null, label));
+        if (cmd) group.appendChild(makeCmdBox(cmd));
+        configEl.appendChild(group);
+      }
       if (!b.installed) {
-        configEl.insertAdjacentHTML("beforeend",
-          '<div class="config-group"><label>OpenClaw is not installed</label>' +
-          '<div class="cmd-box"><code>npm install -g openclaw</code>' +
-          '<button class="copy-btn" onclick="navigator.clipboard.writeText(\'npm install -g openclaw\')">Copy</button></div></div>');
+        commandGroup("OpenClaw is not installed", "npm install -g openclaw");
         return;
       }
       if (!b.gateway_running) {
-        configEl.insertAdjacentHTML("beforeend",
-          '<div class="config-group"><label>OpenClaw gateway is not running</label>' +
-          '<div class="cmd-box"><code>openclaw gateway run</code>' +
-          '<button class="copy-btn" onclick="navigator.clipboard.writeText(\'openclaw gateway run\')">Copy</button></div></div>');
+        commandGroup("OpenClaw gateway is not running", "openclaw gateway run");
         return;
       }
       if (agents.length === 0) {
-        configEl.insertAdjacentHTML("beforeend", '<div class="config-group"><label>No agents found in OpenClaw</label></div>');
+        commandGroup("No agents found in OpenClaw", null);
         return;
       }
 
@@ -901,13 +1036,14 @@
       var list = document.createElement("div");
       list.className = "agent-list";
 
-      agents.forEach(function (a) {
-        var opt = document.createElement("div");
+      agents.forEach(function (a, index) {
+        var opt = document.createElement("label");
         opt.className = "agent-option" + (selectedAgent === a.id ? " selected" : "");
 
         var radio = document.createElement("input");
         radio.type = "radio";
         radio.name = "agent";
+        radio.id = "cfg-agent-" + index;
         radio.value = a.id;
         radio.checked = selectedAgent === a.id;
 
@@ -925,10 +1061,14 @@
           opt.appendChild(badge);
         }
 
-        opt.addEventListener("click", function () {
+        radio.addEventListener("change", function () {
+          if (!radio.checked) return;
+          markUserInteraction();
           selectedAgent = a.id;
           renderConfig();
           startBtn.disabled = !isConfigValid();
+          var again = document.getElementById("cfg-agent-" + index);
+          if (again && again.focus) again.focus();
         });
 
         list.appendChild(opt);
@@ -961,12 +1101,16 @@
       } else if (b.ollama_url) {
         inp.value = b.ollama_url;
       }
-      inp.addEventListener("input", function () { startBtn.disabled = !isConfigValid(); });
+      inp.addEventListener("input", function (ev) {
+        if (!ev || ev.isTrusted !== false) { markUserInteraction(); pendingModelRestore = null; }
+        startBtn.disabled = !isConfigValid();
+      });
 
       var testBtn = document.createElement("button");
       testBtn.className = "test-btn";
+      testBtn.type = "button";
       testBtn.textContent = "Test";
-      testBtn.addEventListener("click", function () { testOpenAI(inp.value.trim()); });
+      testBtn.addEventListener("click", function () { markUserInteraction(); pendingModelRestore = null; testOpenAI(inp.value.trim()); });
 
       row.appendChild(inp);
       row.appendChild(testBtn);
@@ -1008,6 +1152,7 @@
 
       var testBtn = document.createElement("button");
       testBtn.className = "test-btn";
+      testBtn.type = "button";
       testBtn.textContent = "Test";
       testBtn.addEventListener("click", function () { testCustom(inp.value.trim()); });
 
@@ -1055,6 +1200,7 @@
       urlInput.addEventListener("input", function () { startBtn.disabled = !isConfigValid(); });
       var testBtn = document.createElement("button");
       testBtn.className = "test-btn";
+      testBtn.type = "button";
       testBtn.textContent = "List tools";
       testBtn.addEventListener("click", function () { testMCP(); });
       urlRow.appendChild(urlInput);
@@ -1106,8 +1252,9 @@
       if (!url) return;
       var el = document.getElementById("test-result");
       var modelArea = document.getElementById("openai-model-area");
+      var seq = ++testSeq;
       if (el) { el.textContent = "Testing\u2026"; el.className = "test-result"; }
-      if (modelArea) modelArea.innerHTML = "";
+      if (modelArea) modelArea.textContent = "";
 
       // Use server-side proxy to avoid CORS issues
       fetch("/api/test-url", {
@@ -1117,6 +1264,7 @@
       })
         .then(function (r) { return r.json(); })
         .then(function (data) {
+          if (seq !== testSeq) return; // a newer Test superseded this one
           if (!data.ok) {
             if (el) { el.textContent = "\u2717 " + (data.error || "Failed"); el.className = "test-result fail"; }
             return;
@@ -1145,12 +1293,19 @@
               opt.textContent = m;
               sel.appendChild(opt);
             });
+            // Restore the saved model once the model list exists.
+            if (pendingModelRestore && models.indexOf(pendingModelRestore) >= 0) {
+              sel.value = pendingModelRestore;
+            }
+            pendingModelRestore = null;
+            sel.addEventListener("change", function () { markUserInteraction(); });
             grp.appendChild(sel);
             modelArea.appendChild(grp);
           }
           startBtn.disabled = !isConfigValid();
         })
         .catch(function () {
+          if (seq !== testSeq) return;
           if (el) {
             el.textContent = "\u2717 Cannot reach gateway.";
             el.className = "test-result fail";
@@ -1236,6 +1391,7 @@
 
     function restoreSavedConfig(s) {
       setTimeout(function () {
+        if (userInteracted) return;
         if (s.type === "ollama" && s.model) {
           var sel = document.getElementById("cfg-model");
           if (sel) sel.value = s.model;
@@ -1244,7 +1400,13 @@
           renderConfig();
         } else if (s.type === "openai_compatible" && s.url) {
           var inp = document.getElementById("cfg-openai-url");
-          if (inp) inp.value = s.url;
+          pendingModelRestore = s.model || null;
+          if (inp) {
+            inp.value = s.url;
+            // Re-test with the saved URL; the model list it returns is where
+            // the saved model gets re-selected.
+            window.testOpenAI(s.url);
+          }
         } else if (s.type === "mcp") {
           var mcpTransport = document.getElementById("cfg-mcp-transport");
           var mcpUrl = document.getElementById("cfg-mcp-url");
@@ -1440,7 +1602,7 @@
       progressEl.style.display = "";
       progressBar.style.display = "";
       progressFill.style.width = "0%";
-      resultsEl.innerHTML = "";
+      resultsEl.textContent = "";
 
       var es = new EventSource("/api/discovery/scan");
 
@@ -1466,7 +1628,10 @@
         scanBtn.disabled = false;
         scanBtn.textContent = "Scan Again";
         if (d.count === 0) {
-          resultsEl.innerHTML = '<div style="font-size:0.82rem;color:var(--muted);padding:8px 0;">No AI backends found on your local network. Make sure servers are listening on 0.0.0.0 (not just localhost).</div>';
+          var none = document.createElement("div");
+          none.style.cssText = "font-size:0.82rem;color:var(--muted);padding:8px 0;";
+          none.textContent = "No AI backends found on your local network. Make sure servers are listening on 0.0.0.0 (not just localhost).";
+          resultsEl.appendChild(none);
         }
         es.close();
       });
@@ -1556,8 +1721,10 @@
         card.appendChild(modelList);
       }
 
-      // Click to use — auto-select OpenAI-Compatible and fill URL
-      card.addEventListener("click", function () {
+      // Click (or Enter/Space) to use — auto-select OpenAI-Compatible and fill URL
+      card.setAttribute("aria-label", "Use " + b.server_type + " at " + b.url);
+      var activate = window._qantaraMakeActivatable || function (node, fn) { node.addEventListener("click", fn); };
+      activate(card, function () {
         // First, select the openai_compatible backend type
         var selectFn = window._qantaraSelectBackend;
         if (selectFn) selectFn("openai_compatible");
@@ -1600,7 +1767,7 @@
         var statusEl = document.getElementById("mesh-status");
         statusEl.textContent = "This node: " + status.node_id + " (" + status.role + ")";
         var list = document.getElementById("mesh-peers-list");
-        list.innerHTML = "";
+        list.textContent = "";
         if (!peers.peers.length) {
           var empty = document.createElement("div");
           empty.style.cssText = "font-size:0.78rem;color:var(--muted);padding:4px 0;";
@@ -1611,7 +1778,15 @@
         peers.peers.forEach(function (p) {
           var row = document.createElement("div");
           row.style.cssText = "display:flex;justify-content:space-between;padding:6px 10px;background:rgba(0,0,0,0.02);border-radius:6px;font-size:0.82rem;";
-          row.innerHTML = '<span>' + p.node_id + '</span><span style="color:var(--muted);">' + p.role + ' @ ' + p.host + ':' + p.port + '</span>';
+          // node_id / role / host come from unauthenticated mDNS records:
+          // render them as text, never as HTML.
+          var idEl = document.createElement("span");
+          idEl.textContent = String(p.node_id);
+          var metaEl = document.createElement("span");
+          metaEl.style.color = "var(--muted)";
+          metaEl.textContent = String(p.role) + " @ " + String(p.host) + ":" + String(p.port);
+          row.appendChild(idEl);
+          row.appendChild(metaEl);
           list.appendChild(row);
         });
       })

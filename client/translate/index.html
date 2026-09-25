@@ -29,6 +29,7 @@
                  color: white; border: none; font-size: 34px; cursor: pointer; touch-action: manipulation;
                  box-shadow: 0 4px 18px rgba(74,163,255,0.28); }
   .talk-button:active, .talk-button.active { background: #2f7ec5; transform: scale(0.97); }
+  .talk-button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
   .status { font-size: 12px; opacity: 0.65; min-height:1.2em; }
   .hint { text-align:center; font-size:12px; opacity:0.5; padding: 4px 12px 10px; }
 </style>
@@ -40,11 +41,11 @@
   </header>
   <div class="pane" id="pane-left">
     <h2 id="lang-left-label">English</h2>
-    <div id="turns-left"></div>
+    <div id="turns-left" role="log" aria-live="polite"></div>
   </div>
   <div class="pane" id="pane-right">
     <h2 id="lang-right-label">Japanese</h2>
-    <div id="turns-right"></div>
+    <div id="turns-right" role="log" aria-live="polite"></div>
   </div>
   <div class="controls">
     <div class="direction">
@@ -53,10 +54,10 @@
       <span id="dir-to">JA</span>
       <button id="flip-dir" type="button">flip</button>
     </div>
-    <button class="talk-button" id="talk-btn" type="button" aria-label="Hold to speak">&#x1F3A4;</button>
-    <div id="status" class="status">Hold the button to speak</div>
+    <button class="talk-button" id="talk-btn" type="button" aria-label="Hold to speak (or hold the Space bar)">&#x1F3A4;</button>
+    <div id="status" class="status" role="status" aria-live="polite">Hold the button to speak</div>
   </div>
-  <div class="hint">Press and hold the mic while you speak. Release to translate. Flip the arrow to switch who's speaking.</div>
+  <div class="hint">Press and hold the mic (or hold Space while it is focused) while you speak. Release to translate. Flip the arrow to switch who's speaking.</div>
 
   <script>
     (function () {
@@ -76,6 +77,11 @@
       }
 
       var socket = null;
+      var IDLE_STATUS = "Hold the button to speak";
+
+      function setStatus(text) {
+        document.getElementById("status").textContent = text;
+      }
 
       fetch("/api/auth/status", { cache: "no-store" })
         .then(function (r) { return r.json(); })
@@ -119,10 +125,23 @@
           var msg;
           try { msg = JSON.parse(ev.data); } catch (_) { return; }
           if (msg.type === "transcript_result") {
-            appendTurn(direction.from, msg.text || "", true);
+            if (msg.error) {
+              setStatus("Couldn't transcribe that: " + msg.error);
+            } else if (msg.text) {
+              appendTurn(direction.from, msg.text, true);
+            } else {
+              setStatus("Didn't catch that. Hold the button and speak again.");
+            }
           } else if (msg.type === "assistant_text_final" || msg.type === "assistant_output_completed") {
             var txt = msg.text || "";
             if (txt) appendTurn(direction.to, txt, false);
+            if (!isRecording) setStatus(IDLE_STATUS);
+          } else if (msg.type === "turn_failed") {
+            setStatus("Translation failed: " + (msg.message || "the backend reported an error") + ". Try again.");
+          } else if (msg.type === "turn_rejected") {
+            setStatus("Still translating the last phrase. One moment\u2026");
+          } else if (msg.type === "turn_state" && msg.state === "idle") {
+            if (!isRecording && document.getElementById("status").textContent === "Translating\u2026") setStatus(IDLE_STATUS);
           }
         });
       }
@@ -137,11 +156,17 @@
       var scriptNode = null;
       var sourceNode = null;
       var isRecording = false;
+      // True while the talk button is physically held (mouse, touch or Space).
+      // Checked after every await so a quick tap during the permission prompt
+      // does not leave recording stuck on (audit U-7).
+      var wantRecording = false;
+      var startInFlight = false;
 
       function appendTurn(lang, text, original) {
         var pane = lang === langLeft ? "turns-left" : "turns-right";
         var div = document.createElement("div");
         div.className = "turn" + (original ? " original" : "");
+        div.setAttribute("dir", "auto");
         div.textContent = text;
         var container = document.getElementById(pane);
         container.appendChild(div);
@@ -164,8 +189,25 @@
         });
       });
 
+      function micErrorText(err) {
+        var name = err && err.name ? err.name : "";
+        if (name === "NotAllowedError" || name === "SecurityError") return "Microphone access is blocked. Allow it for this site, then try again.";
+        if (name === "NotFoundError") return "No microphone was found.";
+        if (name === "NotReadableError") return "The microphone is busy. Close other apps using it, then try again.";
+        return "Mic error: " + (err && err.message ? err.message : String(err));
+      }
+
       async function startRecording() {
-        if (isRecording) return;
+        if (isRecording || startInFlight) return;
+        if (!window.isSecureContext) {
+          setStatus("The microphone needs a secure page. Open Qantara through its HTTPS address (or http://localhost on the gateway machine).");
+          return;
+        }
+        if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
+          setStatus("This browser can't capture microphone audio.");
+          return;
+        }
+        startInFlight = true;
         try {
           if (!micStream) {
             micStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
@@ -174,6 +216,11 @@
             audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
           }
           if (audioContext.state === "suspended") await audioContext.resume();
+          if (!wantRecording) {
+            // Released while the permission prompt / device open was pending.
+            setStatus(IDLE_STATUS);
+            return;
+          }
           if (!sourceNode) {
             sourceNode = audioContext.createMediaStreamSource(micStream);
           }
@@ -191,14 +238,16 @@
               var s = Math.max(-1, Math.min(1, chan[i]));
               view.setInt16(1 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
             }
-            if (socket.readyState === WebSocket.OPEN) socket.send(frame);
+            if (socket && socket.readyState === WebSocket.OPEN) socket.send(frame);
           };
           sendJson({ type: "mic_stream_started", sample_rate: 16000 });
           isRecording = true;
-          document.getElementById("status").textContent = "Listening\u2026";
+          setStatus("Listening\u2026");
           document.getElementById("talk-btn").classList.add("active");
         } catch (err) {
-          document.getElementById("status").textContent = "Mic error: " + err.message;
+          setStatus(micErrorText(err));
+        } finally {
+          startInFlight = false;
         }
       }
 
@@ -209,7 +258,7 @@
         if (scriptNode) { scriptNode.onaudioprocess = null; scriptNode.disconnect(); scriptNode = null; }
         sendJson({ type: "mic_stream_stopped" });
         sendJson({ type: "transcribe_recent_audio", submit_turn: true });
-        document.getElementById("status").textContent = "Translating\u2026";
+        setStatus("Translating\u2026");
         document.getElementById("talk-btn").classList.remove("active");
       }
 
@@ -225,12 +274,40 @@
 
       window.addEventListener("pagehide", releaseAudioResources);
 
+      function pressStart() {
+        wantRecording = true;
+        startRecording();
+      }
+
+      function pressEnd() {
+        if (!wantRecording && !isRecording) return;
+        wantRecording = false;
+        if (isRecording) stopRecording();
+      }
+
+      function isSpace(e) {
+        return e.code === "Space" || e.key === " " || e.key === "Spacebar";
+      }
+
       var talkBtn = document.getElementById("talk-btn");
-      talkBtn.addEventListener("mousedown", startRecording);
-      talkBtn.addEventListener("mouseup", stopRecording);
-      talkBtn.addEventListener("mouseleave", function () { if (isRecording) stopRecording(); });
-      talkBtn.addEventListener("touchstart", function (e) { e.preventDefault(); startRecording(); }, { passive: false });
-      talkBtn.addEventListener("touchend", function (e) { e.preventDefault(); stopRecording(); }, { passive: false });
+      talkBtn.addEventListener("mousedown", pressStart);
+      talkBtn.addEventListener("mouseup", pressEnd);
+      talkBtn.addEventListener("mouseleave", pressEnd);
+      talkBtn.addEventListener("touchstart", function (e) { e.preventDefault(); pressStart(); }, { passive: false });
+      talkBtn.addEventListener("touchend", function (e) { e.preventDefault(); pressEnd(); }, { passive: false });
+      talkBtn.addEventListener("touchcancel", function (e) { e.preventDefault(); pressEnd(); }, { passive: false });
+      // Keyboard: hold Space on the focused button.
+      talkBtn.addEventListener("keydown", function (e) {
+        if (!isSpace(e)) return;
+        e.preventDefault();
+        if (!e.repeat && !wantRecording) pressStart();
+      });
+      talkBtn.addEventListener("keyup", function (e) {
+        if (!isSpace(e)) return;
+        e.preventDefault();
+        pressEnd();
+      });
+      talkBtn.addEventListener("blur", pressEnd);
     })();
   </script>
 </body>
