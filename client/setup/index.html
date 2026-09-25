@@ -906,9 +906,10 @@
 
     function renderTTSPicker() {
       var group = makeGroup("Voice engine");
-      var saved = localStorage.getItem("qantara_tts_engine") || "piper";
+      var saved = localStorage.getItem("qantara_tts_engine") || "auto";
       var options = [
-        { id: "piper", label: "Piper — fast, neutral (default)" },
+        { id: "auto", label: "Automatic — best available voice per language (default)" },
+        { id: "piper", label: "Piper — fast, neutral; needed for Arabic" },
         { id: "kokoro", label: "Kokoro — balanced" },
         { id: "chatterbox", label: "Chatterbox — expressive (requires extra install)" },
       ];
@@ -928,7 +929,7 @@
       var hint = document.createElement("div");
       hint.className = "backend-hint";
       hint.style.marginTop = "6px";
-      hint.textContent = "Chatterbox needs: pip install -e \".[chatterbox]\" and a ~500MB model download. Voice change takes effect on next server restart.";
+      hint.textContent = "Chatterbox needs: pip install -e \".[chatterbox]\" and a ~500MB model download. The voice engine switches as soon as you press Start.";
       group.appendChild(hint);
       return group;
     }
@@ -1560,12 +1561,20 @@
             return;
           }
           localStorage.setItem("qantara_backend", JSON.stringify(payload));
+          if (data.tts && data.tts.applied === false) {
+            // The backend is configured; only the voice engine switch failed.
+            // Tell the user which engine is still active, then continue.
+            statusMsg.textContent = "Voice engine not changed (" + (data.tts.error || "unavailable") +
+              "); still using " + (data.tts.current || "the current engine") + ".";
+            statusMsg.className = "status-msg error";
+          }
           // Warmup step — preload the model so the first voice turn is
           // fast. Backends without a model (mock) or without a preload
           // primitive (openclaw, custom bridges) short-circuit quickly.
           var needsWarmup = payload.type === "ollama" || payload.type === "openai_compatible";
           if (!needsWarmup) {
-            window.location.href = "/spike";
+            var ttsFailed = data.tts && data.tts.applied === false;
+            setTimeout(function () { window.location.href = "/spike"; }, ttsFailed ? 2500 : 0);
             return;
           }
           var stopOverlay = showWarmupOverlay(payload.model || payload.type);
