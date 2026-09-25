@@ -403,6 +403,15 @@ async def send_tone(session: Session) -> None:
         await session.emit("playback_stopped", "playback", {"reason": "tone_complete"})
 
 
+# Playback is paced against an absolute schedule that runs this far ahead of
+# real time: the first ~250 ms of each segment go out immediately and the
+# client keeps that cushion, instead of the server sleeping a full frame
+# after every send and the client starving at each frame boundary (V-4).
+PLAYBACK_LEAD_SECONDS = 0.25
+_pace_clock = time.monotonic
+_pace_sleep = asyncio.sleep
+
+
 async def send_pcm_samples(session: Session, samples: list[int], sample_rate: int, kind: str, engine: str | None = None, tts_started_ms: float | None = None, synthesis_ms: float | None = None, expected_generation: int | None = None) -> None:
     generation = session.playback_generation if expected_generation is None else expected_generation
     if generation != session.playback_generation:
@@ -410,27 +419,45 @@ async def send_pcm_samples(session: Session, samples: list[int], sample_rate: in
     await session.emit("playback_started", "playback", {"kind": kind, "sample_rate": sample_rate})
     sent_any = False
     first_frame_sent = False
-    for offset in range(0, len(samples), FRAME_SAMPLES):
-        if generation != session.playback_generation:
+    schedule_start = _pace_clock()
+    sent_seconds = 0.0
+    try:
+        for offset in range(0, len(samples), FRAME_SAMPLES):
+            # Checked before every frame, so a barge-in stops playback within
+            # one frame even while the lead is being sent.
+            if generation != session.playback_generation:
+                await safe_send_str(session, {"type": "playback_stopped", "reason": "cleared", "kind": kind})
+                await session.emit("playback_stopped", "playback", {"reason": "cleared"})
+                return
+            frame = samples[offset:offset + FRAME_SAMPLES]
+            if not await safe_send_bytes(session, encode_pcm_frame(frame)):
+                return
+            session.frames_out += 1
+            sent_any = True
+            if not first_frame_sent:
+                first_frame_sent = True
+                first_audio_ms = round((time.monotonic() * 1000) - tts_started_ms, 3) if tts_started_ms is not None else None
+                await safe_send_str(session, {"type": "playback_metrics", "engine": engine or "synthetic", "kind": kind, "tts_to_first_audio_ms": first_audio_ms, "synthesis_ms": synthesis_ms})
+                await session.emit("playback_first_frame_sent", "playback", {"kind": kind, "tts_to_first_audio_ms": first_audio_ms, "synthesis_ms": synthesis_ms})
+                if session.state == "thinking":
+                    await session.set_state("speaking", reason="playback_first_frame_sent")
+                if session.current_turn_phase == "thinking":
+                    session.current_turn_phase = "speaking"
+            await session.emit("output_audio_frame_sent", "playback", {"frame_index": session.frames_out, "frame_samples": len(frame), "sample_rate": sample_rate, "kind": kind})
+            sent_seconds += len(frame) / sample_rate
+            ahead = sent_seconds - (_pace_clock() - schedule_start)
+            if ahead > PLAYBACK_LEAD_SECONDS:
+                await _pace_sleep(ahead - PLAYBACK_LEAD_SECONDS)
+            else:
+                # Stay cooperative while sending the lead.
+                await asyncio.sleep(0)
+    except asyncio.CancelledError:
+        if sent_any:
+            # Barge-in cancelled this segment mid-playback: tell the client
+            # playback stopped so it can re-arm.
             await safe_send_str(session, {"type": "playback_stopped", "reason": "cleared", "kind": kind})
             await session.emit("playback_stopped", "playback", {"reason": "cleared"})
-            return
-        frame = samples[offset:offset + FRAME_SAMPLES]
-        if not await safe_send_bytes(session, encode_pcm_frame(frame)):
-            return
-        session.frames_out += 1
-        sent_any = True
-        if not first_frame_sent:
-            first_frame_sent = True
-            first_audio_ms = round((time.monotonic() * 1000) - tts_started_ms, 3) if tts_started_ms is not None else None
-            await safe_send_str(session, {"type": "playback_metrics", "engine": engine or "synthetic", "kind": kind, "tts_to_first_audio_ms": first_audio_ms, "synthesis_ms": synthesis_ms})
-            await session.emit("playback_first_frame_sent", "playback", {"kind": kind, "tts_to_first_audio_ms": first_audio_ms, "synthesis_ms": synthesis_ms})
-            if session.state == "thinking":
-                await session.set_state("speaking", reason="playback_first_frame_sent")
-            if session.current_turn_phase == "thinking":
-                session.current_turn_phase = "speaking"
-        await session.emit("output_audio_frame_sent", "playback", {"frame_index": session.frames_out, "frame_samples": len(frame), "sample_rate": sample_rate, "kind": kind})
-        await asyncio.sleep(len(frame) / sample_rate)
+        raise
     if sent_any:
         reason = f"{kind}_complete"
         await safe_send_str(session, {"type": "playback_stopped", "reason": reason, "kind": kind})
