@@ -1263,8 +1263,15 @@ async def _finish_turn(session: Session, turn: TurnState, final_text: str | None
             # Keep the turn active until its queued speech has played. Speech
             # whose generation is stale (barge-in) is not waited for.
             await asyncio.wait({speech_task})
-        if turn.cancel_requested and turn.teardown_task is not None:
-            await turn.interrupt_announced.wait()
+        teardown = turn.teardown_task
+        if turn.cancel_requested and teardown is not None and not turn.interrupt_announced.is_set():
+            # Let the teardown announce the interruption before this turn
+            # reports its end state (it may never run if it was cancelled).
+            announced = asyncio.ensure_future(turn.interrupt_announced.wait())
+            try:
+                await asyncio.wait({announced, teardown}, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                announced.cancel()
     except asyncio.CancelledError:
         cancelled_during_cleanup = True
     if turn.cancel_requested:
