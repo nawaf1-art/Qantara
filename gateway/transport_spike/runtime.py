@@ -6,6 +6,7 @@ import os
 import sys
 import time
 import uuid
+from array import array
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -20,6 +21,7 @@ from gateway.transport_spike.common import (
     REPO_ROOT,
     SESSION_STORE_TTL_MS,
     TARGET_SAMPLE_RATE,
+    UtteranceBuffer,
     utc_now,
 )
 from providers.factory import create_stt_provider, create_tts_provider
@@ -745,8 +747,9 @@ class Session:
         self.frames_out = 0
         self.playback_generation = 0
         self.last_vad_state = "silence"
-        self.recent_pcm: list[int] = []
-        self.recent_pcm_limit = TARGET_SAMPLE_RATE * 6
+        # The current user utterance (Q-01): pre-roll + speech + endpoint
+        # silence, capped by QANTARA_MAX_UTTERANCE_MS, cleared on submit.
+        self.utterance = UtteranceBuffer(sample_rate=TARGET_SAMPLE_RATE)
         self.last_tts_started_ms: float | None = None
         self.current_turn_handle: str | None = None
         self.current_turn_task: asyncio.Task | None = None
@@ -780,6 +783,15 @@ class Session:
         self.mesh_should_respond: bool = True
         self.event_timeline: list[dict[str, Any]] = []
         self.transcript_items: list[dict[str, Any]] = []
+
+    @property
+    def recent_pcm(self) -> array:
+        """Backward-compatible view of the current utterance audio."""
+        return self.utterance.snapshot()
+
+    @recent_pcm.setter
+    def recent_pcm(self, samples: list[int] | array) -> None:
+        self.utterance.replace(samples)
 
     async def set_state(self, new_state: str, reason: str | None = None) -> None:
         if new_state not in SESSION_STATES:

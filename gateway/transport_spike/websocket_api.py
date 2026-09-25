@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from typing import Any
 
 from aiohttp import WSCloseCode, WSMsgType, web
 
@@ -16,6 +17,7 @@ from gateway.transport_spike.speech import (
     cancel_active_turn,
     maybe_run_election_and_claim,
     refresh_adapter_health,
+    safe_send_str,
     send_tone,
     start_assistant_turn,
     start_partial_loop,
@@ -47,6 +49,11 @@ async def _serve_websocket(
 ) -> web.WebSocketResponse:
     ws = web.WebSocketResponse(max_msg_size=MAX_WEBSOCKET_MESSAGE_BYTES, heartbeat=30.0)
     await ws.prepare(request)
+    return await run_websocket_session(ws, runtime)
+
+
+async def run_websocket_session(ws: Any, runtime: GatewayRuntime) -> Any:
+    """Serve one browser session over an already-prepared WebSocket."""
     session = Session(ws, runtime)
     await session.emit("session_created", "gateway", {})
     await session.emit("session_connected", "gateway", {})
@@ -129,8 +136,10 @@ async def _serve_websocket(
                     await session.emit("session_updated", "gateway", session_payload)
                     await ws.send_str(json.dumps({"type": "session_updated", **session_payload}))
                 elif message_type == "mic_stream_started":
+                    session.utterance.stream_started()
                     await session.emit("mic_stream_started", "browser", {"sample_rate": payload.get("sample_rate", TARGET_SAMPLE_RATE)})
                 elif message_type == "mic_stream_stopped":
+                    session.utterance.stream_stopped()
                     await session.emit("mic_stream_stopped", "browser", {})
                 elif message_type == "request_tone":
                     await session.emit("assistant_output_started", "gateway", {"kind": "synthetic_tone"})
@@ -156,47 +165,7 @@ async def _serve_websocket(
                     else:
                         await session.emit("recoverable_error", "gateway", {"component": "control", "message": "empty mock turn"})
                 elif message_type == "transcribe_recent_audio":
-                    await session.emit("transcription_requested", "browser", {"available_samples": len(session.recent_pcm), "engine": session.runtime.stt.kind if session.runtime.stt.available else "fallback", "submit_turn": bool(payload.get("submit_turn"))})
-                    if not session.recent_pcm:
-                        await session.websocket.send_str(json.dumps({"type": "transcript_result", "text": "", "engine": "none"}))
-                    elif session.runtime.stt.available:
-                        try:
-                            from gateway.transport_spike.language_resolution import resolve_effective_language
-                            stt_result = await session.runtime.stt.transcribe(session.recent_pcm, TARGET_SAMPLE_RATE)
-                            text = stt_result.text if hasattr(stt_result, "text") else str(stt_result)
-                            detected_language = getattr(stt_result, "language", None)
-                            language_probability = getattr(stt_result, "language_probability", None)
-                            duration_ms = 1000.0 * len(session.recent_pcm) / max(TARGET_SAMPLE_RATE, 1)
-                            effective_language = resolve_effective_language(
-                                detected=detected_language,
-                                probability=language_probability,
-                                duration_ms=duration_ms,
-                                primary_language=session.primary_language,
-                                transcript=text,
-                            )
-                            session.input_language = effective_language
-                            await session.emit("final_transcript_ready", "speech", {"char_count": len(text), "engine": session.runtime.stt.kind, "language": effective_language, "detected_language": detected_language, "language_probability": language_probability})
-                            await session.websocket.send_str(json.dumps({"type": "transcript_result", "text": text, "engine": session.runtime.stt.kind, "language": effective_language, "detected_language": detected_language}))
-                            if payload.get("submit_turn") and text.strip():
-                                if getattr(session, "mesh_should_respond", True):
-                                    await start_assistant_turn(session, text.strip())
-                                else:
-                                    await session.emit(
-                                        "turn_deferred_to_peer", "session",
-                                        {"reason": "mesh_election_lost"},
-                                    )
-                                    await session.websocket.send_str(json.dumps({
-                                        "type": "turn_deferred_to_peer",
-                                    }))
-                            session.recent_pcm.clear()
-                        except Exception as exc:
-                            await session.emit("recoverable_error", "speech", {"component": "stt", "message": str(exc), "engine": session.runtime.stt.kind})
-                            await session.websocket.send_str(json.dumps({"type": "transcript_result", "text": "", "engine": session.runtime.stt.kind, "error": str(exc)}))
-                    else:
-                        fallback = f"[stt unavailable] captured {len(session.recent_pcm)} samples"
-                        await session.emit("final_transcript_ready", "speech", {"char_count": len(fallback), "engine": "fallback"})
-                        await session.websocket.send_str(json.dumps({"type": "transcript_result", "text": fallback, "engine": "fallback"}))
-                        session.recent_pcm.clear()
+                    await transcribe_utterance(session, bool(payload.get("submit_turn")))
                 elif message_type == "endpoint_candidate":
                     await session.emit("endpoint_timer_started", "browser", {"silence_ms": payload.get("silence_ms")})
                 elif message_type == "vad_state":
@@ -204,6 +173,7 @@ async def _serve_websocket(
                     previous_state = session.last_vad_state
                     session.last_vad_state = new_state
                     if new_state == "speech":
+                        session.utterance.speech_started()
                         await session.emit("speech_start_detected", "browser", {"state": new_state, "rms": payload.get("rms")})
                         if previous_state != "speech":
                             await session.set_state("listening", reason="speech_start_detected")
@@ -213,6 +183,7 @@ async def _serve_websocket(
                             local_rms = float(payload.get("rms") or 0.0)
                             session.mesh_should_respond = await maybe_run_election_and_claim(session, local_rms)
                     else:
+                        session.utterance.speech_ended()
                         await session.emit("speech_end_detected", "browser", {"state": new_state, "rms": payload.get("rms")})
                         if previous_state == "speech":
                             stop_partial_loop(session)
@@ -241,10 +212,7 @@ async def _serve_websocket(
                     continue
                 session.frames_in += 1
                 samples = (len(msg.data) - 1) // 2
-                for i in range(1, len(msg.data), 2):
-                    session.recent_pcm.append(int.from_bytes(msg.data[i:i + 2], "little", signed=True))
-                if len(session.recent_pcm) > session.recent_pcm_limit:
-                    session.recent_pcm = session.recent_pcm[-session.recent_pcm_limit:]
+                session.utterance.append_pcm(memoryview(msg.data)[1:])
                 await session.emit("input_audio_frame_received", "gateway", {"frame_index": session.frames_in, "frame_bytes": len(msg.data), "frame_samples": samples, "sample_rate": TARGET_SAMPLE_RATE})
             elif msg.type == WSMsgType.ERROR:
                 await session.emit("terminal_error", "gateway", {"message": str(ws.exception())})
@@ -258,6 +226,49 @@ async def _serve_websocket(
         await session.emit("socket_disconnected", "gateway", close_payload)
         await session.emit("session_closed", "gateway", {**close_payload, "frames_in": session.frames_in, "frames_out": session.frames_out, "turns_completed": session.turns_completed, "playback_generation": session.playback_generation})
     return ws
+
+
+async def transcribe_utterance(session: Session, submit_turn: bool) -> None:
+    """Transcribe the current utterance (Q-01) and optionally submit it."""
+    stt = session.runtime.stt
+    available_samples = len(session.utterance)
+    await session.emit("transcription_requested", "browser", {"available_samples": available_samples, "engine": stt.kind if stt.available else "fallback", "submit_turn": submit_turn})
+    if not available_samples:
+        await safe_send_str(session, {"type": "transcript_result", "text": "", "engine": "none"})
+        return
+    samples, speech_ms = session.utterance.take()
+    if not stt.available:
+        fallback = f"[stt unavailable] captured {len(samples)} samples"
+        await session.emit("final_transcript_ready", "speech", {"char_count": len(fallback), "engine": "fallback"})
+        await safe_send_str(session, {"type": "transcript_result", "text": fallback, "engine": "fallback"})
+        return
+    try:
+        from gateway.transport_spike.language_resolution import resolve_effective_language
+
+        stt_result = await stt.transcribe(samples.tolist(), TARGET_SAMPLE_RATE)
+        text = stt_result.text if hasattr(stt_result, "text") else str(stt_result)
+        detected_language = getattr(stt_result, "language", None)
+        language_probability = getattr(stt_result, "language_probability", None)
+        effective_language = resolve_effective_language(
+            detected=detected_language,
+            probability=language_probability,
+            duration_ms=speech_ms,
+            primary_language=session.primary_language,
+            transcript=text,
+        )
+        session.input_language = effective_language
+        await session.emit("final_transcript_ready", "speech", {"char_count": len(text), "engine": stt.kind, "language": effective_language, "detected_language": detected_language, "language_probability": language_probability, "speech_ms": round(speech_ms, 1), "audio_ms": round(1000.0 * len(samples) / TARGET_SAMPLE_RATE, 1)})
+        await safe_send_str(session, {"type": "transcript_result", "text": text, "engine": stt.kind, "language": effective_language, "detected_language": detected_language})
+    except Exception as exc:
+        await session.emit("recoverable_error", "speech", {"component": "stt", "message": str(exc), "engine": stt.kind})
+        await safe_send_str(session, {"type": "transcript_result", "text": "", "engine": stt.kind, "error": str(exc)})
+        return
+    if submit_turn and text.strip():
+        if getattr(session, "mesh_should_respond", True):
+            await start_assistant_turn(session, text.strip())
+        else:
+            await session.emit("turn_deferred_to_peer", "session", {"reason": "mesh_election_lost"})
+            await safe_send_str(session, {"type": "turn_deferred_to_peer"})
 
 
 async def api_discovery_scan_handler(request: web.Request) -> web.StreamResponse:

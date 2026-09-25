@@ -65,7 +65,7 @@ async def _partial_tick_loop(session: Session, tick_interval_sec: float) -> None
             await asyncio.sleep(tick_interval_sec)
             result = await compute_partial_transcript(
                 stt,
-                list(session.recent_pcm),
+                session.utterance.snapshot().tolist(),
                 TARGET_SAMPLE_RATE,
                 session.partial_last_text,
             )
