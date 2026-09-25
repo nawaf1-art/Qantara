@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shlex
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -171,13 +172,28 @@ class MCPLongLivedSessionTests(unittest.IsolatedAsyncioTestCase):
         pid = int(_field(self._final(await self._turn(session, "hello")), "pid"))
         await self.adapter.aclose()
         for _ in range(50):
-            try:
-                os.kill(pid, 0)
-            except ProcessLookupError:
+            if not _pid_alive(pid):
                 break
             await asyncio.sleep(0.1)
         else:
             self.fail("MCP server process still running after aclose()")
+
+
+def _pid_alive(pid: int) -> bool:
+    """Portable liveness check. On Windows ``os.kill(pid, 0)`` would call
+    TerminateProcess, so ask ``tasklist`` instead."""
+    if sys.platform == "win32":
+        result = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True, check=False
+        )
+        return str(pid) in result.stdout
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 class MCPErrorReadabilityTests(unittest.IsolatedAsyncioTestCase):

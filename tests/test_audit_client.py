@@ -26,6 +26,7 @@ def _run_check(script: str, check: str) -> subprocess.CompletedProcess[str]:
         cwd=str(FIXTURES),
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=120,
     )
 
@@ -145,13 +146,14 @@ class ClientScriptSyntaxTests(unittest.TestCase):
                         input=match.group(2),
                         capture_output=True,
                         text=True,
+                        encoding="utf-8",
                         timeout=60,
                     )
                     self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_worklet_module_parses(self) -> None:
         worklet = REPO_ROOT / "client" / "transport-spike" / "mic-capture-worklet.js"
-        result = subprocess.run([NODE, "--check", str(worklet)], capture_output=True, text=True, timeout=60)
+        result = subprocess.run([NODE, "--check", str(worklet)], capture_output=True, text=True, encoding="utf-8", timeout=60)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_check_lists_match(self) -> None:
@@ -161,6 +163,7 @@ class ClientScriptSyntaxTests(unittest.TestCase):
                 [NODE, str(FIXTURES / cls.script), "--list"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 timeout=60,
             )
             listed = set(result.stdout.split())
