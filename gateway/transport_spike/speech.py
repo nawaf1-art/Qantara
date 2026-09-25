@@ -7,6 +7,7 @@ import os
 import re
 import time
 import unicodedata
+import uuid
 
 from adapters.base import make_activity_event
 from gateway.transport_spike.common import (
@@ -16,7 +17,7 @@ from gateway.transport_spike.common import (
     TONE_HZ,
     TONE_SECONDS,
 )
-from gateway.transport_spike.runtime import Session
+from gateway.transport_spike.runtime import Session, TurnState
 from providers.stt.base import STTProvider
 
 PARTIAL_TICK_INTERVAL_SEC = 0.4
@@ -543,68 +544,132 @@ def apply_voice_transforms(
     }
 
 
-async def cancel_active_turn(session: Session, reason: str) -> None:
-    if session.runtime_session_handle is None or session.current_turn_task is None or session.current_turn_task.done():
-        return
-    if session.current_turn_handle is None:
-        # Barge-in landed while the backend was still accepting the turn
-        # (submit_user_turn in flight, no handle to cancel yet). Record the
-        # intent; stream_assistant_turn honors it the moment a handle exists,
-        # instead of silently dropping the barge-in and streaming a ghost turn.
-        session.turn_cancel_requested = True
-        return
-    # Past the guard => a real turn was active and is about to be cancelled.
-    # That's the semantic for "interrupted" regardless of what session.state
-    # currently reads — the client may have sent vad_state concurrently and
-    # already bumped us into "listening" before this coroutine got scheduled.
-    partial_text = session.current_turn_buffered_text
-    # Phase is explicit state carried with the turn; falls back to "thinking"
-    # because reaching here means the turn was mid-flight and the adapter
-    # hadn't completed (otherwise the task would be done).
-    interrupted_during_state = session.current_turn_phase or "thinking"
-    await session.set_state("interrupted", reason=reason)
-    await session.emit("turn_cancel_requested", "adapter", {"turn_handle": session.current_turn_handle, "reason": reason})
+def _turn_cancel_grace_seconds() -> float:
     try:
-        result = await session.binding.adapter.cancel_turn(session.runtime_session_handle, session.current_turn_handle, {"reason": reason})
-        await session.emit("turn_cancel_acknowledged", "adapter", {"turn_handle": session.current_turn_handle, "result": result})
-        await safe_send_str(session, {"type": "cancel_status", "result": result})
+        grace_ms = float(os.environ.get("QANTARA_TURN_CANCEL_GRACE_MS", "750"))
+    except ValueError:
+        grace_ms = 750.0
+    if not math.isfinite(grace_ms):
+        grace_ms = 750.0
+    return max(grace_ms, 0.0) / 1000.0
+
+
+# How long a cancel request waits for the adapter's cancel_turn call before
+# giving up on it (it keeps running in the background, retained).
+ADAPTER_CANCEL_WAIT_SECONDS = 5.0
+
+
+def _cancel_speech_tasks(session: Session) -> None:
+    for task in list(session.speech_tasks):
+        if not task.done():
+            task.cancel()
+
+
+def request_turn_cancel(session: Session, reason: str) -> asyncio.Task | None:
+    """Claim the active turn for cancellation, synchronously.
+
+    Runs to completion before any await: marks the turn cancelled, stops its
+    output (generation bump + speech tasks cancelled), and schedules the
+    teardown (state change, adapter cancel, ``turn_interrupted``, the
+    grace-then-force watchdog) as a retained background task. Returns that
+    task, or None when there is no active turn or it is already being
+    cancelled, so concurrent or re-entrant cancels are no-ops.
+    """
+    turn = session.current_turn
+    task = session.current_turn_task
+    if turn is None or task is None or task.done() or turn.cancel_requested:
+        return None
+    turn.cancel_requested = True
+    turn.cancel_reason = reason
+    turn.partial_text = session.current_turn_buffered_text
+    turn.interrupted_during_state = session.current_turn_phase or "thinking"
+    session.turn_cancel_requested = True
+    if session.speech_generation == turn.speech_generation:
+        # The caller did not already clear playback: stop the turn's audio.
+        session.playback_generation += 1
+        session.speech_generation = max(session.speech_generation + 1, session.playback_generation)
+    _cancel_speech_tasks(session)
+    teardown = asyncio.create_task(_run_turn_cancel(session, turn, task))
+    turn.teardown_task = teardown
+    session.runtime.retain_task(teardown)
+    return teardown
+
+
+async def cancel_active_turn(session: Session, reason: str) -> None:
+    """Request a cancel and wait for its teardown.
+
+    The WebSocket receive loop uses ``request_turn_cancel`` directly so it
+    never blocks on teardown; this awaiting form is kept for HTTP control
+    handlers and tests. A second concurrent call returns immediately.
+    """
+    teardown = request_turn_cancel(session, reason)
+    if teardown is not None:
+        await asyncio.wait({teardown})
+
+
+async def _send_cancel_status(session: Session, turn: TurnState, result: dict) -> None:
+    if turn.cancel_status_sent:
+        return
+    turn.cancel_status_sent = True
+    await session.emit("turn_cancel_acknowledged", "adapter", {"turn_handle": turn.handle, "result": result})
+    await safe_send_str(session, {"type": "cancel_status", "result": result})
+
+
+async def _send_adapter_cancel(session: Session, turn: TurnState) -> None:
+    if turn.adapter_cancel_sent or turn.handle is None or session.binding is None:
+        return
+    turn.adapter_cancel_sent = True
+    try:
+        result = await session.binding.adapter.cancel_turn(session.runtime_session_handle, turn.handle, {"reason": turn.cancel_reason})
     except Exception as exc:
-        await session.emit("recoverable_error", "adapter", {"component": "cancel", "message": str(exc), "turn_handle": session.current_turn_handle})
-    # Always emit turn_interrupted for a real cancel of an active turn, even
-    # if partial_text is empty. Adapters that buffer their entire response
-    # (OpenClaw sends one final delta at the very end) would otherwise
-    # suppress every voice barge-in during the thinking phase.
-    resumable = session.runtime_session_handle is not None
+        await session.emit("recoverable_error", "adapter", {"component": "cancel", "message": str(exc), "turn_handle": turn.handle})
+        return
+    await _send_cancel_status(session, turn, result if isinstance(result, dict) else {"status": str(result)})
+
+
+async def _announce_turn_interrupted(session: Session, turn: TurnState) -> None:
+    if turn.interrupted_emitted:
+        return
+    turn.interrupted_emitted = True
     payload = {
-        "partial_text": partial_text,
-        "resumable": resumable,
-        "interrupted_during_state": interrupted_during_state,
+        "partial_text": turn.partial_text,
+        "interrupted_during_state": turn.interrupted_during_state or "thinking",
     }
     await session.emit("turn_interrupted", "session", payload)
     await safe_send_str(session, {"type": "turn_interrupted", **payload})
-    # The adapter has been asked to cancel, but the gateway must not rely on
-    # adapter cooperation: a wedged backend that never ends its stream would
-    # otherwise pin the turn task (and the session) forever. Give the task a
-    # bounded grace window to unwind cooperatively, then force-cancel it.
-    turn_task = session.current_turn_task
-    if turn_task is not None and not turn_task.done() and turn_task is not asyncio.current_task():
-        grace_seconds = max(float(os.environ.get("QANTARA_TURN_CANCEL_GRACE_MS", "750")), 0.0) / 1000.0
-        try:
-            await asyncio.wait_for(asyncio.shield(turn_task), timeout=grace_seconds)
-        except TimeoutError:
-            await session.emit("turn_cancel_forced", "gateway", {"turn_handle": session.current_turn_handle, "grace_ms": grace_seconds * 1000})
+
+
+async def _run_turn_cancel(session: Session, turn: TurnState, turn_task: asyncio.Task) -> None:
+    try:
+        # Interrupted regardless of what session.state reads now: the client
+        # may have sent vad_state concurrently and bumped us to "listening".
+        if session.current_turn is turn and not turn_task.done():
+            await session.set_state("interrupted", reason=turn.cancel_reason)
+        await session.emit("turn_cancel_requested", "adapter", {"turn_handle": turn.handle, "reason": turn.cancel_reason})
+        # Always announce a real cancel, even with empty partial text:
+        # adapters that buffer their whole reply (OpenClaw) would otherwise
+        # suppress every barge-in during the thinking phase.
+        await _announce_turn_interrupted(session, turn)
+    finally:
+        turn.interrupt_announced.set()
+    if turn.handle is None:
+        # Barge-in during session start / turn acceptance: the turn loop
+        # honors it the moment it has (or fails to get) a handle.
+        return
+    adapter_cancel = asyncio.create_task(_send_adapter_cancel(session, turn))
+    session.runtime.retain_task(adapter_cancel)
+    # Do not rely on adapter cooperation: a wedged backend that never ends
+    # its stream would pin the turn task forever. Give it a bounded grace
+    # window to unwind, then force-cancel it.
+    grace_seconds = _turn_cancel_grace_seconds()
+    if not turn_task.done():
+        done, _pending = await asyncio.wait({turn_task}, timeout=grace_seconds)
+        if not done:
+            await session.emit("turn_cancel_forced", "gateway", {"turn_handle": turn.handle, "grace_ms": grace_seconds * 1000})
             turn_task.cancel()
-            try:
-                await turn_task
-            except asyncio.CancelledError:
-                if not turn_task.cancelled():
-                    raise
-            except Exception:
-                pass
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            pass
+            await asyncio.wait({turn_task})
+    if not adapter_cancel.done():
+        await asyncio.wait({adapter_cancel}, timeout=ADAPTER_CANCEL_WAIT_SECONDS)
 
 
 async def speak_text(
@@ -640,13 +705,33 @@ async def speak_text(
             synthesis_started_ms = time.monotonic() * 1000
             samples, resolved_voice, fallback_reason = await tts.synthesize(spoken_text, voice_id=selected_voice_id, speech_rate=effective_speech_rate, expressiveness=session.expressiveness)
             synthesis_ms = round((time.monotonic() * 1000) - synthesis_started_ms, 3)
-            session.voice_id = resolved_voice.voice_id
+            # The resolved voice is per segment (a turn may pick a voice for its
+            # output language); it must not stick to the session (V-9).
             await session.emit("tts_chunk_ready", "playback", {"char_count": len(spoken_text), "engine": tts.kind, "sample_count": len(samples), "synthesis_ms": synthesis_ms, "voice_id": resolved_voice.voice_id, "requested_voice_id": session.requested_voice_id or resolved_voice.voice_id, "speech_rate": effective_speech_rate, "session_speech_rate": session.speech_rate, "fallback_reason": fallback_reason, "source_char_count": len(text)})
             await send_pcm_samples(session, samples, resolved_voice.sample_rate, f"{tts.kind}_tts", engine=tts.kind, tts_started_ms=session.last_tts_started_ms, synthesis_ms=synthesis_ms, expected_generation=expected_generation)
             return
         except Exception as exc:
             await session.emit("recoverable_error", "playback", {"component": "tts", "message": str(exc), "engine": tts.kind})
             await safe_send_str(session, {"type": "tts_status", "engine": "synthetic", "available": False, "reason": f"{tts.kind} failed: {exc}"})
+
+
+async def _await_previous_speech(previous_task: asyncio.Task | None) -> None:
+    """Wait for the previous segment without inheriting its outcome.
+
+    ``asyncio.wait`` does not propagate the previous task's cancellation or
+    exception, so a segment cancelled by a barge-in cannot silence the next
+    reply (Q-05a); the generation check that follows decides whether to
+    speak.
+    """
+    if previous_task is not None and previous_task is not asyncio.current_task():
+        await asyncio.wait({previous_task})
+
+
+def _track_speech_task(session: Session, task: asyncio.Task) -> asyncio.Task:
+    session.speech_tasks.add(task)
+    task.add_done_callback(session.speech_tasks.discard)
+    session.speech_task = task
+    return task
 
 
 async def _run_speech_segment(
@@ -657,13 +742,7 @@ async def _run_speech_segment(
     voice_id: str | None = None,
     language: str | None = None,
 ) -> None:
-    if previous_task is not None:
-        try:
-            await previous_task
-        except asyncio.CancelledError:
-            return
-        except Exception:
-            return
+    await _await_previous_speech(previous_task)
     if expected_generation != session.speech_generation:
         return
     await speak_text(session, text, expected_generation=expected_generation, voice_id=voice_id, language=language)
@@ -681,7 +760,7 @@ def enqueue_speech(
         return
     previous_task = session.speech_task
     generation = frozen_generation if frozen_generation is not None else session.speech_generation
-    session.speech_task = asyncio.create_task(_run_speech_segment(previous_task, session, text, generation, voice_id, language))
+    _track_speech_task(session, asyncio.create_task(_run_speech_segment(previous_task, session, text, generation, voice_id, language)))
 
 
 async def _run_control_speech_segment(
@@ -691,13 +770,7 @@ async def _run_control_speech_segment(
     expected_generation: int,
     voice_id: str | None = None,
 ) -> None:
-    if previous_task is not None:
-        try:
-            await previous_task
-        except asyncio.CancelledError:
-            return
-        except Exception:
-            return
+    await _await_previous_speech(previous_task)
     if expected_generation != session.speech_generation:
         return
     # If a real backend turn is in flight, play the injected audio but do NOT
@@ -729,16 +802,23 @@ def enqueue_control_speech(
         return
     previous_task = session.speech_task
     generation = frozen_generation if frozen_generation is not None else session.speech_generation
-    session.speech_task = asyncio.create_task(
+    _track_speech_task(session, asyncio.create_task(
         _run_control_speech_segment(previous_task, session, text, generation, voice_id)
-    )
+    ))
+
+
+def _enqueue_turn_speech(session: Session, turn: TurnState, chunk: str, voice_id: str | None, language: str | None) -> None:
+    if turn.cancel_requested or not chunk:
+        return
+    enqueue_speech(session, chunk, turn.speech_generation, voice_id, language=language)
+    turn.spoken_text = f"{turn.spoken_text} {chunk}" if turn.spoken_text else chunk
 
 
 def _enqueue_complete_sentences(
     session: Session,
+    turn: TurnState,
     buffered: str,
     spoken_so_far: str,
-    generation: int,
     voice_id: str | None,
     language: str | None,
 ) -> str:
@@ -747,187 +827,339 @@ def _enqueue_complete_sentences(
     unsent = buffered[len(spoken_so_far):]
     consumed = 0
     for end in find_speech_breaks(unsent, final=False):
-        chunk = unsent[consumed:end].strip()
-        if chunk:
-            enqueue_speech(session, chunk, generation, voice_id, language=language)
+        _enqueue_turn_speech(session, turn, unsent[consumed:end].strip(), voice_id, language)
         consumed = end
     rest = unsent[consumed:]
     if len(rest.strip()) >= SPEECH_FALLBACK_CHARS:
         cut = fallback_speech_cut(rest)
         if cut:
-            chunk = rest[:cut].strip(" \t,\u060c")
-            if chunk:
-                enqueue_speech(session, chunk, generation, voice_id, language=language)
+            _enqueue_turn_speech(session, turn, rest[:cut].strip(" \t,،"), voice_id, language)
             consumed += cut
     return buffered[:len(spoken_so_far) + consumed]
 
 
 def _enqueue_final_text(
     session: Session,
+    turn: TurnState,
     text: str,
-    generation: int,
     voice_id: str | None,
     language: str | None,
 ) -> None:
     """Enqueue the remaining text sentence by sentence (end of stream)."""
     consumed = 0
     for end in find_speech_breaks(text, final=True):
-        chunk = text[consumed:end].strip()
-        if chunk:
-            enqueue_speech(session, chunk, generation, voice_id, language=language)
+        _enqueue_turn_speech(session, turn, text[consumed:end].strip(), voice_id, language)
         consumed = end
-    tail = text[consumed:].strip()
-    if tail:
-        enqueue_speech(session, tail, generation, voice_id, language=language)
+    _enqueue_turn_speech(session, turn, text[consumed:].strip(), voice_id, language)
 
 
-async def stream_assistant_turn(session: Session, transcript: str) -> None:
-    await ensure_adapter_session(session)
-    session.turn_id = __import__("uuid").uuid4().hex
-    session.speech_generation = session.playback_generation
-    turn_speech_generation = session.speech_generation
-    await emit_turn_state(session, "active")
-    await session.set_state("thinking", reason="turn_submit_started")
-    session.record_transcript_item(role="user", text=transcript, source="browser", turn_id=session.turn_id)
-    await session.emit("turn_submit_started", "adapter", {"turn_id": session.turn_id, "transcript": transcript})
-    # Compose translation directive for the active mode (assistant by default
-    # if any translation mode is configured on the session; else empty).
-    from gateway.transport_spike.prompts import build_translation_directive
-    effective_language = session.input_language or session.primary_language
-    active_mode = session.translation_mode or ("assistant" if session.input_language else None)
-    output_language = resolve_turn_output_language(session, active_mode)
-    turn_voice_id = resolve_turn_voice_id(session, output_language)
-    translation_directive = ""
-    if active_mode is not None:
+def _failure_details(exc: BaseException, stage: str) -> tuple[str, str, bool]:
+    message = str(exc).strip() or type(exc).__name__
+    if len(message) > 300:
+        message = message[:297] + "..."
+    kind = getattr(exc, "failure_kind", None)
+    retriable = getattr(exc, "retriable", None)
+    if not isinstance(kind, str) or not kind:
+        if isinstance(exc, TimeoutError):
+            kind = "timeout"
+        elif stage in {"session_start", "submit"}:
+            kind = "backend_unavailable"
+        else:
+            kind = "backend_error"
+    if not isinstance(retriable, bool):
+        retriable = True
+    return message, kind, retriable
+
+
+async def _report_turn_failure(
+    session: Session,
+    turn: TurnState,
+    *,
+    message: str,
+    failure_kind: str | None,
+    retriable: bool | None,
+    stage: str,
+) -> None:
+    await session.emit("recoverable_error", "adapter", {"component": "turn", "stage": stage, "turn_handle": turn.handle, "message": message, "failure_kind": failure_kind, "retriable": retriable})
+    payload: dict = {"type": "turn_failed", "message": message}
+    if failure_kind is not None:
+        payload["failure_kind"] = failure_kind
+    if retriable is not None:
+        payload["retriable"] = retriable
+    await safe_send_str(session, payload)
+
+
+class _TurnStageError(Exception):
+    def __init__(self, stage: str, original: BaseException) -> None:
+        super().__init__(str(original))
+        self.stage = stage
+        self.original = original
+
+
+async def _start_session_and_submit(session: Session, turn: TurnState, transcript: str, turn_context: dict) -> str | None:
+    """Start (if needed) the backend session and submit the turn.
+
+    On failure, drop the (possibly stale) runtime session handle, start a
+    fresh backend session and retry once (Q-03). Returns None when the turn
+    was cancelled before it was submitted.
+    """
+    last_error: _TurnStageError | None = None
+    for attempt in range(2):
+        if turn.cancel_requested:
+            return None
+        stage = "session_start"
         try:
-            translation_directive = build_translation_directive(
-                mode=active_mode,
-                source=session.translation_source,
-                target=session.translation_target,
-                detected_language=effective_language,
-            )
-        except ValueError:
-            translation_directive = ""
-    turn_context: dict = {
-        "source": "transport_spike",
-        "modality": "voice",
-        "primary_language": session.primary_language,
-        "output_language": output_language,
-        "speech_rate": session.speech_rate,
-    }
-    optional_turn_context = {
-        "input_language": session.input_language,
-        "translation_mode": active_mode,
-        "translation_source": session.translation_source,
-        "translation_target": session.translation_target,
-        "translation_directive": translation_directive,
-        "voice_id": turn_voice_id or session.voice_id,
-        "requested_voice_id": session.requested_voice_id,
-    }
-    for key, value in optional_turn_context.items():
-        if value is not None and value != "":
-            turn_context[key] = value
-    buffered = ""
-    spoken_so_far = ""
-    saw_final = False
+            await ensure_adapter_session(session)
+            if turn.cancel_requested:
+                return None
+            stage = "submit"
+            return await session.binding.adapter.submit_user_turn(session.runtime_session_handle, transcript, turn_context)
+        except Exception as exc:
+            last_error = _TurnStageError(stage, exc)
+            if turn.cancel_requested:
+                return None
+            await session.emit("recoverable_error", "adapter", {"component": "turn", "stage": stage, "message": str(exc), "retrying": attempt == 0})
+            session.runtime_session_handle = None
+            session.runtime.save_session_state(session)
+    assert last_error is not None
+    raise last_error
+
+
+def _event_text(event: dict) -> str | None:
+    text = event.get("text")
+    return text if isinstance(text, str) else None
+
+
+async def stream_assistant_turn(
+    session: Session,
+    transcript: str,
+    *,
+    turn: TurnState | None = None,
+    previous_task: asyncio.Task | None = None,
+) -> None:
+    if turn is None:
+        turn = TurnState(turn_id=uuid.uuid4().hex)
+    session.current_turn = turn
+    if previous_task is not None and not previous_task.done():
+        # The previous turn is still tearing down after a barge-in; its
+        # watchdog force-cancels it within the grace window.
+        await asyncio.wait({previous_task}, timeout=_turn_cancel_grace_seconds() + 1.0)
+    session.turn_id = turn.turn_id
+    session.turn_cancel_requested = turn.cancel_requested
+    session.speech_generation = session.playback_generation
+    turn.speech_generation = session.speech_generation
     session.current_turn_buffered_text = ""
     session.current_turn_phase = "thinking"
+    buffered = ""
+    spoken_so_far = ""
+    final_text: str | None = None
     try:
-        # submit_user_turn stays INSIDE this try so the finally (clear_turn_state)
-        # always runs — even if the backend rejects the turn. Otherwise a
-        # turn_cancel_requested set during the accept window would leak to the
-        # next turn and make it self-cancel.
-        turn_handle = await session.binding.adapter.submit_user_turn(session.runtime_session_handle, transcript, turn_context)
+        await emit_turn_state(session, "active")
+        if not turn.cancel_requested:
+            await session.set_state("thinking", reason="turn_submit_started")
+        session.record_transcript_item(role="user", text=transcript, source="browser", turn_id=turn.turn_id)
+        await session.emit("turn_submit_started", "adapter", {"turn_id": turn.turn_id, "transcript": transcript})
+        # Compose translation directive for the active mode (assistant by default
+        # if any translation mode is configured on the session; else empty).
+        from gateway.transport_spike.prompts import build_translation_directive
+        effective_language = session.input_language or session.primary_language
+        active_mode = session.translation_mode or ("assistant" if session.input_language else None)
+        output_language = resolve_turn_output_language(session, active_mode)
+        turn_voice_id = resolve_turn_voice_id(session, output_language)
+        translation_directive = ""
+        if active_mode is not None:
+            try:
+                translation_directive = build_translation_directive(
+                    mode=active_mode,
+                    source=session.translation_source,
+                    target=session.translation_target,
+                    detected_language=effective_language,
+                )
+            except ValueError:
+                translation_directive = ""
+        turn_context: dict = {
+            "source": "transport_spike",
+            "modality": "voice",
+            "primary_language": session.primary_language,
+            "output_language": output_language,
+            "speech_rate": session.speech_rate,
+        }
+        optional_turn_context = {
+            "input_language": session.input_language,
+            "translation_mode": active_mode,
+            "translation_source": session.translation_source,
+            "translation_target": session.translation_target,
+            "translation_directive": translation_directive,
+            "voice_id": turn_voice_id or session.voice_id,
+            "requested_voice_id": session.requested_voice_id,
+        }
+        for key, value in optional_turn_context.items():
+            if value is not None and value != "":
+                turn_context[key] = value
+
+        turn_handle = await _start_session_and_submit(session, turn, transcript, turn_context)
+        if turn_handle is None:
+            return
+        turn.handle = turn_handle
         session.current_turn_handle = turn_handle
-        await session.emit("turn_submit_accepted", "adapter", {"turn_id": session.turn_id, "turn_handle": turn_handle})
-        if session.turn_cancel_requested:
-            # A barge-in arrived during the accept window; honor it now that a
-            # handle exists. We are the current turn task, so cancel_active_turn
-            # requests the backend cancel and emits turn_interrupted without
-            # force-cancelling us — then we fall through to the finally cleanup.
-            session.turn_cancel_requested = False
-            await cancel_active_turn(session, "barge_in_during_accept")
+        await session.emit("turn_submit_accepted", "adapter", {"turn_id": turn.turn_id, "turn_handle": turn_handle})
+        if turn.cancel_requested:
+            # A barge-in arrived while the backend was accepting the turn;
+            # honor it now that a handle exists.
+            await _send_adapter_cancel(session, turn)
             return
         await session.emit("assistant_output_started", "adapter", {"turn_handle": turn_handle})
-        async for event in session.binding.adapter.stream_assistant_output(session.runtime_session_handle, turn_handle):
-            event_type = event["type"]
-            if event_type == "assistant_text_delta":
-                buffered += event["text"]
-                session.current_turn_buffered_text = buffered
-                await session.emit("assistant_output_delta", "adapter", {"turn_handle": turn_handle, "delta_chars": len(event["text"]), "buffered_chars": len(buffered)})
-                if not await safe_send_str(session, {"type": "assistant_text_delta", "text": event["text"]}):
+        try:
+            async for event in session.binding.adapter.stream_assistant_output(session.runtime_session_handle, turn_handle):
+                if not isinstance(event, dict):
+                    continue
+                event_type = event.get("type")
+                if turn.cancel_requested:
+                    # After a cancel nothing more reaches the client or the
+                    # transcript (LC-5); only the acknowledgement matters.
+                    if event_type == "cancel_acknowledged":
+                        await _send_cancel_status(session, turn, {"status": "acknowledged"})
                     return
-                spoken_so_far = _enqueue_complete_sentences(session, buffered, spoken_so_far, turn_speech_generation, turn_voice_id, output_language)
-            elif event_type == "assistant_text_final":
-                saw_final = True
-                session.record_transcript_item(role="assistant", text=event["text"], source="adapter", turn_id=session.turn_id)
-                await session.emit("assistant_output_completed", "adapter", {"turn_handle": turn_handle, "final_chars": len(event["text"])})
-                if not await safe_send_str(session, {"type": "assistant_text_final", "text": event["text"]}):
+                if event_type == "assistant_text_delta":
+                    delta = _event_text(event)
+                    if not delta:
+                        continue
+                    buffered += delta
+                    session.current_turn_buffered_text = buffered
+                    await session.emit("assistant_output_delta", "adapter", {"turn_handle": turn_handle, "delta_chars": len(delta), "buffered_chars": len(buffered)})
+                    if not await safe_send_str(session, {"type": "assistant_text_delta", "text": delta}):
+                        return
+                    spoken_so_far = _enqueue_complete_sentences(session, turn, buffered, spoken_so_far, turn_voice_id, output_language)
+                elif event_type == "assistant_text_final":
+                    text = _event_text(event)
+                    if text is None:
+                        text = buffered
+                    final_text = text
+                    await session.emit("assistant_output_completed", "adapter", {"turn_handle": turn_handle, "final_chars": len(text)})
+                    if not await safe_send_str(session, {"type": "assistant_text_final", "text": text}):
+                        return
+                    # Speak the rest of what was streamed; the final text is for
+                    # the transcript only. Bridges may normalise their final
+                    # (drop '*', '#', newlines), so slicing it by the streamed
+                    # length would garble the tail (B-1).
+                    if buffered:
+                        remaining = buffered[len(spoken_so_far):]
+                    elif text.startswith(spoken_so_far):
+                        remaining = text[len(spoken_so_far):]
+                    else:
+                        remaining = text
+                    _enqueue_final_text(session, turn, remaining, turn_voice_id, output_language)
+                    spoken_so_far = buffered if buffered else text
+                elif event_type == "assistant_activity":
+                    # Re-validate through the protocol-v1 builder: adapter events
+                    # cross a trust boundary into the browser, so malformed
+                    # tool-call metadata is dropped here, not rendered.
+                    normalized = make_activity_event(
+                        activity_type=event.get("activity_type", "other"),
+                        summary=event.get("summary", ""),
+                        progress=event.get("progress"),
+                        tool_name=event.get("tool_name"),
+                        parameters=event.get("parameters") if isinstance(event.get("parameters"), dict) else None,
+                        confidence=event.get("confidence"),
+                    )
+                    payload = {k: v for k, v in normalized.items() if k != "type"}
+                    await session.emit("assistant_activity", "adapter", payload)
+                    if not await safe_send_str(session, {"type": "assistant_activity", **payload}):
+                        return
+                elif event_type == "cancel_acknowledged":
+                    await _send_cancel_status(session, turn, {"status": "acknowledged"})
                     return
-                # Speak the rest of what was streamed; the final text is for
-                # the transcript only. Bridges may normalise their final
-                # (drop '*', '#', newlines), so slicing it by the streamed
-                # length would garble the tail (B-1).
-                if buffered:
-                    remaining = buffered[len(spoken_so_far):]
-                elif event["text"].startswith(spoken_so_far):
-                    remaining = event["text"][len(spoken_so_far):]
-                else:
-                    remaining = event["text"]
-                _enqueue_final_text(session, remaining, turn_speech_generation, turn_voice_id, output_language)
-                spoken_so_far = buffered if buffered else event["text"]
-            elif event_type == "assistant_activity":
-                # Re-validate through the protocol-v1 builder: adapter events
-                # cross a trust boundary into the browser, so malformed
-                # tool-call metadata is dropped here, not rendered.
-                normalized = make_activity_event(
-                    activity_type=event.get("activity_type", "other"),
-                    summary=event.get("summary", ""),
-                    progress=event.get("progress"),
-                    tool_name=event.get("tool_name"),
-                    parameters=event.get("parameters") if isinstance(event.get("parameters"), dict) else None,
-                    confidence=event.get("confidence"),
-                )
-                payload = {k: v for k, v in normalized.items() if k != "type"}
-                await session.emit("assistant_activity", "adapter", payload)
-                if not await safe_send_str(session, {"type": "assistant_activity", **payload}):
+                elif event_type == "turn_failed":
+                    message = event.get("message")
+                    failure_kind = event.get("failure_kind")
+                    retriable = event.get("retriable")
+                    await _report_turn_failure(
+                        session,
+                        turn,
+                        message=message if isinstance(message, str) and message else "turn failed",
+                        failure_kind=failure_kind if isinstance(failure_kind, str) and failure_kind else None,
+                        retriable=retriable if isinstance(retriable, bool) else None,
+                        stage="stream",
+                    )
                     return
-            elif event_type == "cancel_acknowledged":
-                await session.emit("turn_cancel_acknowledged", "adapter", {"turn_handle": turn_handle})
-                await safe_send_str(session, {"type": "cancel_status", "result": {"status": "acknowledged"}})
-                return
-            elif event_type == "turn_failed":
-                await session.emit("recoverable_error", "adapter", {"component": "turn", "turn_handle": turn_handle, "message": event.get("message", "turn failed")})
-                await safe_send_str(session, {"type": "turn_failed", "message": event.get("message", "turn failed")})
-                return
-            elif event_type == "turn_completed":
-                session.turns_completed += 1
-                await session.emit("assistant_output_completed", "adapter", {"turn_handle": turn_handle, "completed_via": "turn_completed"})
-        if not saw_final and buffered:
-            session.record_transcript_item(role="assistant", text=buffered, source="adapter", turn_id=session.turn_id)
+                elif event_type == "turn_completed":
+                    session.turns_completed += 1
+                    await session.emit("assistant_output_completed", "adapter", {"turn_handle": turn_handle, "completed_via": "turn_completed"})
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            raise _TurnStageError("stream", exc) from exc
+        if final_text is None and buffered and not turn.cancel_requested:
+            final_text = buffered
             await session.emit("assistant_output_completed", "adapter", {"turn_handle": turn_handle, "final_chars": len(buffered), "completed_via": "buffer_flush"})
             await safe_send_str(session, {"type": "assistant_text_final", "text": buffered})
-            _enqueue_final_text(session, buffered[len(spoken_so_far):], turn_speech_generation, turn_voice_id, output_language)
+            _enqueue_final_text(session, turn, buffered[len(spoken_so_far):], turn_voice_id, output_language)
             spoken_so_far = buffered
+    except _TurnStageError as failure:
+        if not turn.cancel_requested:
+            message, kind, retriable = _failure_details(failure.original, failure.stage)
+            await _report_turn_failure(session, turn, message=message, failure_kind=kind, retriable=retriable, stage=failure.stage)
+    except Exception as exc:
+        if not turn.cancel_requested:
+            message, kind, retriable = _failure_details(exc, "gateway")
+            await _report_turn_failure(session, turn, message=message, failure_kind=kind, retriable=retriable, stage="gateway")
     finally:
+        await _finish_turn(session, turn, final_text)
+
+
+async def _finish_turn(session: Session, turn: TurnState, final_text: str | None) -> None:
+    """Turn cleanup; safe to run while the turn task is being force-cancelled."""
+    cancelled_during_cleanup = False
+    try:
         speech_task = session.speech_task
-        if speech_task is not None and not speech_task.done():
-            try:
-                await speech_task
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                pass
-        await emit_turn_state(session, "idle")
-        await session.set_state("idle", reason="turn_completed")
-        session.current_turn_buffered_text = ""
-        session.current_turn_phase = None
-        clear_turn_state(session)
+        if (
+            not turn.cancel_requested
+            and session.speech_generation == turn.speech_generation
+            and speech_task is not None
+            and not speech_task.done()
+        ):
+            # Keep the turn active until its queued speech has played. Speech
+            # whose generation is stale (barge-in) is not waited for.
+            await asyncio.wait({speech_task})
+        if turn.cancel_requested and turn.teardown_task is not None:
+            await turn.interrupt_announced.wait()
+    except asyncio.CancelledError:
+        cancelled_during_cleanup = True
+    if turn.cancel_requested:
+        session.record_transcript_item(role="assistant", text=turn.spoken_text, source="adapter", turn_id=turn.turn_id, interrupted=True)
+    elif final_text:
+        session.record_transcript_item(role="assistant", text=final_text, source="adapter", turn_id=turn.turn_id)
+    if session.current_turn is turn:
+        try:
+            await emit_turn_state(session, "idle")
+            # The user may still be talking (barge-in): report listening, not
+            # idle, so control clients don't speak over them (B-5).
+            end_state = "listening" if session.last_vad_state == "speech" else "idle"
+            await session.set_state(end_state, reason="turn_interrupted" if turn.cancel_requested else "turn_completed")
+        except asyncio.CancelledError:
+            cancelled_during_cleanup = True
+        finally:
+            session.current_turn_buffered_text = ""
+            session.current_turn_phase = None
+            session.current_turn = None
+            clear_turn_state(session)
+    if cancelled_during_cleanup:
+        raise asyncio.CancelledError()
 
 
 async def start_assistant_turn(session: Session, transcript: str) -> None:
-    if session.current_turn_task is not None and not session.current_turn_task.done():
-        await session.emit("recoverable_error", "gateway", {"component": "control", "message": "turn already active"})
-        await safe_send_str(session, {"type": "turn_rejected", "reason": "turn already active"})
-        return
-    session.current_turn_task = asyncio.create_task(stream_assistant_turn(session, transcript))
+    previous_task: asyncio.Task | None = None
+    active = session.current_turn_task
+    if active is not None and not active.done():
+        current = session.current_turn
+        if current is None or not current.cancel_requested:
+            await session.emit("recoverable_error", "gateway", {"component": "control", "message": "turn already active"})
+            await safe_send_str(session, {"type": "turn_rejected", "reason": "turn already active"})
+            return
+        # The active turn was interrupted and is still unwinding: queue behind it.
+        previous_task = active
+    turn = TurnState(turn_id=uuid.uuid4().hex)
+    session.current_turn = turn
+    task = asyncio.create_task(stream_assistant_turn(session, transcript, turn=turn, previous_task=previous_task))
+    session.current_turn_task = task
+    session.runtime.retain_task(task)

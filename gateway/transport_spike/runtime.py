@@ -300,7 +300,10 @@ class GatewayRuntime:
             session.translation_target = self.default_translation_target
         session.binding = binding
         self._active_sessions[session.session_id] = binding.binding_id
+        # Re-insert so dict order is registration order (newest last).
+        self._active_session_refs.pop(session.session_id, None)
         self._active_session_refs[session.session_id] = session
+        session.registered_monotonic_ms = self._now_ms()
         self.save_session_state(session)
 
     def save_session_state(self, session: Session) -> None:
@@ -360,7 +363,9 @@ class GatewayRuntime:
         if session_id:
             return self._active_session_refs.get(session_id)
         if client_session_id:
-            for session in self._active_session_refs.values():
+            # Two tabs can share a client_session_id; the newest registration
+            # is the one the user is looking at (LC-10).
+            for session in reversed(list(self._active_session_refs.values())):
                 if getattr(session, "client_session_id", None) == client_session_id:
                     return session
             return None
@@ -733,6 +738,30 @@ class GatewayRuntime:
 APP_RUNTIME_KEY: web.AppKey[GatewayRuntime] = web.AppKey("runtime", GatewayRuntime)
 
 
+@dataclass(slots=True, eq=False)
+class TurnState:
+    """Per-turn bookkeeping owned by the speech turn loop.
+
+    ``cancel_requested`` is claimed synchronously by the first cancel
+    request (before any await), so concurrent or re-entrant cancels are
+    no-ops and each terminal message is sent exactly once.
+    """
+
+    turn_id: str
+    handle: str | None = None
+    speech_generation: int = 0
+    cancel_requested: bool = False
+    cancel_reason: str | None = None
+    partial_text: str = ""
+    interrupted_during_state: str | None = None
+    spoken_text: str = ""
+    adapter_cancel_sent: bool = False
+    cancel_status_sent: bool = False
+    interrupted_emitted: bool = False
+    interrupt_announced: asyncio.Event = field(default_factory=asyncio.Event)
+    teardown_task: asyncio.Task | None = None
+
+
 class Session:
     def __init__(self, websocket: web.WebSocketResponse, runtime: GatewayRuntime) -> None:
         self.websocket = websocket
@@ -753,7 +782,11 @@ class Session:
         self.last_tts_started_ms: float | None = None
         self.current_turn_handle: str | None = None
         self.current_turn_task: asyncio.Task | None = None
+        self.current_turn: TurnState | None = None
         self.speech_task: asyncio.Task | None = None
+        # Every pending speech segment, so a barge-in can cancel the whole
+        # queue, not just the tail.
+        self.speech_tasks: set[asyncio.Task] = set()
         self.speech_generation = 0
         self.turns_completed = 0
         self.client_name = "qantara-browser"
@@ -781,6 +814,12 @@ class Session:
         # honors it the moment a turn handle exists.
         self.turn_cancel_requested: bool = False
         self.mesh_should_respond: bool = True
+        # Mesh election for the current utterance runs in the background so
+        # the receive loop keeps processing audio (Q-12 / LC-9).
+        self.mesh_election_task: asyncio.Task | None = None
+        # Registration order, so control-API lookups by client_session_id
+        # prefer the newest tab (LC-10).
+        self.registered_monotonic_ms: float = 0.0
         self.event_timeline: list[dict[str, Any]] = []
         self.transcript_items: list[dict[str, Any]] = []
 
@@ -843,20 +882,23 @@ class Session:
         text: str,
         source: str,
         turn_id: str | None = None,
+        interrupted: bool = False,
     ) -> None:
         clean = (text or "").strip()
         if not clean:
             return
-        self.transcript_items.append(
-            {
-                "role": role,
-                "text": clean,
-                "source": source,
-                "turn_id": turn_id or self.turn_id,
-                "ts_monotonic_ms": round(time.monotonic() * 1000, 3),
-                "ts_wall_time": utc_now(),
-            }
-        )
+        item: dict[str, Any] = {
+            "role": role,
+            "text": clean,
+            "source": source,
+            "turn_id": turn_id or self.turn_id,
+            "ts_monotonic_ms": round(time.monotonic() * 1000, 3),
+            "ts_wall_time": utc_now(),
+        }
+        if interrupted:
+            # Only the text that was queued for speech before the barge-in.
+            item["interrupted"] = True
+        self.transcript_items.append(item)
         if len(self.transcript_items) > SESSION_TRANSCRIPT_LIMIT:
             del self.transcript_items[:len(self.transcript_items) - SESSION_TRANSCRIPT_LIMIT]
 
