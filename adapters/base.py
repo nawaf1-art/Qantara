@@ -74,6 +74,26 @@ def make_activity_event(
     return event
 
 
+class UnknownSessionError(ValueError):
+    """The adapter or backend does not know this session handle.
+
+    Raised when a handle expired, was evicted, or the backend restarted.
+    Callers may start a fresh session and retry; other errors must not be
+    treated as a reason to discard the conversation.
+    """
+
+
+def is_unknown_session_error(exc: BaseException) -> bool:
+    """Return True for an explicit unknown-session failure.
+
+    Accepts the typed error and, for adapters or backends that only report it
+    in text, messages containing "unknown session".
+    """
+    if isinstance(exc, UnknownSessionError):
+        return True
+    return "unknown session" in str(exc).lower()
+
+
 class RuntimeAdapter(ABC):
     def __init__(self, config: AdapterConfig | None = None) -> None:
         self.config = config or AdapterConfig()
@@ -81,6 +101,14 @@ class RuntimeAdapter(ABC):
     @property
     def adapter_kind(self) -> str:
         return self.config.kind
+
+    async def aclose(self) -> None:  # noqa: B027 - optional hook, no-op by default
+        """Release long-lived resources (HTTP sessions, MCP connections).
+
+        Optional: the default does nothing. Owners should call it when an
+        adapter is replaced or the gateway shuts down.
+        """
+        return None
 
     @abstractmethod
     async def start_or_resume_session(self, client_context: dict | None = None) -> str:

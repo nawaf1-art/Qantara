@@ -10,7 +10,13 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Any
 
-from adapters.base import AdapterConfig, AdapterHealth, RuntimeAdapter, make_activity_event
+from adapters.base import (
+    AdapterConfig,
+    AdapterHealth,
+    RuntimeAdapter,
+    UnknownSessionError,
+    make_activity_event,
+)
 
 MAX_TURNS_PER_SESSION = 24
 MAX_MCP_TOOL_OUTPUT_CHARS = 1024 * 1024
@@ -110,7 +116,7 @@ class MCPClientAdapter(RuntimeAdapter):
         turn_context: dict | None = None,
     ) -> str:
         if session_handle not in self._sessions:
-            raise ValueError("unknown session handle")
+            raise UnknownSessionError("unknown session handle")
         # Refresh recency so an actively used session is not the next evicted.
         self._sessions[session_handle] = self._sessions.pop(session_handle)
         turn_handle = str(uuid.uuid4())
@@ -132,7 +138,7 @@ class MCPClientAdapter(RuntimeAdapter):
         turn_handle: str,
     ) -> AsyncIterator[dict[str, Any]]:
         if session_handle not in self._sessions:
-            raise ValueError("unknown session handle")
+            raise UnknownSessionError("unknown session handle")
         turn = self._sessions[session_handle]["turns"].get(turn_handle)
         if turn is None:
             raise ValueError("unknown turn handle")
@@ -187,7 +193,7 @@ class MCPClientAdapter(RuntimeAdapter):
         cancel_context: dict | None = None,
     ) -> dict[str, Any]:
         if session_handle not in self._sessions:
-            raise ValueError("unknown session handle")
+            raise UnknownSessionError("unknown session handle")
         return {
             "status": "acknowledged",
             "turn_handle": turn_handle,
