@@ -36,3 +36,8 @@ audio-captures
 !.env.example
 tests
 .claude
+CLAUDE.md
+AGENTS.md
+.pre-commit-config.yaml
+.gitattributes
+.gitignore

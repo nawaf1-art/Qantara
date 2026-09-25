@@ -8,7 +8,7 @@ Browser microphone access normally requires either `localhost` or a secure HTTPS
 
 Qantara is not documented as a public-internet service. Before changing a bind address from loopback:
 
-1. Set a unique random `QANTARA_AUTH_TOKEN` of at least 24 characters.
+1. Set a unique random `QANTARA_AUTH_TOKEN` of at least 24 characters. This is **required**, not optional: the gateway refuses any request whose `Host` is not a loopback name or address when no token is configured. That includes traffic forwarded by a reverse proxy (Caddy preserves the browser's `Host`, e.g. `qantara.local`) and a Docker port published beyond `127.0.0.1`.
 2. Terminate HTTPS with a certificate trusted by each client device.
 3. Limit firewall/routing exposure to the intended trusted network.
 4. Keep backend model/agent services private; expose only the gateway path required by clients.
@@ -82,14 +82,22 @@ The inbound Host guard accepts loopback, private LAN addresses, single-label loc
 
 ## Docker exposure
 
-Docker publishes to `127.0.0.1:8765` by default. Changing `QANTARA_DOCKER_BIND` is an explicit exposure decision and still requires authentication and HTTPS/WSS for another device's microphone.
+Docker publishes to `127.0.0.1:8765` by default, so `http://127.0.0.1:8765` works on the Docker host without a token. Changing `QANTARA_DOCKER_BIND` (for example to `0.0.0.0`) is an explicit exposure decision: set `QANTARA_AUTH_TOKEN` in the environment `docker compose` reads (the compose file passes it through), otherwise requests from other devices are refused. Another device's microphone additionally needs HTTPS/WSS, e.g. Caddy in front of the published port.
 
-## Mesh and Wyoming
+```bash
+export QANTARA_AUTH_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+QANTARA_DOCKER_BIND=0.0.0.0 docker compose up
+```
 
-Mesh and Wyoming are separate Experimental services. They bind to loopback unless explicitly changed. Use a shared `QANTARA_MESH_TOKEN` on every mesh node when enabling LAN frames, and expose Wyoming only to the Home Assistant network segment that needs it. See [`docs/MESH.md`](../docs/MESH.md) and [`docs/HOMEASSISTANT.md`](../docs/HOMEASSISTANT.md).
+Model weights (faster-whisper, Kokoro) are cached in the `qantara-model-cache` named volume, so they download once and survive `docker compose down`. `docker compose down --volumes` removes them.
+
+## Mesh
+
+The mesh is an Experimental, native-only service: it relies on mDNS multicast discovery, which container bridge networking blocks, so the compose file does not configure it. It binds to loopback unless explicitly changed. Use a shared `QANTARA_MESH_TOKEN` on every mesh node when enabling LAN frames. See [`docs/MESH.md`](../docs/MESH.md).
 
 ## Verification
 
+- Run `qantara doctor` (or `python scripts/doctor.py`) with the same environment; it fails when a non-loopback bind has no valid token and warns when TLS is missing.
 - Confirm `https://` loads without a certificate warning.
 - Confirm the auth unlock flow is required.
 - Confirm microphone permission succeeds and the WebSocket uses `wss://`.
