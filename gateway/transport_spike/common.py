@@ -29,15 +29,6 @@ MANAGED_BRIDGE_PORT = 19120
 # installs are unchanged. Reading env at start_mesh() time (not here)
 # to keep unittest.mock.patch.dict working cleanly in tests.
 
-# Wyoming satellite (0.2.2). Read at import time — tests that need
-# env-sensitive Wyoming behaviour should call start_wyoming() which
-# re-reads the env at call time.
-WYOMING_ENABLED = os.environ.get("QANTARA_WYOMING_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
-WYOMING_PORT = int(os.environ.get("QANTARA_WYOMING_PORT", "10700"))
-WYOMING_NODE_NAME = os.environ.get("QANTARA_WYOMING_NODE_NAME", "qantara")
-WYOMING_AREA = os.environ.get("QANTARA_WYOMING_AREA", "")
-
-
 def utc_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 

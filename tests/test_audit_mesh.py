@@ -624,7 +624,7 @@ class WyomingRemovalTests(unittest.IsolatedAsyncioTestCase):
         env = {**_CLEAN_MESH_ENV, "QANTARA_WYOMING_ENABLED": "true"}
         with unittest.mock.patch.dict(os.environ, env, clear=True):
             with self.assertLogs("gateway.transport_spike.runtime", level="WARNING") as logs:
-                await runtime.start_wyoming()
+                runtime.warn_removed_settings()
         self.assertIn("removed", "\n".join(logs.output))
 
     async def test_server_imports_without_wyoming_package(self) -> None:

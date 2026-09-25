@@ -652,7 +652,10 @@ class GatewayRuntime:
             if binding_id in referenced_binding_ids:
                 continue
             binding = self._bindings.pop(binding_id, None)
-            if binding and binding.managed_bridge_proc is not None:
+            if binding is None:
+                continue
+            self.retain_task(asyncio.create_task(_close_adapter(binding.adapter)))
+            if binding.managed_bridge_proc is not None:
                 self.retain_task(asyncio.create_task(_shutdown_bridge_process(binding.managed_bridge_proc)))
 
     async def start_mesh(self) -> None:
@@ -733,17 +736,39 @@ class GatewayRuntime:
             await self.mesh_controller.stop()
             self.mesh_controller = None
 
-    async def start_wyoming(self) -> None:
-        """The Wyoming bridge was removed (audit Q-13). Kept as a no-op until
-        the server startup hook stops calling it; warns if still configured."""
+    def warn_removed_settings(self) -> None:
+        """Warn about settings for features that no longer exist.
+
+        The Wyoming bridge was removed in 0.4.0 (audit Q-13); a leftover
+        QANTARA_WYOMING_ENABLED would otherwise be silently ignored."""
         if os.environ.get("QANTARA_WYOMING_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}:
             LOGGER.warning(
-                "QANTARA_WYOMING_ENABLED is set, but the Wyoming bridge was removed; ignoring it"
+                "QANTARA_WYOMING_ENABLED is set, but the Wyoming bridge was removed in 0.4.0; ignoring it"
             )
+
+    def start_provider_warmup(self) -> None:
+        """Warm up the TTS provider in the background so the first reply
+        doesn't pay model-load latency. Opt-in via QANTARA_TTS_WARMUP=1
+        because warming Kokoro may download model weights. Failures are
+        logged, never fatal."""
+        if os.environ.get("QANTARA_TTS_WARMUP", "").strip().lower() not in {"1", "true", "yes", "on"}:
+            return
+        warmup = getattr(self.tts, "warmup", None)
+        if warmup is None or not getattr(self.tts, "available", False):
+            return
+
+        async def _run() -> None:
+            try:
+                await warmup()
+            except Exception as exc:
+                LOGGER.warning("TTS warmup failed: %s", exc)
+
+        self.retain_task(asyncio.create_task(_run()))
 
     async def close(self) -> None:
         await self.stop_mesh()
         for binding in list(self._bindings.values()):
+            await _close_adapter(binding.adapter)
             if binding.managed_bridge_proc is not None:
                 await _shutdown_bridge_process(binding.managed_bridge_proc)
         pending_tasks = [task for task in self._background_tasks if not task.done()]
@@ -753,6 +778,17 @@ class GatewayRuntime:
                 task.cancel()
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
+
+
+async def _close_adapter(adapter: object) -> None:
+    """Release an adapter's HTTP client / MCP process. Best effort."""
+    aclose = getattr(adapter, "aclose", None)
+    if aclose is None:
+        return
+    try:
+        await aclose()
+    except Exception as exc:
+        LOGGER.debug("adapter close failed: %s", exc)
 
 
 APP_RUNTIME_KEY: web.AppKey[GatewayRuntime] = web.AppKey("runtime", GatewayRuntime)

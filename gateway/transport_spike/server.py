@@ -97,7 +97,8 @@ def create_app(
 
     async def _on_startup(_app: web.Application) -> None:
         await app[APP_RUNTIME_KEY].start_mesh()
-        await app[APP_RUNTIME_KEY].start_wyoming()
+        app[APP_RUNTIME_KEY].warn_removed_settings()
+        app[APP_RUNTIME_KEY].start_provider_warmup()
 
     app.on_startup.append(_on_startup)
     app.on_cleanup.append(cleanup_bridge)

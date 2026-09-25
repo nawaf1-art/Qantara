@@ -1072,7 +1072,7 @@ async def api_test_mcp_handler(request: web.Request) -> web.Response:
     )
 
 
-TTS_ENGINES = ("piper", "kokoro", "chatterbox")
+TTS_ENGINES = ("auto", "routed", "piper", "kokoro", "chatterbox")
 
 
 async def _apply_tts_engine(runtime: GatewayRuntime, engine: str) -> dict[str, Any]:

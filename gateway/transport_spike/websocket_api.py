@@ -320,6 +320,19 @@ async def run_websocket_session(ws: Any, runtime: GatewayRuntime) -> Any:
     return ws
 
 
+def declared_source_language(session: Session) -> str | None:
+    """Language the user declared for their own speech, if any.
+
+    In directional and live translation modes the source language is
+    explicit, so STT must not auto-detect it (audit V-6): Gulf Arabic is
+    otherwise often mis-detected as Farsi or Urdu. Assistant mode keeps
+    auto-detection so code-switching still works.
+    """
+    if session.translation_mode in {"directional", "live"} and session.translation_source:
+        return session.translation_source
+    return None
+
+
 async def transcribe_utterance(session: Session, submit_turn: bool) -> None:
     """Transcribe the current utterance (Q-01) and optionally submit it."""
     stt = session.runtime.stt
@@ -337,7 +350,11 @@ async def transcribe_utterance(session: Session, submit_turn: bool) -> None:
     try:
         from gateway.transport_spike.language_resolution import resolve_effective_language
 
-        stt_result = await stt.transcribe(samples.tolist(), TARGET_SAMPLE_RATE)
+        forced_language = declared_source_language(session)
+        if forced_language:
+            stt_result = await stt.transcribe(samples.tolist(), TARGET_SAMPLE_RATE, language=forced_language)
+        else:
+            stt_result = await stt.transcribe(samples.tolist(), TARGET_SAMPLE_RATE)
         text = stt_result.text if hasattr(stt_result, "text") else str(stt_result)
         detected_language = getattr(stt_result, "language", None)
         language_probability = getattr(stt_result, "language_probability", None)
