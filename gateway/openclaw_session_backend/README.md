@@ -1,7 +1,8 @@
 # OpenClaw Session Backend
 
-Thin session-oriented backend that keeps Qantara's existing HTTP contract and
-delegates turns to an OpenClaw agent through the supported CLI.
+Thin session-oriented backend that keeps Qantara's session HTTP contract
+([`protocols/session-gateway-http.md`](../../protocols/session-gateway-http.md))
+and delegates turns to an OpenClaw agent through the supported CLI.
 
 Current target:
 
@@ -34,3 +35,10 @@ Current bridge behavior:
   OpenClaw sessions or cold-start agents
 - runs each CLI turn in its own process group so barge-in cancellation can
   terminate the full subprocess tree cleanly
+- runs one turn at a time per session; a turn cancelled while it waits for an
+  earlier turn is acknowledged immediately and never starts the agent
+- sends a `thinking` activity at least every
+  `QANTARA_BACKEND_KEEPALIVE_SECONDS` (default 10) while the agent works, so
+  long agent turns stay within the gateway's `QANTARA_BACKEND_IDLE_TIMEOUT`
+  (default 90) instead of being cut off
+- writes UTF-8 JSON lines (Arabic text is not `\uXXXX`-escaped)

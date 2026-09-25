@@ -16,7 +16,9 @@ Adapter ──(stream events)──▶ Gateway ──(session events)──▶ B
 
 - **Adapter** (`adapters/base.py:RuntimeAdapter`): wraps a backend runtime
   (OpenAI-compatible server, MCP server, session-contract bridge). Yields
-  *stream events* from `stream_assistant_output()`.
+  *stream events* from `stream_assistant_output()`. The HTTP transport used
+  by session-contract backends is specified in
+  [`session-gateway-http.md`](session-gateway-http.md).
 - **Gateway**: validates and forwards adapter events, owns the session state
   machine, and emits *session events* to the browser over `/ws` and to the
   configured event sink.
@@ -49,11 +51,24 @@ idle → listening → thinking → speaking → idle
 | `assistant_text_final` | `text` | Authoritative full reply; unsent remainder is spoken |
 | `assistant_activity` | `activity_type`, `summary` | Non-spoken status; see below |
 | `cancel_acknowledged` | — | Adapter confirms a `cancel_turn`; ends the stream |
-| `turn_failed` | `message` | Terminal failure for this turn |
+| `turn_failed` | `message` | Terminal failure for this turn. Optional `failure_kind` and `retriable` are informational; the gateway does not retry |
 | `turn_completed` | — | Optional explicit completion marker |
+
+`assistant_text_final.text` must equal the concatenation of every
+`assistant_text_delta.text` the adapter yielded for the turn. The gateway
+speaks the not-yet-spoken remainder by character offset, so a final text that
+is reformatted (markdown stripped, whitespace collapsed) garbles the end of
+the reply. Normalize text for speech in the gateway, not in the final event.
 
 If the stream ends without `assistant_text_final`, the gateway flushes the
 buffered deltas as the final text.
+
+Hidden reasoning (separate `reasoning` fields or inline `<think>` blocks) must
+never appear in `assistant_text_delta` or `assistant_text_final`. Adapters
+may report it once per turn as an `assistant_activity` with
+`activity_type: "thinking"`. Long-running backends may also repeat such an
+activity as a keep-alive; see
+[`session-gateway-http.md`](session-gateway-http.md#keep-alives-and-timeouts).
 
 ### `assistant_activity` and tool-call metadata (v1)
 
@@ -102,12 +117,39 @@ response and no partial text exists yet.
 | Field | Type | Notes |
 |---|---|---|
 | `partial_text` | string | Whatever the adapter had streamed before the cancel; may be empty |
-| `resumable` | bool | Whether the session can accept a follow-up turn |
 | `interrupted_during_state` | string | The turn phase when the cancel landed (usually `thinking` or `speaking`) |
+
+Ordering and uniqueness: each cancelled turn produces exactly one
+`turn_interrupted` and at most one `cancel_status` (the adapter's cancel
+result), and `turn_interrupted` is always sent first. Concurrent or repeated
+cancel requests for the same turn are no-ops. After the interrupt the gateway
+sends and records no further assistant text for that turn; the transcript
+keeps only the text that had already been queued for speech, marked
+`interrupted: true`.
 
 Cancellation is not cooperative-only: after asking the adapter to cancel,
 the gateway force-cancels the turn task once `QANTARA_TURN_CANCEL_GRACE_MS`
 (default 750 ms) expires, so a wedged adapter cannot pin the session.
+
+`0.4.0` removed the `resumable` field. It was always `true` and did not
+describe backend state, so no client could act on it. This is the one field
+removal made to v1; clients should ignore its absence.
+
+### `turn_failed`
+
+Sent when a turn ends in a failure: the adapter yielded `turn_failed`, or the
+adapter raised while starting a session, submitting the turn, or streaming.
+A start/submit failure resets the backend session handle and is retried once
+before it is reported.
+
+| Field | Type | Notes |
+|---|---|---|
+| `message` | string | Human-readable reason (exception messages are truncated to 300 characters) |
+| `failure_kind` | string | Optional. Passed through from an adapter `turn_failed`; for adapter exceptions the gateway uses the exception's `failure_kind` or derives `timeout`, `backend_unavailable` (session start/submit), or `backend_error` |
+| `retriable` | bool | Optional. Passed through from an adapter `turn_failed`; for adapter exceptions the exception's `retriable`, otherwise `true` |
+
+The gateway also records a `recoverable_error` timeline event for the failure
+with `component: "turn"`, `stage`, `failure_kind`, and `retriable`.
 
 ## Versioning
 

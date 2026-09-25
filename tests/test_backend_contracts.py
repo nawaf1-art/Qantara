@@ -73,6 +73,7 @@ class BackendContractTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(any(event["type"] == "assistant_text_final" for event in events))
             cancel = await adapter.cancel_turn(session_handle, turn_handle)
             self.assertEqual(cancel["status"], "acknowledged")
+            await adapter.aclose()
         finally:
             await client.close()
 

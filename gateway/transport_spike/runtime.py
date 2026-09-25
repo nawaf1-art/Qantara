@@ -6,6 +6,7 @@ import os
 import sys
 import time
 import uuid
+from array import array
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -20,6 +21,7 @@ from gateway.transport_spike.common import (
     REPO_ROOT,
     SESSION_STORE_TTL_MS,
     TARGET_SAMPLE_RATE,
+    UtteranceBuffer,
     utc_now,
 )
 from providers.factory import create_stt_provider, create_tts_provider
@@ -28,13 +30,17 @@ from qantara.security import (
     redact_for_logging,
     sanitize_public_url,
 )
-from qantara.version import __version__
 
 _BRIDGE_SCRIPTS: dict[str, str] = {
     "ollama": os.path.join(REPO_ROOT, "gateway", "ollama_session_backend", "server.py"),
     "openclaw": os.path.join(REPO_ROOT, "gateway", "openclaw_session_backend", "server.py"),
 }
 LOGGER = logging.getLogger(__name__)
+
+# QANTARA_MESH_ROLE values. Anything outside both sets is a config error,
+# so a typo can never switch the mesh on.
+MESH_ROLES = frozenset({"full", "mic-only", "speaker-only"})
+MESH_DISABLED_VALUES = frozenset({"", "disabled", "off", "false", "0", "no", "none"})
 
 SESSION_STATES = {"idle", "listening", "thinking", "speaking", "interrupted"}
 SESSION_TIMELINE_LIMIT = int(os.environ.get("QANTARA_SESSION_TIMELINE_LIMIT", "200"))
@@ -115,7 +121,6 @@ class GatewayRuntime:
         # garbage-collected mid-flight and its exception silently dropped.
         self._background_tasks: set[asyncio.Task] = set()
         self.mesh_controller: Any | None = None
-        self.wyoming_bridge: Any | None = None
         # Defaults picked up by new sessions (populated via /api/configure).
         self.default_primary_language: str = "en"
         self.default_translation_mode: str | None = None
@@ -298,7 +303,10 @@ class GatewayRuntime:
             session.translation_target = self.default_translation_target
         session.binding = binding
         self._active_sessions[session.session_id] = binding.binding_id
+        # Re-insert so dict order is registration order (newest last).
+        self._active_session_refs.pop(session.session_id, None)
         self._active_session_refs[session.session_id] = session
+        session.registered_monotonic_ms = self._now_ms()
         self.save_session_state(session)
 
     def save_session_state(self, session: Session) -> None:
@@ -358,7 +366,9 @@ class GatewayRuntime:
         if session_id:
             return self._active_session_refs.get(session_id)
         if client_session_id:
-            for session in self._active_session_refs.values():
+            # Two tabs can share a client_session_id; the newest registration
+            # is the one the user is looking at (LC-10).
+            for session in reversed(list(self._active_session_refs.values())):
                 if getattr(session, "client_session_id", None) == client_session_id:
                     return session
             return None
@@ -642,28 +652,67 @@ class GatewayRuntime:
             if binding_id in referenced_binding_ids:
                 continue
             binding = self._bindings.pop(binding_id, None)
-            if binding and binding.managed_bridge_proc is not None:
+            if binding is None:
+                continue
+            self.retain_task(asyncio.create_task(_close_adapter(binding.adapter)))
+            if binding.managed_bridge_proc is not None:
                 self.retain_task(asyncio.create_task(_shutdown_bridge_process(binding.managed_bridge_proc)))
 
     async def start_mesh(self) -> None:
-        """Start the mesh controller if QANTARA_MESH_ROLE is set to a
-        non-disabled value. Called from the aiohttp app startup."""
-        role = os.environ.get("QANTARA_MESH_ROLE", "disabled").strip().lower()
-        if role == "disabled":
+        """Start the mesh controller if QANTARA_MESH_ROLE names a mesh role.
+        Called from the aiohttp app startup. Invalid mesh configuration
+        raises RuntimeError so the gateway refuses to start."""
+        raw_role = os.environ.get("QANTARA_MESH_ROLE", "disabled")
+        role = raw_role.strip().lower()
+        if role in MESH_DISABLED_VALUES:
             return
+        if role not in MESH_ROLES:
+            raise RuntimeError(
+                f"QANTARA_MESH_ROLE must be one of {', '.join(sorted(MESH_ROLES))} "
+                f"or 'disabled'; got {raw_role!r}"
+            )
         if self.mesh_controller is not None:
             return
         try:
             from gateway.mesh.controller import MeshController, MeshControllerConfig
+            from gateway.mesh.protocol import is_valid_node_id
         except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "QANTARA_MESH_ROLE is enabled, but mesh dependencies are not installed"
             ) from exc
-        node_id = os.environ.get("QANTARA_MESH_NODE_ID", f"qantara-{uuid.uuid4().hex[:8]}")
-        mesh_port = int(os.environ.get("QANTARA_MESH_PORT", "8901"))
-        mesh_host = os.environ.get("QANTARA_MESH_HOST", "127.0.0.1")
+        from discovery.netinfo import is_loopback_host
+        from gateway.transport_spike.auth import MIN_AUTH_TOKEN_LENGTH, load_auth_token
+
+        node_id = os.environ.get("QANTARA_MESH_NODE_ID", "").strip() or f"qantara-{uuid.uuid4().hex[:8]}"
+        if not is_valid_node_id(node_id):
+            raise RuntimeError(
+                "QANTARA_MESH_NODE_ID must be 1-64 characters of letters, digits, '.', '_' or '-'"
+            )
+        raw_port = os.environ.get("QANTARA_MESH_PORT", "8901").strip()
+        try:
+            mesh_port = int(raw_port)
+        except ValueError:
+            mesh_port = -1
+        if not 0 <= mesh_port <= 65535:
+            raise RuntimeError(f"QANTARA_MESH_PORT must be a TCP port number; got {raw_port!r}")
+        mesh_host = os.environ.get("QANTARA_MESH_HOST", "127.0.0.1").strip() or "127.0.0.1"
         service_type = os.environ.get("QANTARA_MESH_SERVICE_TYPE", "_qantara._tcp.local.")
-        mesh_token = os.environ.get("QANTARA_MESH_TOKEN", "").strip() or None
+        # Same rule as QANTARA_AUTH_TOKEN: optional, but >= 24 chars when set.
+        mesh_token = load_auth_token("QANTARA_MESH_TOKEN")
+        if mesh_token is None and not is_loopback_host(mesh_host):
+            opt_in = os.environ.get("QANTARA_MESH_ALLOW_INSECURE", "").strip().lower()
+            if opt_in not in {"1", "true", "yes", "on"}:
+                raise RuntimeError(
+                    f"Refusing to start the mesh on non-loopback host {mesh_host!r} without "
+                    f"QANTARA_MESH_TOKEN: any LAN device could then join elections unauthenticated. "
+                    f"Set QANTARA_MESH_TOKEN (at least {MIN_AUTH_TOKEN_LENGTH} characters, same "
+                    f"value on every node), bind QANTARA_MESH_HOST to 127.0.0.1, or set "
+                    f"QANTARA_MESH_ALLOW_INSECURE=1 to override on a trusted network."
+                )
+            LOGGER.warning(
+                "mesh: QANTARA_MESH_ALLOW_INSECURE=1 — mesh frames on %s are unauthenticated",
+                mesh_host,
+            )
         self.mesh_controller = MeshController(MeshControllerConfig(
             node_id=node_id,
             role=role,
@@ -676,47 +725,50 @@ class GatewayRuntime:
                 "tts": self.tts.available if self.tts else False,
             },
         ))
-        await self.mesh_controller.start()
+        try:
+            await self.mesh_controller.start()
+        except BaseException:
+            self.mesh_controller = None
+            raise
 
     async def stop_mesh(self) -> None:
         if self.mesh_controller is not None:
             await self.mesh_controller.stop()
             self.mesh_controller = None
 
-    async def start_wyoming(self) -> None:
-        # Read env at call time (not import time) so tests can patch it
-        wyoming_enabled = os.environ.get("QANTARA_WYOMING_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
-        if not wyoming_enabled:
-            return
-        if self.wyoming_bridge is not None:
-            return
-        try:
-            from gateway.mesh.wyoming_bridge import WyomingBridge
-        except ModuleNotFoundError as exc:
-            raise RuntimeError(
-                "QANTARA_WYOMING_ENABLED is set, but Wyoming dependencies are not installed"
-            ) from exc
-        wyoming_port = int(os.environ.get("QANTARA_WYOMING_PORT", "10700"))
-        wyoming_host = os.environ.get("QANTARA_WYOMING_HOST", "127.0.0.1")
-        wyoming_node_name = os.environ.get("QANTARA_WYOMING_NODE_NAME", "qantara")
-        wyoming_area = os.environ.get("QANTARA_WYOMING_AREA", "")
-        self.wyoming_bridge = WyomingBridge(
-            node_name=wyoming_node_name, area=wyoming_area,
-            host=wyoming_host, port=wyoming_port, version=__version__, has_vad=False,
-            runtime=self,
-            register_zeroconf=wyoming_host not in {"127.0.0.1", "::1", "localhost"},
-        )
-        await self.wyoming_bridge.start()
+    def warn_removed_settings(self) -> None:
+        """Warn about settings for features that no longer exist.
 
-    async def stop_wyoming(self) -> None:
-        if self.wyoming_bridge is not None:
-            await self.wyoming_bridge.stop()
-            self.wyoming_bridge = None
+        The Wyoming bridge was removed in 0.4.0 (audit Q-13); a leftover
+        QANTARA_WYOMING_ENABLED would otherwise be silently ignored."""
+        if os.environ.get("QANTARA_WYOMING_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}:
+            LOGGER.warning(
+                "QANTARA_WYOMING_ENABLED is set, but the Wyoming bridge was removed in 0.4.0; ignoring it"
+            )
+
+    def start_provider_warmup(self) -> None:
+        """Warm up the TTS provider in the background so the first reply
+        doesn't pay model-load latency. Opt-in via QANTARA_TTS_WARMUP=1
+        because warming Kokoro may download model weights. Failures are
+        logged, never fatal."""
+        if os.environ.get("QANTARA_TTS_WARMUP", "").strip().lower() not in {"1", "true", "yes", "on"}:
+            return
+        warmup = getattr(self.tts, "warmup", None)
+        if warmup is None or not getattr(self.tts, "available", False):
+            return
+
+        async def _run() -> None:
+            try:
+                await warmup()
+            except Exception as exc:
+                LOGGER.warning("TTS warmup failed: %s", exc)
+
+        self.retain_task(asyncio.create_task(_run()))
 
     async def close(self) -> None:
-        await self.stop_wyoming()
         await self.stop_mesh()
         for binding in list(self._bindings.values()):
+            await _close_adapter(binding.adapter)
             if binding.managed_bridge_proc is not None:
                 await _shutdown_bridge_process(binding.managed_bridge_proc)
         pending_tasks = [task for task in self._background_tasks if not task.done()]
@@ -728,7 +780,42 @@ class GatewayRuntime:
                 await asyncio.gather(*pending, return_exceptions=True)
 
 
+async def _close_adapter(adapter: object) -> None:
+    """Release an adapter's HTTP client / MCP process. Best effort."""
+    aclose = getattr(adapter, "aclose", None)
+    if aclose is None:
+        return
+    try:
+        await aclose()
+    except Exception as exc:
+        LOGGER.debug("adapter close failed: %s", exc)
+
+
 APP_RUNTIME_KEY: web.AppKey[GatewayRuntime] = web.AppKey("runtime", GatewayRuntime)
+
+
+@dataclass(slots=True, eq=False)
+class TurnState:
+    """Per-turn bookkeeping owned by the speech turn loop.
+
+    ``cancel_requested`` is claimed synchronously by the first cancel
+    request (before any await), so concurrent or re-entrant cancels are
+    no-ops and each terminal message is sent exactly once.
+    """
+
+    turn_id: str
+    handle: str | None = None
+    speech_generation: int = 0
+    cancel_requested: bool = False
+    cancel_reason: str | None = None
+    partial_text: str = ""
+    interrupted_during_state: str | None = None
+    spoken_text: str = ""
+    adapter_cancel_sent: bool = False
+    cancel_status_sent: bool = False
+    interrupted_emitted: bool = False
+    interrupt_announced: asyncio.Event = field(default_factory=asyncio.Event)
+    teardown_task: asyncio.Task | None = None
 
 
 class Session:
@@ -745,12 +832,20 @@ class Session:
         self.frames_out = 0
         self.playback_generation = 0
         self.last_vad_state = "silence"
-        self.recent_pcm: list[int] = []
-        self.recent_pcm_limit = TARGET_SAMPLE_RATE * 6
+        # The current user utterance (Q-01): pre-roll + speech + endpoint
+        # silence, capped by QANTARA_MAX_UTTERANCE_MS, cleared on submit.
+        self.utterance = UtteranceBuffer(sample_rate=TARGET_SAMPLE_RATE)
         self.last_tts_started_ms: float | None = None
         self.current_turn_handle: str | None = None
         self.current_turn_task: asyncio.Task | None = None
+        self.current_turn: TurnState | None = None
         self.speech_task: asyncio.Task | None = None
+        # Every pending speech segment, so a barge-in can cancel the whole
+        # queue, not just the tail.
+        self.speech_tasks: set[asyncio.Task] = set()
+        # Set once the last enqueued segment has been synthesised, so the
+        # next one can synthesise while it plays (one segment look-ahead).
+        self.speech_tail_ready: asyncio.Event | None = None
         self.speech_generation = 0
         self.turns_completed = 0
         self.client_name = "qantara-browser"
@@ -778,8 +873,23 @@ class Session:
         # honors it the moment a turn handle exists.
         self.turn_cancel_requested: bool = False
         self.mesh_should_respond: bool = True
+        # Mesh election for the current utterance runs in the background so
+        # the receive loop keeps processing audio (Q-12 / LC-9).
+        self.mesh_election_task: asyncio.Task | None = None
+        # Registration order, so control-API lookups by client_session_id
+        # prefer the newest tab (LC-10).
+        self.registered_monotonic_ms: float = 0.0
         self.event_timeline: list[dict[str, Any]] = []
         self.transcript_items: list[dict[str, Any]] = []
+
+    @property
+    def recent_pcm(self) -> array:
+        """Backward-compatible view of the current utterance audio."""
+        return self.utterance.snapshot()
+
+    @recent_pcm.setter
+    def recent_pcm(self, samples: list[int] | array) -> None:
+        self.utterance.replace(samples)
 
     async def set_state(self, new_state: str, reason: str | None = None) -> None:
         if new_state not in SESSION_STATES:
@@ -831,20 +941,23 @@ class Session:
         text: str,
         source: str,
         turn_id: str | None = None,
+        interrupted: bool = False,
     ) -> None:
         clean = (text or "").strip()
         if not clean:
             return
-        self.transcript_items.append(
-            {
-                "role": role,
-                "text": clean,
-                "source": source,
-                "turn_id": turn_id or self.turn_id,
-                "ts_monotonic_ms": round(time.monotonic() * 1000, 3),
-                "ts_wall_time": utc_now(),
-            }
-        )
+        item: dict[str, Any] = {
+            "role": role,
+            "text": clean,
+            "source": source,
+            "turn_id": turn_id or self.turn_id,
+            "ts_monotonic_ms": round(time.monotonic() * 1000, 3),
+            "ts_wall_time": utc_now(),
+        }
+        if interrupted:
+            # Only the text that was queued for speech before the barge-in.
+            item["interrupted"] = True
+        self.transcript_items.append(item)
         if len(self.transcript_items) > SESSION_TRANSCRIPT_LIMIT:
             del self.transcript_items[:len(self.transcript_items) - SESSION_TRANSCRIPT_LIMIT]
 

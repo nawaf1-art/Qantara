@@ -5,7 +5,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
-from adapters.base import AdapterConfig, AdapterHealth, RuntimeAdapter
+from adapters.base import AdapterConfig, AdapterHealth, RuntimeAdapter, UnknownSessionError
 
 MAX_TURNS_PER_SESSION = 24
 
@@ -47,7 +47,7 @@ class RuntimeSkeletonAdapter(RuntimeAdapter):
         turn_context: dict | None = None,
     ) -> str:
         if session_handle not in self._sessions:
-            raise ValueError("unknown session handle")
+            raise UnknownSessionError("unknown session handle")
 
         self._sessions[session_handle] = self._sessions.pop(session_handle)
 
@@ -70,7 +70,7 @@ class RuntimeSkeletonAdapter(RuntimeAdapter):
         turn_handle: str,
     ) -> AsyncIterator[dict[str, Any]]:
         if session_handle not in self._sessions:
-            raise ValueError("unknown session handle")
+            raise UnknownSessionError("unknown session handle")
 
         message = (
             "Runtime adapter skeleton is wired. "
@@ -85,7 +85,7 @@ class RuntimeSkeletonAdapter(RuntimeAdapter):
         cancel_context: dict | None = None,
     ) -> dict[str, Any]:
         if session_handle not in self._sessions:
-            raise ValueError("unknown session handle")
+            raise UnknownSessionError("unknown session handle")
         return {
             "status": "unsupported",
             "turn_handle": turn_handle,

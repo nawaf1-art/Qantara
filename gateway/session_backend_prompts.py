@@ -12,9 +12,41 @@ def _compact_text(value: Any, *, limit: int = MAX_CONTEXT_VALUE_CHARS) -> str:
     return f"{text[: max(0, limit - 3)].rstrip()}..."
 
 
-def build_voice_turn_context_prompt(turn_context: dict | None) -> str:
-    """Build transient voice-turn instructions for text-only backends."""
+def _language_key(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def voice_turn_context_is_default(turn_context: dict | None) -> bool:
+    """Return True when the turn context carries nothing a model should act on.
+
+    The gateway always sends modality, primary/output language and playback
+    metadata. When there is no translation instruction and every language
+    field agrees, the context adds tokens without changing the reply, so
+    chat-completion backends can skip it.
+    """
     if not isinstance(turn_context, dict):
+        return True
+    for key in ("translation_directive", "translation_mode", "translation_source", "translation_target"):
+        value = turn_context.get(key)
+        if value is not None and str(value).strip() and str(value).strip().lower() != "off":
+            return False
+    languages = {
+        _language_key(turn_context.get(key))
+        for key in ("input_language", "primary_language", "output_language")
+        if _language_key(turn_context.get(key))
+    }
+    return len(languages) <= 1
+
+
+def build_voice_turn_context_prompt(turn_context: dict | None, *, omit_defaults: bool = False) -> str:
+    """Build transient voice-turn instructions for text-only backends.
+
+    With ``omit_defaults`` the prompt is empty when the context only carries
+    defaults (see ``voice_turn_context_is_default``).
+    """
+    if not isinstance(turn_context, dict):
+        return ""
+    if omit_defaults and voice_turn_context_is_default(turn_context):
         return ""
 
     lines: list[str] = []

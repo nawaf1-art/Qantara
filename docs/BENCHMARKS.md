@@ -18,7 +18,7 @@ Recorded environment: Linux 6.17 and Python 3.12. CPU model, memory, power mode,
 | Piper `lessac` synthesis | 3 | 1532.75 ms | 1540.51 ms | One short phrase, full synthesis |
 | Piper `ar_JO-kareem-medium` synthesis | 3 | 1800.82 ms | 1831.76 ms | One short Arabic phrase, full synthesis |
 
-These numbers are retained for historical traceability only. They are not advertised as `0.3.1` performance, hardware guidance, or evidence of superiority over another project.
+These numbers are retained for historical traceability only. They are not advertised as current-release (`0.4.0`) performance, hardware guidance, or evidence of superiority over another project.
 
 ## Current regression checks
 

@@ -6,35 +6,57 @@ Jan.ai, LM Studio, and any other OpenAI-compatible server.
 
 No bridge process needed — the adapter speaks the OpenAI chat
 completions protocol directly.
+
+History discipline:
+
+- The request is always ``[system, (user, assistant)*, user]``: the per-turn
+  voice context is merged into the single system message, never inserted as
+  a second one, so strict-alternation chat templates (Gemma, Mistral) accept
+  it.
+- A user message stays pending until its turn succeeds; then the user and
+  assistant messages are stored together. Failed or interrupted turns leave
+  no trace in history.
+- History is trimmed in whole exchanges, by count and by a character budget.
+  A context-length rejection drops the oldest exchange and retries once.
+- Inline ``<think>`` reasoning is filtered from spoken text and history.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
 import aiohttp
 
-from adapters.base import AdapterConfig, AdapterHealth, RuntimeAdapter
+from adapters.base import AdapterConfig, AdapterHealth, RuntimeAdapter, make_activity_event
 from gateway.session_backend_prompts import build_voice_turn_context_prompt
 from qantara.http_safety import (
     HTTPResponseLimitError,
     read_bounded_response_json,
     read_bounded_response_text,
 )
-from qantara.streaming import iter_sse_json_objects
+from qantara.streaming import ReasoningTagFilter, iter_sse_json_objects
 
 # Voice-optimized system prompt: short responses, conversational, no markdown.
 DEFAULT_SYSTEM_PROMPT = (
     "You are a voice assistant. Keep replies short and conversational. No markdown or formatting."
 )
 
-# Max conversation turns to keep (system prompt + last N exchanges).
+# Max stored conversation messages after the system prompt (10 exchanges).
 MAX_HISTORY_TURNS = 20
+DEFAULT_HISTORY_CHAR_BUDGET = 8000
+DEFAULT_MAX_TOKENS = 512
 MAX_ASSISTANT_TEXT_CHARS = 1024 * 1024
+# Turns submitted but never streamed (or never cleaned up) are bounded.
+MAX_PENDING_TURNS = 256
+REASONING_START_MODES = ("auto", "inside", "outside")
+
+_CONTEXT_OVERFLOW_STATUSES = frozenset({400, 413, 422})
+_CONTEXT_OVERFLOW_RE = re.compile(r"context|tokens?\b|prompt is too long", re.IGNORECASE)
 
 
 def _normalize_base_url(raw: str) -> str:
@@ -55,12 +77,18 @@ def _normalize_error(body: str) -> str:
         data = json.loads(body)
     except (json.JSONDecodeError, TypeError):
         return body.strip() or "unknown error"
+    if not isinstance(data, dict):
+        return body.strip() or "unknown error"
     err = data.get("error")
     if isinstance(err, str):
         return err  # Ollama: {"error": "string"}
     if isinstance(err, dict):
-        return err.get("message", str(err))  # OpenAI: {"error": {"message": "..."}}
+        return str(err.get("message", err))  # OpenAI: {"error": {"message": "..."}}
     return body.strip() or "unknown error"
+
+
+def _is_context_overflow(status: int, message: str) -> bool:
+    return status in _CONTEXT_OVERFLOW_STATUSES and bool(_CONTEXT_OVERFLOW_RE.search(message))
 
 
 def _extract_answer_delta(delta: object) -> tuple[str, bool]:
@@ -76,6 +104,23 @@ def _extract_answer_delta(delta: object) -> tuple[str, bool]:
     return answer, has_reasoning
 
 
+def _model_is_listed(model: str, model_ids: list[str]) -> bool:
+    """Match a configured model against a server list, tolerating Ollama's :latest."""
+    candidates = {model}
+    if model.endswith(":latest"):
+        candidates.add(model[: -len(":latest")])
+    elif ":" not in model:
+        candidates.add(f"{model}:latest")
+    return any(model_id in candidates for model_id in model_ids)
+
+
+def _int_option(value: Any, fallback: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
 class OpenAICompatibleAdapter(RuntimeAdapter):
     """Adapter that speaks the OpenAI chat completions protocol directly."""
 
@@ -83,57 +128,61 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
         super().__init__(
             config or AdapterConfig(kind="openai_compatible", name="openai-compatible")
         )
-        raw_url = (
-            self.config.options.get("base_url")
-            or os.environ.get("QANTARA_OPENAI_BASE_URL", "")
-        )
+        options = self.config.options
+        raw_url = options.get("base_url") or os.environ.get("QANTARA_OPENAI_BASE_URL", "")
         self.base_url = _normalize_base_url(raw_url)
-        self.outbound_host_header = str(
-            self.config.options.get("outbound_host_header") or ""
-        )
-        self.outbound_server_hostname = str(
-            self.config.options.get("outbound_server_hostname") or ""
-        )
-        self.api_key = (
-            self.config.options.get("api_key")
-            or os.environ.get("QANTARA_OPENAI_API_KEY", "not-needed")
-        )
-        self.model = (
-            self.config.options.get("model")
-            or os.environ.get("QANTARA_OPENAI_MODEL", "")
-        )
-        self.system_prompt = (
-            self.config.options.get("system_prompt")
-            or os.environ.get("QANTARA_OPENAI_SYSTEM_PROMPT", DEFAULT_SYSTEM_PROMPT)
+        self.outbound_host_header = str(options.get("outbound_host_header") or "")
+        self.outbound_server_hostname = str(options.get("outbound_server_hostname") or "")
+        self.api_key = options.get("api_key") or os.environ.get("QANTARA_OPENAI_API_KEY", "not-needed")
+        self.model = options.get("model") or os.environ.get("QANTARA_OPENAI_MODEL", "")
+        self.system_prompt = options.get("system_prompt") or os.environ.get(
+            "QANTARA_OPENAI_SYSTEM_PROMPT", DEFAULT_SYSTEM_PROMPT
         )
         self.timeout_connect = float(
-            self.config.options.get("timeout_connect")
-            or os.environ.get("QANTARA_OPENAI_TIMEOUT_CONNECT", "5")
+            options.get("timeout_connect") or os.environ.get("QANTARA_OPENAI_TIMEOUT_CONNECT", "5")
         )
         self.timeout_first_token = float(
-            self.config.options.get("timeout_first_token")
-            or os.environ.get("QANTARA_OPENAI_TIMEOUT_FIRST_TOKEN", "30")
+            options.get("timeout_first_token") or os.environ.get("QANTARA_OPENAI_TIMEOUT_FIRST_TOKEN", "30")
         )
         self.reasoning_effort = (
-            self.config.options.get("reasoning_effort")
-            or os.environ.get("QANTARA_OPENAI_REASONING_EFFORT", "")
+            options.get("reasoning_effort") or os.environ.get("QANTARA_OPENAI_REASONING_EFFORT", "")
         ).strip()
+        # 0 disables sending max_tokens.
+        self.max_tokens = max(
+            0,
+            _int_option(
+                options.get("max_tokens", os.environ.get("QANTARA_OPENAI_MAX_TOKENS")),
+                DEFAULT_MAX_TOKENS,
+            ),
+        )
+        self.history_char_budget = max(
+            0,
+            _int_option(
+                options.get("history_char_budget", os.environ.get("QANTARA_OPENAI_HISTORY_CHAR_BUDGET")),
+                DEFAULT_HISTORY_CHAR_BUDGET,
+            ),
+        )
+        reasoning_start = str(
+            options.get("reasoning_start") or os.environ.get("QANTARA_OPENAI_REASONING_START", "auto")
+        ).strip().lower()
+        self.reasoning_start = reasoning_start if reasoning_start in REASONING_START_MODES else "auto"
 
         self.max_sessions = int(
-            self.config.options.get("max_sessions")
-            or os.environ.get("QANTARA_OPENAI_MAX_SESSIONS", "64")
+            options.get("max_sessions") or os.environ.get("QANTARA_OPENAI_MAX_SESSIONS", "64")
         )
-        # Per-session conversation history: session_handle -> messages list.
+        # Per-session committed history: session_handle -> [system, (user, assistant)*].
         # Bounded: least-recently-used sessions are evicted beyond max_sessions.
         self._sessions: dict[str, list[dict[str, str]]] = {}
-        # Track active turns for cancellation
-        self._active_turns: dict[str, bool] = {}
-        # Track turn -> session mapping for rollback on failure
+        # Per-turn state, all keyed by turn handle and removed together.
+        self._active_turns: dict[str, bool] = {}  # False once cancelled
         self._turn_sessions: dict[str, str] = {}
-        # Transient per-turn voice context (not persisted in history)
-        self._turn_context_prompts: dict[str, str] = {}
-        # Active response objects for aborting HTTP connections on cancel
+        self._turn_transcripts: dict[str, str] = {}  # pending user message
+        self._turn_context_prompts: dict[str, str] = {}  # transient, never persisted
         self._active_responses: dict[str, aiohttp.ClientResponse] = {}
+        self._active_clients: dict[str, aiohttp.ClientSession] = {}
+        # Models observed to start their output inside reasoning (only a
+        # closing </think> tag appears), learned when reasoning_start=auto.
+        self._reasoning_prefix_models: set[str] = set()
         # Detected /v1 prefix (auto-probed on first use)
         self._api_prefix: str | None = None
 
@@ -215,14 +264,14 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
             return ""
         return ""
 
+    def _new_history(self) -> list[dict[str, str]]:
+        return [{"role": "system", "content": self.system_prompt}]
+
     async def start_or_resume_session(
         self, client_context: dict | None = None
     ) -> str:
         session_handle = str(uuid.uuid4())
-        # Initialize conversation with system prompt
-        self._sessions[session_handle] = [
-            {"role": "system", "content": self.system_prompt}
-        ]
+        self._sessions[session_handle] = self._new_history()
         self._evict_stale_sessions()
         return session_handle
 
@@ -245,223 +294,227 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
     ) -> str:
         if session_handle not in self._sessions:
             # Auto-create session if missing
-            self._sessions[session_handle] = [
-                {"role": "system", "content": self.system_prompt}
-            ]
+            self._sessions[session_handle] = self._new_history()
             self._evict_stale_sessions()
         else:
             self._touch_session(session_handle)
 
-        # Append user message
-        self._sessions[session_handle].append(
-            {"role": "user", "content": transcript}
-        )
-
-        # Truncate history if too long (keep system prompt + last N turns)
-        messages = self._sessions[session_handle]
-        if len(messages) > MAX_HISTORY_TURNS + 1:  # +1 for system prompt
-            self._sessions[session_handle] = [messages[0]] + messages[-(MAX_HISTORY_TURNS):]
-
         turn_handle = str(uuid.uuid4())
         self._active_turns[turn_handle] = True
         self._turn_sessions[turn_handle] = session_handle
-        # Store voice turn context if provided — used transiently at request
-        # time and NOT persisted into the session history so subsequent turns
-        # don't compound directives.
-        context_prompt = build_voice_turn_context_prompt(turn_context)
+        # The user message stays pending here until the turn succeeds.
+        self._turn_transcripts[turn_handle] = transcript
+        # Transient voice context, merged into the system message at request
+        # time only. Default-only context is skipped entirely.
+        context_prompt = build_voice_turn_context_prompt(turn_context, omit_defaults=True)
         if context_prompt:
             self._turn_context_prompts[turn_handle] = context_prompt
+        while len(self._turn_sessions) > MAX_PENDING_TURNS:
+            self._cleanup_turn(next(iter(self._turn_sessions)))
         return turn_handle
+
+    def _request_messages(
+        self,
+        session_handle: str,
+        transcript: str,
+        context_prompt: str,
+    ) -> list[dict[str, str]]:
+        history = self._sessions.get(session_handle) or self._new_history()
+        system_content = history[0]["content"] if history[0].get("role") == "system" else self.system_prompt
+        exchanges = history[1:] if history[0].get("role") == "system" else history
+        if context_prompt:
+            system_content = f"{system_content}\n\n{context_prompt}"
+        return [
+            {"role": "system", "content": system_content},
+            *exchanges,
+            {"role": "user", "content": transcript},
+        ]
+
+    def _trim_history(self, history: list[dict[str, str]]) -> None:
+        """Drop whole (user, assistant) exchanges until count and size fit."""
+        while len(history) > 1:
+            exchanges = history[1:]
+            chars = sum(len(message.get("content", "")) for message in exchanges)
+            if len(exchanges) <= MAX_HISTORY_TURNS and chars <= self.history_char_budget:
+                return
+            del history[1:3]
+
+    def _commit_exchange(self, session_handle: str, transcript: str, reply: str) -> None:
+        history = self._sessions.get(session_handle)
+        if history is None or not reply:
+            return
+        history.append({"role": "user", "content": transcript})
+        history.append({"role": "assistant", "content": reply})
+        self._trim_history(history)
+
+    def _drop_oldest_exchange(self, session_handle: str) -> bool:
+        history = self._sessions.get(session_handle)
+        if history is None or len(history) < 3:
+            return False
+        del history[1:3]
+        return True
+
+    def _is_cancelled(self, turn_handle: str) -> bool:
+        return not self._active_turns.get(turn_handle, False)
 
     async def stream_assistant_output(
         self,
         session_handle: str,
         turn_handle: str,
     ) -> AsyncIterator[dict[str, Any]]:
-        if not self.available:
-            self._cleanup_turn(turn_handle)
-            raise RuntimeError("OpenAI-compatible backend URL is not configured")
-
-        messages = self._sessions.get(session_handle, [])
-        if not messages:
-            self._rollback_user_message(session_handle)
-            self._cleanup_turn(turn_handle)
-            yield {"type": "turn_failed", "message": "no session found"}
-            return
-
-        # Apply transient voice turn context: insert as a system message
-        # just before the latest user turn, but only for this request — not
-        # persisted in the session history.
-        context_prompt = self._turn_context_prompts.pop(turn_handle, None)
-        if context_prompt:
-            # messages is a reference; don't mutate. Rebuild with context inserted.
-            messages_for_request = list(messages)
-            # Insert context right before the last user turn.
-            if messages_for_request and messages_for_request[-1].get("role") == "user":
-                messages_for_request.insert(-1, {"role": "system", "content": context_prompt})
-            else:
-                messages_for_request.append({"role": "system", "content": context_prompt})
-            messages = messages_for_request
-
-        # Resolve model and API prefix
-        model = self.model or await self._auto_detect_model()
-        if not model:
-            self._rollback_user_message(session_handle)
-            self._cleanup_turn(turn_handle)
-            yield {"type": "turn_failed", "message": "no model configured or detected"}
-            return
-
-        prefix = await self._resolve_api_prefix()
-        url = f"{self.base_url}{prefix}/chat/completions"
-
-        payload = {
-            "model": model,
-            "messages": messages,
-            "stream": True,
-        }
-        if self.reasoning_effort:
-            payload["reasoning_effort"] = self.reasoning_effort
-
-        timeout = aiohttp.ClientTimeout(
-            sock_connect=self.timeout_connect,
-            sock_read=self.timeout_first_token,
-        )
-
-        full_response = ""
-        saw_reasoning = False
-        stream_error = ""
-
         try:
-            async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as session:
-                async with session.post(
-                    url,
-                    json=payload,
-                    headers=self._headers(),
-                    allow_redirects=False,
-                    **self._request_kwargs(),
-                ) as resp:
-                    # Store response for cancellation
-                    self._active_responses[turn_handle] = resp
+            if not self.available:
+                raise RuntimeError("OpenAI-compatible backend URL is not configured")
+            transcript = self._turn_transcripts.get(turn_handle)
+            if transcript is None:
+                yield {"type": "turn_failed", "message": "unknown or finished turn handle"}
+                return
+            if self._is_cancelled(turn_handle):
+                yield {"type": "cancel_acknowledged"}
+                return
+            if session_handle not in self._sessions:
+                yield {"type": "turn_failed", "message": "no session found"}
+                return
 
-                    if resp.status >= 400:
-                        body = await read_bounded_response_text(resp)
-                        error_msg = _normalize_error(body)
-                        self._rollback_user_message(session_handle)
-                        self._cleanup_turn(turn_handle)
-                        yield {"type": "turn_failed", "message": error_msg}
-                        return
+            model = self.model or await self._auto_detect_model()
+            if not model:
+                yield {"type": "turn_failed", "message": "no model configured or detected"}
+                return
+            prefix = await self._resolve_api_prefix()
+            url = f"{self.base_url}{prefix}/chat/completions"
+            context_prompt = self._turn_context_prompts.get(turn_handle, "")
 
-                    async for event in iter_sse_json_objects(resp.content):
-                        if not self._active_turns.get(turn_handle, False):
-                            break  # Cancelled
+            start_inside = self.reasoning_start == "inside" or (
+                self.reasoning_start == "auto" and model in self._reasoning_prefix_models
+            )
+            tag_filter = ReasoningTagFilter(start_inside=start_inside)
+            timeout = aiohttp.ClientTimeout(
+                sock_connect=self.timeout_connect,
+                sock_read=self.timeout_first_token,
+            )
 
-                        if event.get("error"):
-                            stream_error = _normalize_error(json.dumps(event))
-                            break
+            full_response = ""  # exactly the concatenated deltas yielded
+            clean_response = ""  # what is stored in history (no reasoning)
+            reasoning_announced = False
+            stray_close_seen = False
+            stream_error = ""
+            finish_reason = ""
+            failure = ""
 
-                        choices = event.get("choices", [])
-                        if (
-                            not isinstance(choices, list)
-                            or not choices
-                            or not isinstance(choices[0], dict)
-                        ):
-                            continue
+            try:
+                for attempt in range(2):
+                    payload: dict[str, Any] = {
+                        "model": model,
+                        "messages": self._request_messages(session_handle, transcript, context_prompt),
+                        "stream": True,
+                    }
+                    if self.max_tokens:
+                        payload["max_tokens"] = self.max_tokens
+                    if self.reasoning_effort:
+                        payload["reasoning_effort"] = self.reasoning_effort
 
-                        content, event_has_reasoning = _extract_answer_delta(
-                            choices[0].get("delta", {})
-                        )
-                        saw_reasoning = saw_reasoning or event_has_reasoning
-                        if content:
-                            if len(full_response) + len(content) > MAX_ASSISTANT_TEXT_CHARS:
-                                stream_error = "assistant output exceeded the configured limit"
+                    async with aiohttp.ClientSession(timeout=timeout, trust_env=False) as http:
+                        self._active_clients[turn_handle] = http
+                        async with http.post(
+                            url,
+                            json=payload,
+                            headers=self._headers(),
+                            allow_redirects=False,
+                            **self._request_kwargs(),
+                        ) as resp:
+                            self._active_responses[turn_handle] = resp
+                            if self._is_cancelled(turn_handle):
                                 break
-                            full_response += content
-                            yield {
-                                "type": "assistant_text_delta",
-                                "text": content,
-                            }
+                            if resp.status >= 400:
+                                message = _normalize_error(await read_bounded_response_text(resp))
+                                if (
+                                    attempt == 0
+                                    and _is_context_overflow(resp.status, message)
+                                    and self._drop_oldest_exchange(session_handle)
+                                ):
+                                    continue
+                                failure = message
+                                break
 
-        except aiohttp.ClientConnectorError:
-            yield self._finish_failed_or_cancelled(
-                session_handle,
-                turn_handle,
-                f"Cannot reach server at {self.base_url}. Is it running?",
-            )
-            return
-        except aiohttp.ServerTimeoutError:
-            yield self._finish_failed_or_cancelled(
-                session_handle,
-                turn_handle,
-                "Server not responding. The model may be loading — try again.",
-            )
-            return
-        except Exception as exc:
-            yield self._finish_failed_or_cancelled(
-                session_handle,
-                turn_handle,
-                str(exc),
-            )
-            return
+                            async for event in iter_sse_json_objects(resp.content):
+                                if self._is_cancelled(turn_handle):
+                                    break
+                                if event.get("error"):
+                                    stream_error = _normalize_error(json.dumps(event))
+                                    break
+                                choices = event.get("choices", [])
+                                if (
+                                    not isinstance(choices, list)
+                                    or not choices
+                                    or not isinstance(choices[0], dict)
+                                ):
+                                    continue
+                                choice = choices[0]
+                                if isinstance(choice.get("finish_reason"), str):
+                                    finish_reason = choice["finish_reason"]
+                                content, field_reasoning = _extract_answer_delta(choice.get("delta", {}))
+                                visible = tag_filter.feed(content) if content else ""
+                                if tag_filter.saw_stray_close and not stray_close_seen:
+                                    # Everything before the stray tag was reasoning.
+                                    stray_close_seen = True
+                                    clean_response = ""
+                                    if self.reasoning_start == "auto":
+                                        self._reasoning_prefix_models.add(model)
+                                if (field_reasoning or tag_filter.saw_reasoning) and not reasoning_announced:
+                                    reasoning_announced = True
+                                    yield make_activity_event("thinking", "Thinking")
+                                if visible:
+                                    if len(full_response) + len(visible) > MAX_ASSISTANT_TEXT_CHARS:
+                                        stream_error = "assistant output exceeded the configured limit"
+                                        break
+                                    full_response += visible
+                                    clean_response += visible
+                                    yield {"type": "assistant_text_delta", "text": visible}
+                    break
+            except aiohttp.ClientConnectorError:
+                failure = f"Cannot reach server at {self.base_url}. Is it running?"
+            except aiohttp.ServerTimeoutError:
+                failure = "Server not responding. The model may be loading — try again."
+            except Exception as exc:
+                failure = str(exc) or type(exc).__name__
 
-        if stream_error:
-            self._rollback_user_message(session_handle)
+            if self._is_cancelled(turn_handle):
+                # Cancelled turn: nothing is stored, the partial reply is dropped.
+                yield {"type": "cancel_acknowledged"}
+                return
+            if failure or stream_error:
+                yield {"type": "turn_failed", "message": failure or stream_error}
+                return
+
+            tail = tag_filter.flush()
+            if tail:
+                full_response += tail
+                clean_response += tail
+                yield {"type": "assistant_text_delta", "text": tail}
+
+            if not full_response:
+                message = "model returned no assistant content"
+                if reasoning_announced or tag_filter.saw_reasoning:
+                    message += "; reasoning was withheld from voice output"
+                if finish_reason == "length":
+                    message += "; the token limit was reached (raise QANTARA_OPENAI_MAX_TOKENS)"
+                yield {"type": "turn_failed", "message": message}
+                return
+
+            # Commit user + assistant together only once the turn succeeded.
+            self._commit_exchange(session_handle, transcript, clean_response.strip())
+            yield {"type": "assistant_text_final", "text": full_response}
+            yield {"type": "turn_completed"}
+        finally:
             self._cleanup_turn(turn_handle)
-            yield {"type": "turn_failed", "message": stream_error}
-            return
-
-        # Clean up turn tracking
-        was_cancelled = not self._active_turns.get(turn_handle, False)
-        self._cleanup_turn(turn_handle)
-
-        if was_cancelled:
-            # Cancelled turn: emit cancel_acknowledged, do NOT save partial response
-            self._rollback_user_message(session_handle)
-            yield {"type": "cancel_acknowledged"}
-            return
-
-        if not full_response:
-            self._rollback_user_message(session_handle)
-            message = "model returned no assistant content"
-            if saw_reasoning:
-                message += "; reasoning was withheld from voice output"
-            yield {"type": "turn_failed", "message": message}
-            return
-
-        # Emit final text for completed turns only
-        yield {"type": "assistant_text_final", "text": full_response}
-        # Save assistant response to conversation history
-        if session_handle in self._sessions:
-            self._sessions[session_handle].append(
-                {"role": "assistant", "content": full_response}
-            )
-
-        yield {"type": "turn_completed"}
-
-    def _rollback_user_message(self, session_handle: str) -> None:
-        """Remove the last user message from history on turn failure."""
-        messages = self._sessions.get(session_handle, [])
-        if messages and messages[-1].get("role") == "user":
-            messages.pop()
-
-    def _finish_failed_or_cancelled(
-        self,
-        session_handle: str,
-        turn_handle: str,
-        message: str,
-    ) -> dict[str, str]:
-        """Clean up a failed stream while preserving cancellation semantics."""
-        was_cancelled = not self._active_turns.get(turn_handle, False)
-        self._rollback_user_message(session_handle)
-        self._cleanup_turn(turn_handle)
-        if was_cancelled:
-            return {"type": "cancel_acknowledged"}
-        return {"type": "turn_failed", "message": message}
 
     def _cleanup_turn(self, turn_handle: str) -> None:
         """Drop per-turn state after completion, cancellation, or failure."""
         self._active_responses.pop(turn_handle, None)
+        self._active_clients.pop(turn_handle, None)
         self._active_turns.pop(turn_handle, None)
         self._turn_sessions.pop(turn_handle, None)
+        self._turn_transcripts.pop(turn_handle, None)
         self._turn_context_prompts.pop(turn_handle, None)
 
     async def cancel_turn(
@@ -470,12 +523,19 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
         turn_handle: str,
         cancel_context: dict | None = None,
     ) -> dict[str, Any]:
+        if turn_handle not in self._turn_sessions:
+            # Unknown or already finished: nothing to cancel, nothing to track.
+            return {"status": "acknowledged", "detail": "turn is not active"}
         # Signal the streaming loop to stop
         self._active_turns[turn_handle] = False
-        # Close the HTTP response to abort the in-flight stream immediately
+        # Abort the in-flight HTTP exchange, including one still waiting for
+        # response headers (cold model load, long prefill).
         resp = self._active_responses.pop(turn_handle, None)
         if resp is not None:
             resp.close()
+        client = self._active_clients.pop(turn_handle, None)
+        if client is not None and not client.closed:
+            await client.close()
         return {"status": "acknowledged"}
 
     async def check_health(self) -> AdapterHealth:
@@ -509,16 +569,21 @@ class OpenAICompatibleAdapter(RuntimeAdapter):
                     models = data.get("data", [])
                     if not isinstance(models, list):
                         raise RuntimeError("model endpoint returned an invalid model list")
-                    model_names = [
-                        m.get("id", "?")
-                        for m in models[:5]
-                        if isinstance(m, dict)
+                    model_ids = [
+                        m["id"] for m in models if isinstance(m, dict) and isinstance(m.get("id"), str)
                     ]
+                    preview = ", ".join(model_ids[:5]) or "none"
+                    if self.model and not _model_is_listed(self.model, model_ids):
+                        return AdapterHealth(
+                            status="degraded",
+                            degraded=True,
+                            detail=f"configured model {self.model!r} is not served; available: {preview}",
+                        )
                     detail = f"connected; {len(models)} model(s)"
                     if self.model:
                         detail += f"; using {self.model}"
-                    elif model_names:
-                        detail += f"; available: {', '.join(model_names)}"
+                    elif model_ids:
+                        detail += f"; available: {preview}"
                     return AdapterHealth(status="ok", detail=detail)
         except aiohttp.ClientConnectorError:
             return AdapterHealth(

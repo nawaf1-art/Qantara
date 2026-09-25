@@ -1,0 +1,117 @@
+name: Docker image
+
+# Builds the documented `docker compose up` image natively on amd64 and arm64
+# (Docker on Apple Silicon) and smoke-tests the container. Runs when the image
+# inputs change, on release tags, on demand, and from the release workflow.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - docker-compose.yml
+      - ops/docker/**
+      - gateway/transport_spike/requirements.*
+      - pyproject.toml
+      - scripts/check_lock_hashes.py
+      - .github/workflows/docker.yml
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - docker-compose.yml
+      - ops/docker/**
+      - gateway/transport_spike/requirements.*
+      - pyproject.toml
+      - scripts/check_lock_hashes.py
+      - .github/workflows/docker.yml
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    name: image (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            lock-target: linux_x86_64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            lock-target: linux_aarch64
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Verify the lock resolves for ${{ matrix.platform }}
+        run: python scripts/check_lock_hashes.py ops/docker/requirements.txt --targets ${{ matrix.lock-target }}
+
+      - name: Build image
+        run: docker build --platform ${{ matrix.platform }} --tag qantara:ci .
+
+      - name: Check image contents
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint python qantara:ci -c "
+          import os, torch, faster_whisper, kokoro, spacy, en_core_web_sm
+          assert os.getuid() == 10001, os.getuid()
+          assert '+cpu' in torch.__version__, torch.__version__
+          assert not os.access('/app/gateway/transport_spike/server.py', os.W_OK), 'app code is writable'
+          for private in ('CLAUDE.md', 'AGENTS.md', 'tests', 'docs/audits', '.claude'):
+              assert not os.path.exists(os.path.join('/app', private)), private
+          print('torch', torch.__version__, 'cuda', torch.cuda.is_available())
+          "
+
+      - name: Smoke-test /api/status
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          echo "::add-mask::$token"
+          docker run --detach --name qantara-smoke \
+            --publish 127.0.0.1:8765:8765 \
+            --env QANTARA_SPIKE_HOST=0.0.0.0 \
+            --env QANTARA_ADAPTER=mock \
+            --env QANTARA_AUTH_TOKEN="$token" \
+            --env QANTARA_WHISPER_MODEL=tiny.en \
+            qantara:ci
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error \
+                --header "Authorization: Bearer $token" \
+                --output status.json http://127.0.0.1:8765/api/status; then
+              break
+            fi
+            if [ "$(docker inspect --format '{{.State.Running}}' qantara-smoke)" != "true" ]; then
+              echo "container exited" >&2
+              break
+            fi
+            sleep 3
+          done
+          python -c "
+          import json
+          status = json.load(open('status.json'))
+          assert 'adapter_kind' in status and 'health' in status, status
+          print('adapter', status['adapter_kind'])
+          "
+
+      - name: Show container logs
+        if: always()
+        run: docker logs qantara-smoke 2>&1 | tail -n 200 || true

@@ -4,6 +4,9 @@
 # or use a trusted internal domain you control.
 #
 # The Python gateway continues to run behind Caddy on an internal port.
+# Caddy forwards the browser's Host header (qantara.local), which is not a
+# loopback name, so the gateway must have QANTARA_AUTH_TOKEN set; without a
+# token it refuses non-loopback requests. See ops/README.md.
 
 qantara.local {
     reverse_proxy 127.0.0.1:8899

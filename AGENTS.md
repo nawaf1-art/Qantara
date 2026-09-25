@@ -143,19 +143,23 @@ QANTARA_ADAPTER=session_gateway_http QANTARA_BACKEND_BASE_URL=http://127.0.0.1:1
 
 ## Current State
 
-Version: `0.3.1` — hardening release covering security boundaries,
-release reproducibility, package validation, and public project operations. `0.3.0` was the
-consolidated platform release covering the Python SDK,
-Voice-as-API, Ollama compatibility, and audit hardening. `0.2.6` was the first
-public release.
+Version: `0.4.0` (current source; the `v0.4.0` GitHub Release is not yet
+published, and `v0.3.1` is the latest published release) — remediation of the
+2026-09-24 platform audit: whole-utterance STT capture, language-routed TTS
+(`auto` default), visible backend failures and idle-timeout streaming, per-turn
+cancellation ownership, a fail-closed no-token LAN policy, mesh safety fixes,
+`qantara` console scripts, and removal of the Wyoming bridge. `0.3.1` was the
+hardening and release-reproducibility release; `0.3.0` was the consolidated
+platform release covering the Python SDK, Voice-as-API, Ollama compatibility,
+and audit hardening. `0.2.6` was the first public release.
 
 Working today:
 - Browser mic capture → WebSocket → gateway → STT (faster-whisper) → adapter → backend → TTS → browser playback
 - VAD, endpointing, auto-submit, barge-in, session management
 - Direct OpenAI-compatible and Ollama bridge backends validated; OpenClaw bridge remains advanced/optional
-- English and Arabic voice routing with local Piper/Kokoro/Chatterbox provider support
+- Language-routed TTS: Kokoro for English/Spanish/French and Piper for Arabic (`QANTARA_TTS_PROVIDER=auto`); Chatterbox is optional
 - Multilingual assistant and translation modes for the launch language set
-- Multi-device mesh and Wyoming satellite support
+- Experimental multi-device mesh (token required for LAN binds; not yet validated across physical devices)
 - HTTPS/WSS for LAN access
 - Avatar system with lipsync contract
 

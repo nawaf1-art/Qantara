@@ -28,7 +28,8 @@ body:
         - STT or TTS provider
         - Voice API / SDK
         - MCP / OpenClaw
-        - Mesh / Wyoming
+        - Mesh / multi-device
+        - Home Assistant / smart home
         - Packaging / release / CI
         - Documentation / project operations
     validations:

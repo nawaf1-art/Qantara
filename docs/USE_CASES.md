@@ -57,4 +57,4 @@ Use Qantara to test voice-agent behaviors such as:
 
 ## Smart Home And Home Assistant Experiments
 
-Qantara includes an experimental Wyoming satellite path for Home Assistant Assist workflows. Treat this as a technical integration path for local labs, not a polished commercial smart-home product.
+Qantara no longer ships a Home Assistant satellite: the Wyoming bridge was removed in `0.4.0` because it did not match Home Assistant's satellite model. Home Assistant automations can still call the local [Voice API](VOICE_API.md) for one-shot speak, transcribe, and converse requests. See [Home Assistant](HOMEASSISTANT.md).

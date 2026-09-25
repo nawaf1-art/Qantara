@@ -26,7 +26,7 @@ This is Qantara, a local-first browser voice gateway for Ollama and local AI age
 5. Interrupt playback and ask a follow-up.
 6. Open the debug panel to show backend and latency state.
 7. Show `SECURITY.md` or the README privacy section.
-8. Mention experimental MCP and Home Assistant/Wyoming paths without overstating them.
+8. Mention the experimental MCP and mesh paths without overstating them. Do not present a Home Assistant integration: the Wyoming bridge was removed in 0.4.0.
 
 ## Screenshot List
 

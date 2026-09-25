@@ -89,7 +89,8 @@ class BargeInTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(interrupted), 1)
         payload = interrupted[0]["payload"]
         self.assertEqual(payload["partial_text"], "Hello there, I was about to say")
-        self.assertIn("resumable", payload)
+        # LC-K6: the always-true "resumable" flag was removed.
+        self.assertNotIn("resumable", payload)
         self.assertIn("interrupted_during_state", payload)
         self.assertEqual(interrupted[0]["source"], "session")
 

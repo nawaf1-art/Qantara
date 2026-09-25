@@ -14,11 +14,8 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from gateway.transport_spike.auth import (  # noqa: E402
-    ADMIN_TOKEN_KEY,
-    AUTH_SESSION_TOKEN_KEY,
-    AUTH_TOKEN_KEY,
-    load_auth_token,
-    new_auth_session_token,
+    auth_failure_middleware,
+    install_auth,
 )
 from gateway.transport_spike.common import (  # noqa: E402
     DEFAULT_HOST,
@@ -65,32 +62,43 @@ __all__ = [
 ]
 
 
-def create_app(runtime: GatewayRuntime | None = None) -> web.Application:
+def create_app(
+    runtime: GatewayRuntime | None = None,
+    *,
+    bind_host: str | None = None,
+) -> web.Application:
+    """Build the gateway application.
+
+    ``bind_host`` is the interface the caller will listen on; it only drives
+    the startup warning. It defaults to QANTARA_SPIKE_HOST so the standalone
+    server and the SDK (which passes its ``host`` argument) warn consistently.
+    """
     # Keep control-plane JSON small. The one-shot transcription handler clones
     # its request with its separate 32 MiB audio-specific ceiling.
     app = web.Application(client_max_size=1024 * 1024)
     app.middlewares.append(origin_guard_middleware)
+    app.middlewares.append(auth_failure_middleware)
     app.on_response_prepare.append(add_security_headers)
     app[APP_RUNTIME_KEY] = runtime or GatewayRuntime()
-    auth_token = load_auth_token("QANTARA_AUTH_TOKEN")
-    app[AUTH_TOKEN_KEY] = auth_token
-    app[AUTH_SESSION_TOKEN_KEY] = new_auth_session_token(auth_token)
-    app[ADMIN_TOKEN_KEY] = load_auth_token("QANTARA_ADMIN_TOKEN")
+    auth_token = install_auth(app)
     app.router.add_get("/ws", websocket_handler)
     app.router.add_get("/api/discovery/scan", api_discovery_scan_handler)
     mount_static_routes(app)
 
-    bind_host = os.environ.get("QANTARA_SPIKE_HOST", DEFAULT_HOST)
+    if bind_host is None:
+        bind_host = os.environ.get("QANTARA_SPIKE_HOST", DEFAULT_HOST)
     if _is_non_loopback_bind(bind_host) and auth_token is None:
         LOGGER.warning(
             "qantara gateway is configured to listen on %s without QANTARA_AUTH_TOKEN; "
-            "set a strong token before exposing Qantara on a LAN",
-            bind_host,
+            "only loopback Host headers (plus QANTARA_ALLOWED_HOSTS) are accepted, so "
+            "LAN clients receive 421 until you set a strong QANTARA_AUTH_TOKEN",
+            bind_host or "all interfaces",
         )
 
     async def _on_startup(_app: web.Application) -> None:
         await app[APP_RUNTIME_KEY].start_mesh()
-        await app[APP_RUNTIME_KEY].start_wyoming()
+        app[APP_RUNTIME_KEY].warn_removed_settings()
+        app[APP_RUNTIME_KEY].start_provider_warmup()
 
     app.on_startup.append(_on_startup)
     app.on_cleanup.append(cleanup_bridge)
@@ -98,12 +106,13 @@ def create_app(runtime: GatewayRuntime | None = None) -> web.Application:
 
 
 def _is_non_loopback_bind(host: str) -> bool:
+    host = (host or "").strip().strip("[]")
     if host in {"", "0.0.0.0", "::"}:
         return True
     try:
         return not ipaddress.ip_address(host).is_loopback
     except ValueError:
-        return host not in {"localhost"}
+        return host.lower() not in {"localhost"}
 
 
 def create_ssl_context() -> ssl.SSLContext | None:
@@ -116,7 +125,7 @@ def create_ssl_context() -> ssl.SSLContext | None:
 
 if __name__ == "__main__":
     web.run_app(
-        create_app(),
+        create_app(bind_host=DEFAULT_HOST),
         host=DEFAULT_HOST,
         port=DEFAULT_PORT,
         ssl_context=create_ssl_context(),

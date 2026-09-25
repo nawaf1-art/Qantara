@@ -2,18 +2,26 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ipaddress
 import json
 import os
 import re
+import shlex
+import shutil
 import socket as _sock
 import time
 from collections import deque
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from dataclasses import replace as dataclass_replace
 from typing import Any
+from urllib.parse import urlparse, urlsplit
 
 import aiohttp as _aiohttp
 from aiohttp import web
 
+from adapters.base import AdapterConfig
+from adapters.mcp_client import MCPClientAdapter
 from gateway.transport_spike.auth import (
     ADMIN_TOKEN_KEY,
     AUTH_TOKEN_KEY,
@@ -24,8 +32,17 @@ from gateway.transport_spike.auth import (
     require_bearer_token,
 )
 from gateway.transport_spike.common import CLIENT_SETUP_DIR, CLIENT_SPIKE_DIR, CLIENT_TRANSLATE_DIR, IDENTITY_DIR
+from gateway.transport_spike.languages_catalog import build_language_catalog
+from gateway.transport_spike.prompts import LANGUAGE_NAMES
 from gateway.transport_spike.runtime import APP_RUNTIME_KEY, GatewayRuntime
+from gateway.transport_spike.speech import (
+    apply_voice_selection,
+    cancel_active_turn,
+    enqueue_control_speech,
+    safe_send_str,
+)
 from gateway.transport_spike.voice_api import mount_voice_api
+from providers.factory import create_tts_provider
 from qantara.http_safety import (
     read_bounded_response_bytes,
     read_bounded_response_json,
@@ -40,6 +57,14 @@ MAX_CONFIGURATION_IDENTIFIER_CHARS = 256
 MAX_SETUP_PROBE_STDOUT_BYTES = 1024 * 1024
 MAX_SETUP_PROBE_STDERR_BYTES = 256 * 1024
 _test_url_call_log: dict[str, deque[float]] = {}
+BACKEND_PROBE_CACHE_TTL_S = 10.0
+_DNS_RESOLVE_TIMEOUT_S = 3.0
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+LAN_ACCESS_REQUIRES_TOKEN_MESSAGE = (
+    "Set QANTARA_AUTH_TOKEN to allow LAN access. Without a token this gateway "
+    "only answers loopback Host names (localhost, 127.0.0.1, ::1) and hosts "
+    "listed in QANTARA_ALLOWED_HOSTS."
+)
 
 
 class SetupProbeOutputLimitError(RuntimeError):
@@ -185,8 +210,6 @@ async def probe_ollama() -> dict[str, Any]:
 
 
 async def probe_openclaw() -> dict[str, Any]:
-    import shutil
-
     result: dict[str, Any] = {"available": False, "installed": False, "gateway_running": False, "agents": []}
     openclaw_bin = os.environ.get("QANTARA_OPENCLAW_BIN", "openclaw")
     if not shutil.which(openclaw_bin):
@@ -287,9 +310,6 @@ async def probe_mcp() -> dict[str, Any]:
     if not configured:
         return result
     try:
-        from adapters.base import AdapterConfig
-        from adapters.mcp_client import MCPClientAdapter
-
         adapter = MCPClientAdapter(
             AdapterConfig(
                 kind="mcp_client",
@@ -362,15 +382,82 @@ def _assemble_backends(
     return backends
 
 
+class BackendProbeCache:
+    """Single-flight, short-lived cache for backend detection probes.
+
+    ``/api/backends`` and ``/api/backends/stream`` may spawn host subprocesses
+    (``openclaw health``, a stdio MCP command). Concurrent or looped requests
+    share one in-flight probe per backend, and a completed result is reused
+    for ``ttl_seconds``. The shared probe is shielded so a disconnecting
+    client cannot cancel it for everyone else. Failures are not cached.
+    """
+
+    def __init__(
+        self,
+        ttl_seconds: float = BACKEND_PROBE_CACHE_TTL_S,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.ttl_seconds = ttl_seconds
+        self._clock = clock
+        self._results: dict[str, tuple[float, dict[str, Any]]] = {}
+        self._inflight: dict[str, asyncio.Task] = {}
+
+    def _finish(self, name: str, task: asyncio.Task) -> None:
+        if self._inflight.get(name) is task:
+            self._inflight.pop(name, None)
+        if task.cancelled():
+            return
+        if task.exception() is not None:
+            return
+        self._results[name] = (self._clock(), task.result())
+
+    async def get(
+        self,
+        name: str,
+        factory: Callable[[], Awaitable[dict[str, Any]]],
+    ) -> dict[str, Any]:
+        cached = self._results.get(name)
+        if cached is not None and self._clock() - cached[0] < self.ttl_seconds:
+            return cached[1]
+        task = self._inflight.get(name)
+        if task is None:
+            task = asyncio.ensure_future(factory())
+            self._inflight[name] = task
+            task.add_done_callback(lambda done, name=name: self._finish(name, done))
+        return await asyncio.shield(task)
+
+
+BACKEND_PROBE_CACHE_KEY: web.AppKey[BackendProbeCache] = web.AppKey(
+    "backend_probe_cache", BackendProbeCache
+)
+
+
+def _backend_probe_cache(app: web.Application) -> BackendProbeCache:
+    cache = app.get(BACKEND_PROBE_CACHE_KEY)
+    # mount_static_routes installs the per-app cache; an app assembled some
+    # other way still gets correct (uncached) probing.
+    return cache if cache is not None else BackendProbeCache()
+
+
+def _backend_probes() -> dict[str, tuple[str, Callable[[], Awaitable[dict[str, Any]]]]]:
+    # Resolve the probe functions at call time so they stay patchable.
+    return {
+        "ollama": ("Ollama", lambda: probe_ollama()),
+        "openclaw": ("OpenClaw", lambda: probe_openclaw()),
+        "openai_compatible": ("OpenAI-Compatible", lambda: probe_openai_compatible()),
+        "mcp": ("MCP", lambda: probe_mcp()),
+    }
+
+
 async def api_backends_handler(request: web.Request) -> web.Response:
     auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
     if auth_error is not None:
         return auth_error
+    cache = _backend_probe_cache(request.app)
+    probes = _backend_probes()
     ollama_result, openclaw_result, openai_result, mcp_result = await asyncio.gather(
-        probe_ollama(),
-        probe_openclaw(),
-        probe_openai_compatible(),
-        probe_mcp(),
+        *(cache.get(name, factory) for name, (_label, factory) in probes.items())
     )
     return web.json_response({"backends": _assemble_backends(ollama_result, openclaw_result, openai_result, mcp_result)})
 
@@ -391,17 +478,13 @@ async def api_backends_stream_handler(request: web.Request) -> web.StreamRespons
         payload = json.dumps(data).encode("utf-8")
         await response.write(b"event: " + event_type.encode() + b"\ndata: " + payload + b"\n\n")
 
-    probes: dict[str, tuple[str, Any]] = {
-        "ollama": ("Ollama", probe_ollama()),
-        "openclaw": ("OpenClaw", probe_openclaw()),
-        "openai_compatible": ("OpenAI-Compatible", probe_openai_compatible()),
-        "mcp": ("MCP", probe_mcp()),
-    }
+    cache = _backend_probe_cache(request.app)
+    probes = _backend_probes()
     tasks: dict[asyncio.Task, str] = {}
     try:
         await send_event("start", {"total": len(probes)})
-        for probe_type, (probe_name, coro) in probes.items():
-            task = asyncio.create_task(coro)
+        for probe_type, (probe_name, factory) in probes.items():
+            task = asyncio.create_task(cache.get(probe_type, factory))
             tasks[task] = probe_type
             await send_event("probe_started", {"type": probe_type, "name": probe_name})
 
@@ -433,6 +516,31 @@ async def api_backends_stream_handler(request: web.Request) -> web.StreamRespons
     return response
 
 
+def _command_program_name(command: str) -> str:
+    """Return only the executable basename of a configured command line."""
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        parts = command.split()
+    if not parts:
+        return ""
+    return os.path.basename(parts[0])[:MAX_CONFIGURATION_IDENTIFIER_CHARS]
+
+
+def _redact_binding_agent(payload: dict[str, Any], backend_type: Any) -> dict[str, Any]:
+    """Never serialize the stdio MCP command line (it may carry API keys).
+
+    For MCP bindings ``agent`` holds QANTARA_MCP_COMMAND; expose the program
+    basename plus a ``mcp_command_configured`` flag instead.
+    """
+    if backend_type in {"mcp", "mcp_client"}:
+        command = str(payload.get("agent") or "")
+        payload = dict(payload)
+        payload["agent"] = _command_program_name(command)
+        payload["mcp_command_configured"] = bool(command.strip())
+    return payload
+
+
 async def api_status_handler(request: web.Request) -> web.Response:
     runtime: GatewayRuntime = request.app[APP_RUNTIME_KEY]
     if request.app.get(AUTH_TOKEN_KEY) is not None and not has_valid_auth_token(
@@ -445,7 +553,8 @@ async def api_status_handler(request: web.Request) -> web.Response:
                 "authentication_required": True,
             }
         )
-    return web.json_response(runtime.status_payload())
+    payload = runtime.status_payload()
+    return web.json_response(_redact_binding_agent(payload, payload.get("type")))
 
 
 async def api_admin_runtime_handler(request: web.Request) -> web.Response:
@@ -458,7 +567,12 @@ async def api_admin_runtime_handler(request: web.Request) -> web.Response:
         return auth_error
     runtime: GatewayRuntime = request.app[APP_RUNTIME_KEY]
     runtime.prune_session_store()
-    return web.json_response(runtime.admin_payload())
+    payload = runtime.admin_payload()
+    payload["bindings"] = [
+        _redact_binding_agent(binding, binding.get("backend_type"))
+        for binding in payload.get("bindings", [])
+    ]
+    return web.json_response(payload)
 
 
 def _binding_request_kwargs(binding: Any) -> dict[str, Any]:
@@ -581,8 +695,6 @@ async def api_warmup_handler(request: web.Request) -> web.Response:
 
 
 async def api_translation_mode_handler(request: web.Request) -> web.Response:
-    from dataclasses import replace
-
     auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
     if auth_error is not None:
         return auth_error
@@ -614,7 +726,7 @@ async def api_translation_mode_handler(request: web.Request) -> web.Response:
     if active_session is not None:
         _apply_session_translation(active_session, mode, source, target)
 
-    runtime._session_store[client_session_id] = replace(
+    runtime._session_store[client_session_id] = dataclass_replace(
         snapshot,
         translation_mode=mode,
         translation_source=source,
@@ -626,8 +738,6 @@ async def api_translation_mode_handler(request: web.Request) -> web.Response:
 
 
 def _validate_translation_mode(body: dict[str, Any]) -> tuple[str | None, str | None, str | None] | web.Response:
-    from gateway.transport_spike.prompts import LANGUAGE_NAMES
-
     mode = body.get("mode")
     if mode not in {"assistant", "directional", "live", None}:
         return web.json_response({"error": f"invalid mode: {mode}"}, status=400)
@@ -660,19 +770,23 @@ def _apply_session_translation(
 
 
 async def api_languages_handler(request: web.Request) -> web.Response:
-    from gateway.transport_spike.languages_catalog import build_language_catalog
-
+    auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
+    if auth_error is not None:
+        return auth_error
     runtime: GatewayRuntime = request.app[APP_RUNTIME_KEY]
     catalog = build_language_catalog(runtime.tts)
     return web.json_response({"languages": catalog})
 
 
 async def api_tts_handler(request: web.Request) -> web.Response:
+    auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
+    if auth_error is not None:
+        return auth_error
     runtime: GatewayRuntime = request.app[APP_RUNTIME_KEY]
     tts = runtime.tts
     current = tts.kind if tts is not None else "unknown"
     voices = tts.list_available_voices() if tts is not None and tts.available else []
-    engines = ["piper", "kokoro", "chatterbox"]
+    engines = list(TTS_ENGINES)
     return web.json_response({"current": current, "engines": engines, "voices": voices})
 
 
@@ -782,14 +896,10 @@ async def api_voice_control_speak_handler(request: web.Request) -> web.Response:
     voice_id = str(body.get("voice_id") or "").strip() or None
     interrupt = bool(body.get("interrupt", False))
     if interrupt:
-        from gateway.transport_spike.speech import cancel_active_turn
-
         session.playback_generation += 1
         session.speech_generation += 1
         await session.emit("playback_queue_cleared", "control", {"reason": "voice_speak_interrupt"})
         await cancel_active_turn(session, "voice_speak_interrupt")
-    from gateway.transport_spike.speech import enqueue_control_speech
-
     generation = session.speech_generation
     enqueue_control_speech(session, text, frozen_generation=generation, voice_id=voice_id)
     await session.emit("voice_speak_queued", "control", {"char_count": len(text), "voice_id": voice_id, "generation": generation})
@@ -817,8 +927,6 @@ async def api_voice_control_interrupt_handler(request: web.Request) -> web.Respo
     session = _resolve_control_session(runtime, body)
     if session is None:
         return _control_target_error(runtime)
-    from gateway.transport_spike.speech import cancel_active_turn, safe_send_str
-
     session.playback_generation += 1
     session.speech_generation += 1
     await session.emit("playback_queue_cleared", "control", {"reason": "voice_interrupt"})
@@ -852,8 +960,6 @@ async def api_voice_control_voice_handler(request: web.Request) -> web.Response:
     voice_id = str(body.get("voice_id") or "").strip()
     if not voice_id:
         return web.json_response({"ok": False, "error": "missing voice_id"}, status=400)
-    from gateway.transport_spike.speech import apply_voice_selection
-
     details = apply_voice_selection(session, voice_id)
     await session.emit("session_updated", "control", details)
     return web.json_response({"ok": True, "session": runtime._session_control_payload(session, include_binding=True), **details})
@@ -883,8 +989,6 @@ async def api_voice_control_translation_handler(request: web.Request) -> web.Res
         "translation_source": source,
         "translation_target": target,
     }
-    from gateway.transport_spike.speech import safe_send_str
-
     await session.emit("session_updated", "control", details)
     await safe_send_str(session, {"type": "session_updated", **details})
     return web.json_response(
@@ -932,14 +1036,11 @@ async def api_test_mcp_handler(request: web.Request) -> web.Response:
             return web.json_response({"ok": False, "error": "missing MCP URL"}, status=400)
         if not url.startswith(("http://", "https://")):
             url = "http://" + url
-        safe_mcp_url = _safe_outbound_url(url)
+        safe_mcp_url = await _safe_outbound_url(url)
         if safe_mcp_url is None:
             return web.json_response({"ok": False, "error": "Only private network MCP URLs are allowed"}, status=403)
         url = safe_mcp_url.url
     try:
-        from adapters.base import AdapterConfig
-        from adapters.mcp_client import MCPClientAdapter
-
         adapter = MCPClientAdapter(
             AdapterConfig(
                 kind="mcp_client",
@@ -969,6 +1070,42 @@ async def api_test_mcp_handler(request: web.Request) -> web.Response:
             "chat_tool_found": any(tool["name"] == chat_tool for tool in tools),
         }
     )
+
+
+TTS_ENGINES = ("auto", "routed", "piper", "kokoro", "chatterbox")
+
+
+async def _apply_tts_engine(runtime: GatewayRuntime, engine: str) -> dict[str, Any]:
+    """Swap the runtime TTS provider live, or explain honestly why not.
+
+    The provider is built off the event loop (model loading can be slow) and
+    only installed when it reports itself available; otherwise the current
+    engine keeps running. Nothing is written to the process environment.
+    In-flight synthesis keeps its reference to the previous provider.
+    """
+    current = getattr(runtime.tts, "kind", None)
+    if current == engine:
+        return {"engine": engine, "applied": True, "restart_required": False, "current": current}
+    try:
+        provider = await asyncio.to_thread(create_tts_provider, engine)
+    except Exception as exc:
+        return {
+            "engine": engine,
+            "applied": False,
+            "restart_required": False,
+            "current": current,
+            "error": f"could not start {engine} TTS: {type(exc).__name__}",
+        }
+    if not getattr(provider, "available", False):
+        return {
+            "engine": engine,
+            "applied": False,
+            "restart_required": False,
+            "current": current,
+            "error": f"{engine} TTS is not available on this host; keeping {current}",
+        }
+    runtime.tts = provider
+    return {"engine": engine, "applied": True, "restart_required": False, "current": engine}
 
 
 async def api_configure_handler(request: web.Request) -> web.Response:
@@ -1027,7 +1164,7 @@ async def api_configure_handler(request: web.Request) -> web.Response:
     outbound_host_header = ""
     outbound_server_hostname = ""
     if requires_safe_url and raw_url:
-        safe_url = _safe_outbound_url(raw_url)
+        safe_url = await _safe_outbound_url(raw_url)
         if safe_url is None:
             return web.json_response({"error": "Only private network URLs are allowed"}, status=403)
         raw_url = safe_url.url
@@ -1050,20 +1187,17 @@ async def api_configure_handler(request: web.Request) -> web.Response:
         return web.json_response({"error": str(exc)}, status=400)
     await unload_previous_model(runtime, previous_binding)
     tts_engine_value = body.get("tts_engine", "")
-    tts_engine = tts_engine_value.strip() if isinstance(tts_engine_value, str) else ""
-    if tts_engine and tts_engine in {"piper", "kokoro", "chatterbox"}:
-        # TTS live-swap is deferred — persist the preference into process env
-        # so the next time the factory is invoked (restart or reconfigure) it
-        # picks this engine up. The client surfaces a "restart required" note.
-        os.environ["QANTARA_TTS_PROVIDER"] = tts_engine
+    tts_engine = tts_engine_value.strip().lower() if isinstance(tts_engine_value, str) else ""
+    tts_result: dict[str, Any] | None = None
+    if tts_engine in TTS_ENGINES:
+        tts_result = await _apply_tts_engine(runtime, tts_engine)
     # Persist translation preferences on the runtime defaults so newly
     # connecting sessions pick them up. Per-session overrides still flow
     # through /api/translation_mode.
-    from gateway.transport_spike.prompts import LANGUAGE_NAMES as _LANGS
     primary_language = body.get("primary_language")
     if not isinstance(primary_language, str):
         primary_language = None
-    if primary_language in _LANGS:
+    if primary_language in LANGUAGE_NAMES:
         runtime.default_primary_language = primary_language
     translation_mode = body.get("translation_mode")
     if translation_mode is not None and not isinstance(translation_mode, str):
@@ -1076,41 +1210,86 @@ async def api_configure_handler(request: web.Request) -> web.Response:
         translation_source = None
     if not isinstance(translation_target, str):
         translation_target = None
-    if translation_source in _LANGS and translation_target in _LANGS:
+    if translation_source in LANGUAGE_NAMES and translation_target in LANGUAGE_NAMES:
         runtime.default_translation_source = translation_source
         runtime.default_translation_target = translation_target
-    return web.json_response({"ok": True, "type": backend_type, "adapter_kind": binding.adapter_kind, "url": binding.url, "health": binding.health, "managed_bridge": binding.managed_bridge_type, "binding_id": binding.binding_id, "tts_engine_pref": tts_engine or None})
+    return web.json_response({"ok": True, "type": backend_type, "adapter_kind": binding.adapter_kind, "url": binding.url, "health": binding.health, "managed_bridge": binding.managed_bridge_type, "binding_id": binding.binding_id, "tts_engine_pref": tts_engine or None, "tts": tts_result})
+
+
+_SSRF_ALLOWED_NETWORKS = tuple(
+    ipaddress.ip_network(network)
+    for network in (
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "127.0.0.0/8",
+        "::1/128",
+        "fc00::/7",
+    )
+)
+_SSRF_DENIED_NETWORKS = tuple(
+    ipaddress.ip_network(network)
+    for network in (
+        "0.0.0.0/8",
+        "169.254.0.0/16",  # link-local, incl. cloud metadata 169.254.169.254
+        "224.0.0.0/4",
+        "::/128",
+        "fe80::/10",
+        "fd00:ec2::254/128",  # AWS IPv6 instance metadata (inside fc00::/7)
+        "2002::/16",  # 6to4 can embed any IPv4, including denied ranges
+        "ff00::/8",
+    )
+)
+_CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
+
+
+def _truthy_env(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in _TRUTHY
 
 
 def _is_lan_ip(addr: Any) -> bool:
-    """True only for addresses that are genuinely on a private LAN / loopback.
+    """True only for loopback and explicitly private-LAN addresses.
 
-    ``ipaddress.is_private`` is NOT a safe allowlist: it reports True for the
-    link-local range (169.254.0.0/16, which includes the cloud metadata
-    endpoint 169.254.169.254, plus fe80::/10) and for the unspecified address
-    (0.0.0.0 / ::, which routes to localhost on Linux). Reject those classes
-    explicitly, unwrap IPv4-mapped IPv6 so ::ffff:169.254.169.254 cannot smuggle
-    a metadata IP past the guard, and treat loopback as always safe (IPv6 ::1 is
-    flagged is_reserved, so it must be allowed before the reserved check).
+    ``ipaddress.is_private`` is not a safe allowlist (it includes link-local
+    169.254.0.0/16, the unspecified address, and fd00:ec2::254), so Qantara
+    uses an explicit allowlist: RFC 1918, loopback, and IPv6 ULA fc00::/7,
+    minus a denylist (link-local, cloud metadata, 6to4, multicast,
+    unspecified). IPv4-mapped IPv6 is unwrapped first so
+    ``::ffff:169.254.169.254`` cannot smuggle a metadata IP past the guard.
+    CGNAT / Tailscale 100.64.0.0/10 is allowed only with QANTARA_ALLOW_CGNAT=1.
     """
     mapped = getattr(addr, "ipv4_mapped", None)
     if mapped is not None:
         addr = mapped
-    if addr.is_loopback:
-        return True
-    if addr.is_unspecified or addr.is_link_local or addr.is_multicast or addr.is_reserved:
-        return False
-    return addr.is_private
+    for network in _SSRF_DENIED_NETWORKS:
+        if addr.version == network.version and addr in network:
+            return False
+    if addr.version == 4 and addr in _CGNAT_NETWORK:
+        return _truthy_env("QANTARA_ALLOW_CGNAT")
+    return any(
+        addr.version == network.version and addr in network
+        for network in _SSRF_ALLOWED_NETWORKS
+    )
 
 
-def is_safe_url(url: str) -> bool:
-    return _resolve_safe_url(url) is not None
+async def is_safe_url(url: str) -> bool:
+    return await _resolve_safe_url(url) is not None
 
 
-def _resolve_safe_url(url: str) -> SafeOutboundURL | None:
-    import ipaddress as _ipa
-    from urllib.parse import urlparse
+async def _resolve_host_addresses(host: str, port: int | None) -> list[Any]:
+    """Resolve ``host`` without blocking the event loop, bounded in time."""
+    loop = asyncio.get_running_loop()
+    async with asyncio.timeout(_DNS_RESOLVE_TIMEOUT_S):
+        resolved = await loop.getaddrinfo(
+            host,
+            port,
+            family=_sock.AF_UNSPEC,
+            type=_sock.SOCK_STREAM,
+        )
+    return [ipaddress.ip_address(sockaddr[0]) for _, _, _, _, sockaddr in resolved]
 
+
+async def _resolve_safe_url(url: str) -> SafeOutboundURL | None:
     try:
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"}:
@@ -1122,12 +1301,11 @@ def _resolve_safe_url(url: str) -> SafeOutboundURL | None:
             return None
         port = parsed.port
         try:
-            candidates = [_ipa.ip_address(host)]
+            candidates = [ipaddress.ip_address(host)]
         except ValueError:
-            if host not in {"localhost"} and "." in host and not host.endswith((".local", ".lan", ".home.arpa")):
+            if host not in {"localhost"} and "." in host and not host.endswith(_LOCAL_HOST_SUFFIXES):
                 return None
-            resolved = _sock.getaddrinfo(host, port, _sock.AF_UNSPEC, _sock.SOCK_STREAM)
-            candidates = [_ipa.ip_address(sockaddr[0]) for _, _, _, _, sockaddr in resolved]
+            candidates = await _resolve_host_addresses(host, port)
         if not candidates or not all(_is_lan_ip(addr) for addr in candidates):
             return None
         # Prefer IPv4 when both families are available. Many local model
@@ -1149,10 +1327,11 @@ def _resolve_safe_url(url: str) -> SafeOutboundURL | None:
             server_hostname=host,
         )
     except Exception:
+        # Includes TimeoutError from a slow resolver: fail closed.
         return None
 
 
-def _safe_outbound_url(raw_url: str) -> SafeOutboundURL | None:
+async def _safe_outbound_url(raw_url: str) -> SafeOutboundURL | None:
     """SSRF-validate ``raw_url`` and return it with the resolved IP pinned into
     the netloc, or ``None`` if it is not a private/loopback target.
 
@@ -1163,11 +1342,12 @@ def _safe_outbound_url(raw_url: str) -> SafeOutboundURL | None:
     first resolves private flip to a public/metadata IP on the real request.
     """
     candidate = raw_url if raw_url.startswith(("http://", "https://")) else f"http://{raw_url}"
-    resolved = _resolve_safe_url(candidate)
-    return resolved
+    return await _resolve_safe_url(candidate)
 
 
-_ORIGIN_PROTECTED_PATHS = frozenset({"/ws", "/api/discovery/scan"})
+_ORIGIN_PROTECTED_PATHS = frozenset(
+    {"/ws", "/api/discovery/scan", "/api/backends", "/api/backends/stream"}
+)
 _ORIGIN_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _LOCAL_HOST_SUFFIXES = (".local", ".lan", ".home.arpa")
 _HOSTNAME_PATTERN = re.compile(
@@ -1177,8 +1357,6 @@ _HOSTNAME_PATTERN = re.compile(
 
 
 def _parse_authority(raw_authority: str) -> tuple[str, int | None] | None:
-    from urllib.parse import urlsplit
-
     try:
         parsed = urlsplit(f"//{raw_authority.strip()}")
         if (
@@ -1201,32 +1379,82 @@ def _request_authority(request: web.Request) -> tuple[str, int | None] | None:
     return _parse_authority(request.headers.get("Host", ""))
 
 
-def _host_allowed(request: web.Request) -> bool:
-    authority = _request_authority(request)
-    if authority is None:
-        return False
-    host, _ = authority
-
-    configured = os.environ.get("QANTARA_ALLOWED_HOSTS", "")
+def _configured_allowed_hosts() -> set[str]:
     allowed_hosts: set[str] = set()
-    for entry in configured.split(","):
+    for entry in os.environ.get("QANTARA_ALLOWED_HOSTS", "").split(","):
         entry = entry.strip()
         if not entry:
             continue
         parsed = _parse_authority(entry)
         if parsed is not None:
             allowed_hosts.add(parsed[0])
-    if host in allowed_hosts:
+    return allowed_hosts
+
+
+def _is_loopback_host(host: str) -> bool:
+    if host == "localhost":
         return True
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    mapped = getattr(addr, "ipv4_mapped", None)
+    if mapped is not None:
+        addr = mapped
+    return addr.is_loopback
 
-    import ipaddress
 
+def _is_lan_host(host: str) -> bool:
     try:
         return _is_lan_ip(ipaddress.ip_address(host))
     except ValueError:
         if not _HOSTNAME_PATTERN.fullmatch(host):
             return False
         return host == "localhost" or "." not in host or host.endswith(_LOCAL_HOST_SUFFIXES)
+
+
+def _host_rejection(request: web.Request) -> web.Response | None:
+    """Validate the Host header (DNS-rebinding / reverse-proxy guard).
+
+    Without QANTARA_AUTH_TOKEN the gateway fails closed: only loopback Host
+    names and QANTARA_ALLOWED_HOSTS entries are served. This covers both the
+    documented loopback reverse proxy (which forwards a LAN Host such as
+    ``qantara.local``) and DNS rebinding of a local browser onto the
+    loopback gateway. With a token, private-LAN hosts are accepted too.
+    """
+    authority = _request_authority(request)
+    if authority is None:
+        return web.json_response({"error": "request host rejected"}, status=421)
+    host, _ = authority
+    if host in _configured_allowed_hosts() or _is_loopback_host(host):
+        return None
+    if request.app.get(AUTH_TOKEN_KEY) is None:
+        return web.json_response(
+            {
+                "error": LAN_ACCESS_REQUIRES_TOKEN_MESSAGE,
+                "code": "lan_access_requires_token",
+            },
+            status=421,
+        )
+    if _is_lan_host(host):
+        return None
+    return web.json_response({"error": "request host rejected"}, status=421)
+
+
+def _host_allowed(request: web.Request) -> bool:
+    return _host_rejection(request) is None
+
+
+def _origin_explicitly_allowed(origin: str | None) -> bool:
+    if not origin:
+        return False
+    configured = os.environ.get("QANTARA_ALLOWED_ORIGINS", "").strip()
+    allowed = {
+        item.strip().rstrip("/").lower()
+        for item in configured.split(",")
+        if item.strip()
+    }
+    return origin.rstrip("/").lower() in allowed
 
 
 def _origin_allowed(request: web.Request) -> bool:
@@ -1243,8 +1471,6 @@ def _origin_allowed(request: web.Request) -> bool:
     origin = request.headers.get("Origin")
     if not origin:
         return True
-    from urllib.parse import urlsplit
-
     try:
         parsed_origin = urlsplit(origin)
         if (
@@ -1278,19 +1504,29 @@ def _origin_allowed(request: web.Request) -> bool:
             if effective_origin_port == request_port:
                 return True
 
-    configured = os.environ.get("QANTARA_ALLOWED_ORIGINS", "").strip()
-    allowed = {
-        item.strip().rstrip("/").lower()
-        for item in configured.split(",")
-        if item.strip()
-    }
-    return origin.rstrip("/").lower() in allowed
+    return _origin_explicitly_allowed(origin)
+
+
+def _cross_site_fetch_rejected(request: web.Request) -> bool:
+    """Fetch-Metadata guard: browsers label requests a foreign page makes.
+
+    A GET needs no Origin header, so ``Sec-Fetch-Site: cross-site`` is the
+    only reliable signal that some other website triggered the request.
+    """
+    if not request.path.startswith("/api/"):
+        return False
+    if request.headers.get("Sec-Fetch-Site", "").strip().lower() != "cross-site":
+        return False
+    return not _origin_explicitly_allowed(request.headers.get("Origin"))
 
 
 @web.middleware
 async def origin_guard_middleware(request: web.Request, handler: Any) -> web.StreamResponse:
-    if not _host_allowed(request):
-        return web.json_response({"error": "request host rejected"}, status=421)
+    host_rejection = _host_rejection(request)
+    if host_rejection is not None:
+        return host_rejection
+    if _cross_site_fetch_rejected(request):
+        return web.json_response({"error": "cross-site request rejected"}, status=403)
     is_preflight = request.method == "OPTIONS" and bool(
         request.headers.get("Access-Control-Request-Method")
     )
@@ -1320,15 +1556,29 @@ async def origin_guard_middleware(request: web.Request, handler: Any) -> web.Str
     return await handler(request)
 
 
+_HTML_ENTRY_PATHS = frozenset({"/", "/setup", "/spike", "/translate"})
+_HTML_PAGE_PREFIXES = ("/setup/", "/spike/", "/translate/")
+
+
+def _is_html_page_path(path: str) -> bool:
+    if path in _HTML_ENTRY_PATHS:
+        return True
+    return path.startswith(_HTML_PAGE_PREFIXES) and (
+        path.endswith("/") or path.endswith(".html")
+    )
+
+
 async def add_security_headers(
     request: web.Request,
     response: web.StreamResponse,
 ) -> None:
     """Apply browser hardening headers, including to prepared WS/SSE responses."""
+    # connect-src 'self' covers same-origin ws:/wss: in CSP Level 3 browsers;
+    # the pages only open same-origin sockets and fetches.
     response.headers.setdefault(
         "Content-Security-Policy",
         "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; "
+        "style-src 'self' 'unsafe-inline'; connect-src 'self'; "
         "img-src 'self' data:; media-src 'self' blob:; object-src 'none'; "
         "base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
     )
@@ -1345,10 +1595,13 @@ async def add_security_headers(
             response.headers["Vary"] = f"{vary}, Origin".lstrip(", ")
     if request.path.startswith("/api/") or request.path == "/ws":
         response.headers["Cache-Control"] = "no-store"
+    elif _is_html_page_path(request.path):
+        # Revalidate pages on every load so an upgrade never runs stale JS.
+        response.headers["Cache-Control"] = "no-cache"
 
 
-def _safe_model_probe_base(raw_url: str) -> tuple[str, dict[str, str], str] | None:
-    resolved = _resolve_safe_url(raw_url)
+async def _safe_model_probe_base(raw_url: str) -> tuple[str, dict[str, str], str] | None:
+    resolved = await _resolve_safe_url(raw_url)
     if resolved is None:
         return None
     base = resolved.url[:-3] if resolved.url.endswith("/v1") else resolved.url
@@ -1379,7 +1632,7 @@ async def api_test_url_handler(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "URL is too long"}, status=413)
     if not raw_url.startswith(("http://", "https://")):
         raw_url = "http://" + raw_url
-    safe_probe = _safe_model_probe_base(raw_url)
+    safe_probe = await _safe_model_probe_base(raw_url)
     if safe_probe is None:
         return web.json_response({"ok": False, "error": "Only private network URLs are allowed"}, status=403)
     base, headers, server_hostname = safe_probe
@@ -1430,6 +1683,21 @@ async def translate_handler(_request: web.Request) -> web.StreamResponse:
     raise web.HTTPFound("/translate/index.html")
 
 
+_MESH_NODE_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+_MESH_PEER_ROLES = frozenset({"full", "mic-only", "speaker-only"})
+
+
+def _is_displayable_peer(peer: Any) -> bool:
+    """Defense in depth: peer fields come from unauthenticated mDNS TXT data."""
+    node_id = getattr(peer, "node_id", None)
+    role = getattr(peer, "role", None)
+    return (
+        isinstance(node_id, str)
+        and _MESH_NODE_ID_PATTERN.fullmatch(node_id) is not None
+        and role in _MESH_PEER_ROLES
+    )
+
+
 async def api_mesh_peers_handler(request: web.Request) -> web.Response:
     auth_error = require_bearer_token(request, AUTH_TOKEN_KEY)
     if auth_error is not None:
@@ -1446,6 +1714,7 @@ async def api_mesh_peers_handler(request: web.Request) -> web.Response:
             "port": p.port,
         }
         for p in controller.registry.list_peers()
+        if _is_displayable_peer(p)
     ]
     return web.json_response({"enabled": True, "peers": peers})
 
@@ -1470,6 +1739,7 @@ async def api_mesh_status_handler(request: web.Request) -> web.Response:
 
 
 def mount_static_routes(app: web.Application) -> None:
+    app[BACKEND_PROBE_CACHE_KEY] = BackendProbeCache()
     mount_voice_api(app)
     app.router.add_get("/", index_handler)
     app.router.add_get("/api/auth/status", api_auth_status_handler)

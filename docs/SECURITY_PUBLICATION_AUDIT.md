@@ -1,5 +1,8 @@
 # Security Publication Audit
 
+> [!NOTE]
+> **Historical snapshot — not current product guidance.** This report records the publication review performed on 2026-04-24. Use `SECURITY.md`, the privacy guide, and current CI/release evidence for the present security boundary.
+
 Date: 2026-04-24
 
 ## Scope

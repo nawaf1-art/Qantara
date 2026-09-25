@@ -32,7 +32,7 @@ The browser client has no model or agent state. The gateway coordinates a turn a
 | Runtime adapter | Backend session mapping, turn submission, output normalization, cancellation | Browser audio transport |
 | Backend runtime | Inference, tools, backend history, agent policy | Microphone permission or browser playback |
 | TTS provider | Text-to-PCM synthesis and voice resolution | Turn acceptance/cancellation policy |
-| Mesh/Wyoming integration | Optional LAN coordination and satellite framing | Core adapter semantics |
+| Mesh integration | Optional LAN node discovery and per-utterance responder election | Core adapter semantics |
 
 ## Runtime contracts
 
@@ -52,17 +52,19 @@ The client-visible session states are `idle`, `listening`, `thinking`, `speaking
 
 ### Browser to gateway
 
-Browser input is untrusted even on a LAN. The gateway authenticates protected routes when configured, validates Host and Origin authorities, bounds JSON/control/audio inputs, rejects malformed PCM frames, and applies browser security headers. The browser auth session uses an HttpOnly, SameSite cookie; API clients can use a bearer token.
+Browser input is untrusted even on a LAN. The gateway authenticates protected routes when configured, validates Host and Origin authorities, refuses cross-site `/api/*` fetches, bounds JSON/control/audio inputs, rejects malformed PCM frames, and applies browser security headers (including CSP `connect-src 'self'`). Without `QANTARA_AUTH_TOKEN` it answers only loopback `Host` names and `QANTARA_ALLOWED_HOSTS` entries. Each browser login creates a server-side session referenced by an HttpOnly, SameSite cookie, and logout revokes it; API clients can use a bearer token. Repeated distinct wrong credentials from one client are rate-limited.
 
 ### Gateway to backend/provider
 
-Backends and speech providers are operator-selected local code or services. Qantara applies time, line, output, session, and queue bounds where practical. Local HTTP clients do not inherit proxy environment variables or follow redirects. Managed bridges inherit the host environment needed for local integrations, but Qantara removes its gateway, admin, and mesh credentials before starting them.
+Backends and speech providers are operator-selected local code or services. Qantara applies time, line, output, session, and queue bounds where practical; streamed backend output is bounded by an idle timeout (backends send keep-alive activity while they work) rather than a total deadline. Local HTTP clients do not inherit proxy environment variables or follow redirects. Managed bridges inherit the host environment needed for local integrations, but Qantara removes its gateway, admin, and mesh credentials before starting them.
 
 An adapter can still send a transcript to the service it is configured to call. Local-first describes the default topology, not a guarantee about an operator-supplied endpoint.
 
 ### LAN and reverse proxy
 
-Loopback is the default. LAN use requires a strong auth token and HTTPS/WSS for browser microphone access. The Host policy accepts loopback/private IP literals and conventional LAN names; custom internal DNS names require `QANTARA_ALLOWED_HOSTS`. Exact cross-origin exceptions require `QANTARA_ALLOWED_ORIGINS`.
+Loopback is the default. LAN use requires a strong auth token and HTTPS/WSS for browser microphone access; without a token, non-loopback requests (including a reverse proxy forwarding a LAN `Host`) get HTTP 421 `lan_access_requires_token`. With a token, the Host policy accepts loopback/private IP literals and conventional LAN names; custom internal DNS names require `QANTARA_ALLOWED_HOSTS`. Exact cross-origin exceptions require `QANTARA_ALLOWED_ORIGINS`.
+
+The optional mesh listens on its own TCP port. A non-loopback mesh bind refuses to start without a shared `QANTARA_MESH_TOKEN` (24+ characters, HMAC-signed frames) unless `QANTARA_MESH_ALLOW_INSECURE=1`. Mesh frames are authenticated but not encrypted, and replay protection is not implemented.
 
 Qantara is not designed for direct public-internet exposure. A reverse proxy does not replace authentication, network policy, updates, or certificate validation.
 
@@ -72,7 +74,7 @@ Speech/model providers may contact their upstream artifact hosts on first use. D
 
 ## Data lifecycle
 
-- PCM input is buffered in memory and truncated to configured limits.
+- PCM input is buffered in memory per utterance (with a short pre-roll) and capped by `QANTARA_MAX_UTTERANCE_MS`; the buffer is cleared when the turn is submitted.
 - Session timelines and transcript snapshots are bounded in memory; Qantara does not provide a durable transcript database.
 - The browser stores non-secret preferences and continuity identifiers locally.
 - Default event logs preserve operational identifiers/counts while redacting free-form speech/model/tool content and credentials.

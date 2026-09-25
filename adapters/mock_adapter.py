@@ -2,7 +2,7 @@ import asyncio
 import os
 import uuid
 
-from adapters.base import AdapterConfig, AdapterHealth, RuntimeAdapter
+from adapters.base import AdapterConfig, AdapterHealth, RuntimeAdapter, UnknownSessionError
 
 MAX_TURNS_PER_SESSION = 24
 
@@ -36,7 +36,7 @@ class MockAdapter(RuntimeAdapter):
         turn_context: dict | None = None,
     ) -> str:
         if session_handle not in self._sessions:
-            raise ValueError("unknown session handle")
+            raise UnknownSessionError("unknown session handle")
 
         self._sessions[session_handle] = self._sessions.pop(session_handle)
 
@@ -55,7 +55,7 @@ class MockAdapter(RuntimeAdapter):
 
     async def stream_assistant_output(self, session_handle: str, turn_handle: str):
         if session_handle not in self._sessions:
-            raise ValueError("unknown session handle")
+            raise UnknownSessionError("unknown session handle")
 
         messages = [
             "This is a mock assistant response.",
@@ -77,7 +77,7 @@ class MockAdapter(RuntimeAdapter):
         cancel_context: dict | None = None,
     ) -> dict:
         if session_handle not in self._sessions:
-            raise ValueError("unknown session handle")
+            raise UnknownSessionError("unknown session handle")
         return {
             "status": "acknowledged",
             "turn_handle": turn_handle,

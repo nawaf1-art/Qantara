@@ -15,7 +15,7 @@ With local providers and a local backend, this path can stay on one machine or t
 
 ## What Qantara retains
 
-- Recent audio is held in memory for endpointing/transcription and truncated to a configured limit.
+- Audio for the current utterance is held in memory for endpointing/transcription (capped by `QANTARA_MAX_UTTERANCE_MS`, 30 s by default) and cleared when the turn is submitted.
 - Session event timelines and transcript snapshots are held in memory with count limits.
 - Adapter/bridge conversation histories are bounded in memory for session continuity.
 - Qantara does not include a durable transcript database, account profile, analytics store, or telemetry queue.
@@ -25,7 +25,7 @@ External model servers, agents, reverse proxies, container runtimes, browsers, o
 
 ## Browser storage
 
-The browser stores convenience state such as backend type/URL/model, language choices, TTS/voice/avatar preferences, audio mode, speech speed, and random client-session identifiers in `localStorage`. The gateway access token is not stored there; browser login exchanges it for an HttpOnly, SameSite session cookie. The cookie is also marked Secure for direct HTTPS requests and when the reverse proxy reports HTTPS with `X-Forwarded-Proto`.
+The browser stores convenience state such as backend type/URL/model, language choices, TTS/voice/avatar preferences, audio mode, speech speed, and random client-session identifiers in `localStorage`. The gateway access token is not stored there; browser login exchanges it for a random server-side session referenced by an HttpOnly, SameSite cookie. The gateway keeps only a hash of each session id, in memory; sessions expire (default 12 h), are revoked by logout, and are lost on restart. The cookie is also marked Secure for direct HTTPS requests and when the reverse proxy reports HTTPS with `X-Forwarded-Proto`.
 
 Backend URLs and model names may themselves be sensitive in some environments. Clear site data in the browser to remove Qantara preferences and continuity identifiers.
 
@@ -43,7 +43,7 @@ Speech providers may contact upstream model hosts on first use. Docker startup m
 
 ## LAN operation
 
-Loopback is the default privacy boundary. A LAN bind makes Qantara reachable to other devices on that network. Use a strong auth token, HTTPS/WSS, trusted certificates, narrow firewall rules, and a network you control. Direct public-internet exposure is unsupported.
+Loopback is the default privacy boundary. A LAN bind makes Qantara reachable to other devices on that network, but without `QANTARA_AUTH_TOKEN` the gateway refuses every non-loopback request. Use a strong auth token, HTTPS/WSS, trusted certificates, narrow firewall rules, and a network you control. Direct public-internet exposure is unsupported.
 
 ## Removing local Qantara data
 

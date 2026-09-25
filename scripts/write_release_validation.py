@@ -38,6 +38,8 @@ def main() -> int:
             "release_metadata_consistency",
             "workflow_pin_check",
             "documentation_link_check",
+            "documentation_consistency_check",
+            "lock_hash_check",
             "tracked_artifact_check",
             "unit_tests",
             "ruff",

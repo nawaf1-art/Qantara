@@ -8,6 +8,11 @@ updates:
     groups:
       python-minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      # mcp 2.x removed the streamable HTTP client API used by
+      # adapters/mcp_client.py; migrate deliberately, not via Dependabot.
+      - dependency-name: mcp
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
@@ -23,3 +28,9 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    ignore:
+      # The image must stay on Python 3.12: every Kokoro release requires
+      # Python <3.13 and spaCy's stack lacks cp314 wheels. Digest and patch
+      # updates of python:3.12-slim still arrive.
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]

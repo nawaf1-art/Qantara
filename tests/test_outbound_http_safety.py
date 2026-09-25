@@ -65,6 +65,7 @@ class OutboundHTTPSafetyTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
             health = await adapter.check_health()
+            await adapter.aclose()
         finally:
             await server.close()
 
@@ -97,6 +98,7 @@ class OutboundHTTPSafetyTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
             health_result = await adapter.check_health()
+            await adapter.aclose()
         finally:
             await server.close()
 

@@ -1,4 +1,7 @@
---extra-index-url https://download.pytorch.org/whl/cpu
+# Top-level pins for the Docker image and the native speech lock.
+# Regenerate both hash locks with: python scripts/lock_requirements.py
+# torch resolves from the PyTorch CPU index (uv --torch-backend cpu); every
+# other package resolves from PyPI so all platform wheel hashes are recorded.
 
 aiohttp==3.14.3
 faster-whisper==1.2.1
@@ -8,5 +11,4 @@ numpy==2.4.4
 soundfile==0.13.1
 spacy==3.8.14
 torch==2.13.0
-wyoming==1.10.0
 zeroconf==0.150.0

@@ -1,10 +1,12 @@
 repos:
+  # Keep the ruff version in sync with the dev extra in pyproject.toml and the
+  # pins in .github/workflows/test.yml and release.yml. Formatting is not
+  # enforced (CI runs `ruff check` only), so there is no ruff-format hook.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.2
+    rev: v0.16.5
     hooks:
       - id: ruff-check
         args: [--fix]
-      - id: ruff-format
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0

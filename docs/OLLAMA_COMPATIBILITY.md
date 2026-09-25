@@ -26,6 +26,32 @@ For the generic OpenAI-compatible adapter, set
 low latency is more important than reasoning. The field is omitted by default
 so Qantara remains compatible with non-Ollama servers.
 
+Models that put reasoning inline as `<think>...</think>` in the content stream
+are handled too: the adapter strips the block before anything is spoken and
+reports it once as a `thinking` activity. `QANTARA_OPENAI_REASONING_START`
+controls the edge case of a stream that starts inside a reasoning block
+without an opening tag: `auto` learns it per model after seeing a closing
+`</think>` with no opening tag, `inside` always assumes it, and `outside`
+never does.
+
+## Timeouts and health
+
+- The native bridge treats `QANTARA_OLLAMA_TIMEOUT` (default 120 s) as the
+  longest silence from Ollama, not a total turn limit, and sends a `thinking`
+  keep-alive to the gateway every `QANTARA_BACKEND_KEEPALIVE_SECONDS` (10 s)
+  while it waits. The gateway's session adapter fails a turn only after
+  `QANTARA_BACKEND_IDLE_TIMEOUT` (90 s) of silence, so long answers on slow CPU
+  hardware are no longer cut off at 30 s.
+- Bridge and adapter health report `degraded` when the configured model is not
+  pulled (bridge) or not served (`/v1/models`, direct adapter).
+- The native bridge's final text is the model's raw reply (markdown kept);
+  markdown is stripped only for speech, so the spoken remainder always lines
+  up with the streamed text.
+- The direct adapter sends `max_tokens` (`QANTARA_OPENAI_MAX_TOKENS`, default
+  512) and trims history to `QANTARA_OPENAI_HISTORY_CHAR_BUDGET` (8000
+  characters) in whole exchanges; a context-length error drops the oldest
+  exchange and retries once.
+
 ## Recommended local models
 
 The setup page prioritizes these current, reasonably sized Ollama models:

@@ -1,61 +1,38 @@
-# Qantara as a Home Assistant voice satellite
+# Home Assistant
 
-Qantara's `0.2.2` release includes a Wyoming-protocol satellite endpoint
-that Home Assistant auto-discovers over mDNS. This lets HA drive your
-Qantara node through its Assist pipeline — the mic is yours, STT/LLM/TTS
-run on HA's side (or whatever pipeline HA has configured).
+**Status: the Wyoming satellite bridge was removed in `0.4.0`.** Qantara currently has no Home Assistant integration. This page explains what was removed, what to do if you used it, and which directions a future integration could take.
 
-## Enabling the Wyoming bridge
+## What was removed
 
-Set two environment variables before starting the gateway:
+Releases `0.2.2` through `0.3.1` shipped an Experimental Wyoming-protocol "satellite" endpoint (`QANTARA_WYOMING_ENABLED`, default port `10700`). The 2026-09-24 audit found that it could not work as documented and was unsafe on a LAN:
 
-```bash
-export QANTARA_WYOMING_ENABLED=true
-export QANTARA_WYOMING_HOST=0.0.0.0           # required for Home Assistant on your LAN
-export QANTARA_WYOMING_PORT=10700           # default
-export QANTARA_WYOMING_NODE_NAME=kitchen    # shows up in HA as the satellite name
-export QANTARA_WYOMING_AREA=kitchen         # optional; maps to HA area
-```
+- **It did not match Home Assistant's satellite model.** A Home Assistant satellite streams microphone audio after Home Assistant sends `run-pipeline`, and Home Assistant runs the pipeline. Qantara's bridge answered only `describe`, `audio-chunk`, and `audio-stop` and ran its own STT → backend → TTS on incoming audio, so Home Assistant could add the device but nothing ever triggered it.
+- **It was an unauthenticated side door.** It drove the configured backend without `QANTARA_AUTH_TOKEN`, buffered incoming audio without a limit, ignored the declared sample width and channel count, and could hang gateway shutdown while a client was connected.
 
-Start the gateway as usual:
+The bridge, its `QANTARA_WYOMING_*` settings, and the `wyoming` dependency were removed rather than repaired.
 
-```bash
-make spike-run-lan-venv
-```
+## If you used it
 
-HA should discover the satellite within ~10 seconds. Look in
-**Settings → Devices & Services** for a prompt to add "Wyoming Protocol".
+- Remove `QANTARA_WYOMING_ENABLED`, `QANTARA_WYOMING_HOST`, `QANTARA_WYOMING_PORT`, `QANTARA_WYOMING_NODE_NAME`, and `QANTARA_WYOMING_AREA` from your environment, `.env` file, or Compose overrides. The gateway ignores them; a leftover `QANTARA_WYOMING_ENABLED=true` logs a warning at startup.
+- Delete the Qantara "Wyoming Protocol" device in Home Assistant (**Settings → Devices & Services**); it will no longer connect.
+- Close port `10700/tcp` if you opened it in a firewall.
+- The `mesh` extra now installs only `zeroconf`. Reinstall your environment if you depended on `qantara[mesh]` to pull in `wyoming`.
 
-The Wyoming bridge is plaintext and does not authenticate Home Assistant. Use it only on a trusted LAN.
+## What works today
 
-## Manual setup in HA (if auto-discovery fails)
+Home Assistant can still call Qantara's local HTTP [Voice API](VOICE_API.md) from automations or scripts (for example with a `rest_command`), subject to the gateway's normal authentication and Host policy:
 
-1. Settings → Devices & Services → Add Integration → **Wyoming Protocol**
-2. Enter the Qantara host and the Wyoming port (default `10700`)
-3. HA will issue a `describe` RPC and show the satellite name
+- `POST /api/v1/speak` returns WAV (or raw PCM16) audio for a text string.
+- `POST /api/v1/transcribe` returns text for a WAV or PCM16 clip.
+- `POST /api/v1/converse` runs a text turn through Qantara's configured backend and streams the reply as Server-Sent Events.
 
-## Docker caveat
+This is a request/response integration, not an Assist pipeline or voice satellite.
 
-mDNS does **not** cross the default Docker bridge network. If you're
-running Qantara in Docker, use `network_mode: host` (or a macvlan
-network) so both the Wyoming service discovery and the mesh work:
+## Possible future directions (not implemented)
 
-```yaml
-services:
-  qantara:
-    image: ghcr.io/nawaf1-art/qantara:latest
-    network_mode: host
-    environment:
-      - QANTARA_WYOMING_ENABLED=true
-      - QANTARA_WYOMING_HOST=0.0.0.0
-      - QANTARA_WYOMING_PORT=10700
-```
+If a Home Assistant integration returns, the audit recommends one of these designs instead of a satellite. Neither is implemented or scheduled; see the [roadmap](../ROADMAP.md).
 
-## Limitations in 0.2.2
+- **Wyoming ASR/TTS services.** Offer Qantara's local STT and TTS as Wyoming `asr` and `tts` services, which is what Home Assistant still uses Wyoming for, so an Assist pipeline can use them.
+- **A conversation-API adapter.** Add a Qantara backend adapter that sends finalized voice turns to Home Assistant's conversation API, so Qantara's browser voice loop can control Home Assistant.
 
-- Wake-word handling is not implemented — HA drives the whole pipeline.
-  If you want a local wake word for zero-cloud latency, that lands in
-  `0.3.x`.
-- The satellite advertises `has_vad: false`; HA's server-side VAD runs.
-- No timer events, no announce-mode TTS, no multi-turn context carry.
-  All tracked on the `0.3.x` polish list.
+Home Assistant satellites have moved to the ESPHome API (for example Voice PE and linux-voice-assistant); Qantara does not plan to re-implement that satellite protocol.
