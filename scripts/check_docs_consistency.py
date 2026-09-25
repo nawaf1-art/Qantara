@@ -21,8 +21,20 @@ HISTORICAL_SNAPSHOTS = (
 )
 HISTORICAL_MARKER = "**Historical snapshot — not current product guidance.**"
 PRECEDENCE = (
-    "environment variables > explicit CLI flags > selected YAML file > "
+    "explicit CLI flags > environment variables > selected YAML file > "
     "built-in defaults"
+)
+# The old wording, from when environment variables silently beat CLI flags.
+STALE_PRECEDENCE = ("environment variables > explicit CLI flags", "env vars > CLI flags")
+# Documents that must state the implemented precedence verbatim.
+# docs/CONFIGURATION.md joins this list once it is reconciled with the new order.
+PRECEDENCE_DOCS = ("docs/CLI.md",)
+STALE_PRECEDENCE_SOURCES = (
+    "docs/CLI.md",
+    "docs/INSTALLATION_AND_FIRST_RUN_GUIDE.md",
+    "qantara.example.yml",
+    "qantara/cli.py",
+    "qantara/config.py",
 )
 
 
@@ -63,10 +75,15 @@ def main() -> int:
         if HISTORICAL_MARKER not in "\n".join(text.splitlines()[:8]):
             errors.append(f"docs/{name} lacks the historical snapshot marker")
 
-    for relative in ("docs/CONFIGURATION.md", "docs/CLI.md"):
+    for relative in PRECEDENCE_DOCS:
         checks += 1
         if PRECEDENCE not in _read(relative):
             errors.append(f"{relative} does not state the implemented startup precedence")
+    for relative in STALE_PRECEDENCE_SOURCES:
+        checks += 1
+        text = _read(relative)
+        if any(fragment in text for fragment in STALE_PRECEDENCE):
+            errors.append(f"{relative} still states that environment variables override CLI flags")
 
     pyproject = tomllib.loads(_read("pyproject.toml"))
     sdist_include = set(pyproject["tool"]["hatch"]["build"]["targets"]["sdist"]["include"])
