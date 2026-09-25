@@ -173,27 +173,109 @@ def encode_pcm_frame(samples: list[int]) -> bytes:
     return struct.pack(f"<B{len(samples)}h", PCM_KIND, *samples)
 
 
-def normalize_tts_text(text: str) -> str:
+_SENTENCE_TERMINATORS = frozenset(".!?;:\n\u061f\u061b\u06d4")  # . ! ? ; : newline ؟ ؛ ۔
+_UNSPACED_TERMINATORS = frozenset("\u3002\uff01\uff1f")  # 。！？ (CJK: no space follows)
+_CLOSING_PUNCTUATION = frozenset("\"')]}\u00bb\u201d\u2019")
+_NON_TERMINAL_ABBREVIATIONS = frozenset({"dr", "mr", "mrs", "ms", "st", "e.g", "i.e", "vs", "etc"})
+_SOFT_BREAK_CHARS = frozenset(" \t,\u060c")  # space, tab, comma, Arabic comma
+SPEECH_FALLBACK_CHARS = 60
+
+
+def _word_before(text: str, index: int) -> str:
+    start = index
+    while start > 0 and not text[start - 1].isspace():
+        start -= 1
+    return text[start:index].lstrip("\"'([{\u00ab\u201c\u2018").lower()
+
+
+def find_speech_breaks(text: str, *, final: bool) -> list[int]:
+    """Return the end offsets of the complete sentences in ``text``.
+
+    A terminator only ends a sentence when whitespace (or, once the stream
+    is final, the end of the text) follows it, optionally after closing
+    quotes or brackets. So "3.5", "10:30" and "Dr. Smith" never split, and
+    a terminator at the very end of a streaming buffer waits for the next
+    delta to decide. A colon followed by a digit ("Price: 3") never breaks.
+    """
+    breaks: list[int] = []
+    length = len(text)
+    for index, char in enumerate(text):
+        if char in _UNSPACED_TERMINATORS:
+            breaks.append(index + 1)
+            continue
+        if char not in _SENTENCE_TERMINATORS:
+            continue
+        if char == "\n":
+            breaks.append(index + 1)
+            continue
+        end = index + 1
+        while end < length and text[end] in _CLOSING_PUNCTUATION:
+            end += 1
+        if end >= length:
+            if final:
+                breaks.append(end)
+            continue
+        if not text[end].isspace():
+            continue
+        if char == ":":
+            rest = text[end:].lstrip()
+            if not rest:
+                if final:
+                    breaks.append(end)
+                continue
+            if rest[0].isdigit():
+                continue
+        if char == "." and _word_before(text, index) in _NON_TERMINAL_ABBREVIATIONS:
+            continue
+        breaks.append(end)
+    return breaks
+
+
+def fallback_speech_cut(text: str) -> int:
+    """For long unpunctuated text, the offset after the last space or comma
+    (0 if there is none, so a word is never cut in half)."""
+    for index in range(len(text) - 1, 0, -1):
+        if text[index] in _SOFT_BREAK_CHARS:
+            return index + 1
+    return 0
+
+
+def _is_english_context(text: str, language: str | None) -> bool:
+    if language:
+        return language.strip().lower().replace("_", "-").split("-")[0] == "en"
+    # Unknown language: only assume English wording for Latin-script text.
+    return not any(char.isalpha() and ord(char) > 0x024F for char in text)
+
+
+def normalize_tts_text(text: str, language: str | None = None) -> str:
     normalized = text.strip()
     if not normalized:
         return normalized
+    english = _is_english_context(normalized, language)
     normalized = normalized.replace("\r", "\n")
+    normalized = re.sub(r"(?m)^\s*```[^\n]*$", "", normalized)
+    normalized = normalized.replace("```", "")
     normalized = re.sub(r"`([^`]*)`", r"\1", normalized)
+    normalized = re.sub(r"!?\[([^\]\n]*)\]\([^)\n]*\)", r"\1", normalized)
+    normalized = re.sub(r"(?m)^\s{0,3}#{1,6}\s*", "", normalized)
     normalized = normalized.replace("**", "").replace("__", "").replace("*", "")
-    normalized = re.sub(r"(?m)^\s*[-•]\s+", "", normalized)
-    normalized = normalized.replace(" - ", ". ").replace("\n- ", ". ").replace("\n", ". ")
-    normalized = re.sub(r"([A-Za-z0-9])\s*/\s*([A-Za-z0-9])", r"\1 or \2", normalized)
-    normalized = re.sub(r"([+-])\s*(\d+)\s*°\s*C", lambda m: f"{'minus' if m.group(1) == '-' else 'plus'} {m.group(2)} degrees Celsius", normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r"(\d+)\s*°\s*C", r"\1 degrees Celsius", normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r"(\d+)\s*km/h", r"\1 kilometers per hour", normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r"(\d+(?:\.\d+)?)\s*mm", r"\1 millimeters", normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r"(\d+(?:\.\d+)?)\s*%", r"\1 percent", normalized)
+    normalized = re.sub(r"(?m)^\s*[-\u2022]\s+", "", normalized)
+    normalized = re.sub(r"(?<!\d) - (?!\d)", ". ", normalized)
+    normalized = re.sub(r"\n+", ". ", normalized.strip())
+    if english:
+        normalized = re.sub(r"([+-])\s*(\d+)\s*\u00b0\s*C\b", lambda m: f"{'minus' if m.group(1) == '-' else 'plus'} {m.group(2)} degrees Celsius", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"(\d+(?:\.\d+)?)\s*\u00b0\s*C\b", r"\1 degrees Celsius", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"(\d+(?:\.\d+)?)\s*\u00b0\s*F\b", r"\1 degrees Fahrenheit", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"(\d+(?:\.\d+)?)\s*km/h\b", r"\1 kilometers per hour", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"(\d+(?:\.\d+)?)\s*mm\b", r"\1 millimeters", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"(\d+(?:\.\d+)?)\s*%", r"\1 percent", normalized)
     normalized = "".join(char for char in normalized if unicodedata.category(char) != "So")
-    normalized = normalized.replace("↘", " ")
+    normalized = normalized.replace("\u2198", " ")
     normalized = re.sub(r"[|]+", ". ", normalized)
     normalized = re.sub(r"\s+", " ", normalized)
     normalized = re.sub(r"([!?.,]){2,}", r"\1", normalized)
     normalized = re.sub(r"\s+([!?.,])", r"\1", normalized)
+    normalized = re.sub(r"^[.\s]+", "", normalized)
     return normalized.strip()
 
 
@@ -530,10 +612,11 @@ async def speak_text(
     text: str,
     expected_generation: int | None = None,
     voice_id: str | None = None,
+    language: str | None = None,
 ) -> None:
     if expected_generation is not None and expected_generation != session.playback_generation:
         return
-    spoken_text = normalize_tts_text(text)
+    spoken_text = normalize_tts_text(text, language=language)
     if not spoken_text:
         return
     tts = session.runtime.tts
@@ -572,6 +655,7 @@ async def _run_speech_segment(
     text: str,
     expected_generation: int,
     voice_id: str | None = None,
+    language: str | None = None,
 ) -> None:
     if previous_task is not None:
         try:
@@ -582,7 +666,7 @@ async def _run_speech_segment(
             return
     if expected_generation != session.speech_generation:
         return
-    await speak_text(session, text, expected_generation=expected_generation, voice_id=voice_id)
+    await speak_text(session, text, expected_generation=expected_generation, voice_id=voice_id, language=language)
 
 
 def enqueue_speech(
@@ -590,12 +674,14 @@ def enqueue_speech(
     text: str,
     frozen_generation: int | None = None,
     voice_id: str | None = None,
+    *,
+    language: str | None = None,
 ) -> None:
     if not text.strip():
         return
     previous_task = session.speech_task
     generation = frozen_generation if frozen_generation is not None else session.speech_generation
-    session.speech_task = asyncio.create_task(_run_speech_segment(previous_task, session, text, generation, voice_id))
+    session.speech_task = asyncio.create_task(_run_speech_segment(previous_task, session, text, generation, voice_id, language))
 
 
 async def _run_control_speech_segment(
@@ -646,6 +732,53 @@ def enqueue_control_speech(
     session.speech_task = asyncio.create_task(
         _run_control_speech_segment(previous_task, session, text, generation, voice_id)
     )
+
+
+def _enqueue_complete_sentences(
+    session: Session,
+    buffered: str,
+    spoken_so_far: str,
+    generation: int,
+    voice_id: str | None,
+    language: str | None,
+) -> str:
+    """Enqueue every complete sentence of the unspoken part of ``buffered``;
+    return the new spoken prefix."""
+    unsent = buffered[len(spoken_so_far):]
+    consumed = 0
+    for end in find_speech_breaks(unsent, final=False):
+        chunk = unsent[consumed:end].strip()
+        if chunk:
+            enqueue_speech(session, chunk, generation, voice_id, language=language)
+        consumed = end
+    rest = unsent[consumed:]
+    if len(rest.strip()) >= SPEECH_FALLBACK_CHARS:
+        cut = fallback_speech_cut(rest)
+        if cut:
+            chunk = rest[:cut].strip(" \t,\u060c")
+            if chunk:
+                enqueue_speech(session, chunk, generation, voice_id, language=language)
+            consumed += cut
+    return buffered[:len(spoken_so_far) + consumed]
+
+
+def _enqueue_final_text(
+    session: Session,
+    text: str,
+    generation: int,
+    voice_id: str | None,
+    language: str | None,
+) -> None:
+    """Enqueue the remaining text sentence by sentence (end of stream)."""
+    consumed = 0
+    for end in find_speech_breaks(text, final=True):
+        chunk = text[consumed:end].strip()
+        if chunk:
+            enqueue_speech(session, chunk, generation, voice_id, language=language)
+        consumed = end
+    tail = text[consumed:].strip()
+    if tail:
+        enqueue_speech(session, tail, generation, voice_id, language=language)
 
 
 async def stream_assistant_turn(session: Session, transcript: str) -> None:
@@ -724,25 +857,25 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
                 await session.emit("assistant_output_delta", "adapter", {"turn_handle": turn_handle, "delta_chars": len(event["text"]), "buffered_chars": len(buffered)})
                 if not await safe_send_str(session, {"type": "assistant_text_delta", "text": event["text"]}):
                     return
-                unsent = buffered[len(spoken_so_far):]
-                last_break = max((i for i, char in enumerate(unsent) if char in ".!?;:\n"), default=-1)
-                if last_break >= 0:
-                    chunk = unsent[:last_break + 1].strip()
-                    if chunk:
-                        enqueue_speech(session, chunk, turn_speech_generation, turn_voice_id)
-                        spoken_so_far = buffered[:len(spoken_so_far) + last_break + 1]
-                elif len(unsent.strip()) >= 60:
-                    enqueue_speech(session, unsent.strip(), turn_speech_generation, turn_voice_id)
-                    spoken_so_far = buffered
+                spoken_so_far = _enqueue_complete_sentences(session, buffered, spoken_so_far, turn_speech_generation, turn_voice_id, output_language)
             elif event_type == "assistant_text_final":
                 saw_final = True
                 session.record_transcript_item(role="assistant", text=event["text"], source="adapter", turn_id=session.turn_id)
                 await session.emit("assistant_output_completed", "adapter", {"turn_handle": turn_handle, "final_chars": len(event["text"])})
                 if not await safe_send_str(session, {"type": "assistant_text_final", "text": event["text"]}):
                     return
-                remaining = event["text"][len(spoken_so_far):].strip()
-                if remaining:
-                    enqueue_speech(session, remaining, turn_speech_generation, turn_voice_id)
+                # Speak the rest of what was streamed; the final text is for
+                # the transcript only. Bridges may normalise their final
+                # (drop '*', '#', newlines), so slicing it by the streamed
+                # length would garble the tail (B-1).
+                if buffered:
+                    remaining = buffered[len(spoken_so_far):]
+                elif event["text"].startswith(spoken_so_far):
+                    remaining = event["text"][len(spoken_so_far):]
+                else:
+                    remaining = event["text"]
+                _enqueue_final_text(session, remaining, turn_speech_generation, turn_voice_id, output_language)
+                spoken_so_far = buffered if buffered else event["text"]
             elif event_type == "assistant_activity":
                 # Re-validate through the protocol-v1 builder: adapter events
                 # cross a trust boundary into the browser, so malformed
@@ -774,8 +907,8 @@ async def stream_assistant_turn(session: Session, transcript: str) -> None:
             session.record_transcript_item(role="assistant", text=buffered, source="adapter", turn_id=session.turn_id)
             await session.emit("assistant_output_completed", "adapter", {"turn_handle": turn_handle, "final_chars": len(buffered), "completed_via": "buffer_flush"})
             await safe_send_str(session, {"type": "assistant_text_final", "text": buffered})
-            remaining = buffered[len(spoken_so_far):] if buffered.startswith(spoken_so_far) else buffered
-            enqueue_speech(session, remaining.strip(), turn_speech_generation, turn_voice_id)
+            _enqueue_final_text(session, buffered[len(spoken_so_far):], turn_speech_generation, turn_voice_id, output_language)
+            spoken_so_far = buffered
     finally:
         speech_task = session.speech_task
         if speech_task is not None and not speech_task.done():
