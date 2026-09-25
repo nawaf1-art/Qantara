@@ -24,11 +24,11 @@ Yes, as an advanced optional path. The OpenClaw bridge requires host-side OpenCl
 
 ## Can I use it with Home Assistant?
 
-There is an experimental Wyoming satellite path for Home Assistant Assist. It is useful for labs and technical users, but it is not a polished Home Assistant appliance yet.
+Not as a voice satellite. The Wyoming satellite bridge was removed in `0.4.0` because Home Assistant could add it but never trigger it, and it bypassed authentication. Home Assistant automations can call Qantara's HTTP [Voice API](VOICE_API.md). See [Home Assistant](HOMEASSISTANT.md) for what was removed and possible future directions.
 
 ## Can I expose it to LAN?
 
-Yes. Use HTTPS/WSS and set a strong `QANTARA_AUTH_TOKEN`. Docker binds to loopback by default, so LAN exposure must be explicit.
+Yes. Set a strong `QANTARA_AUTH_TOKEN` and use HTTPS/WSS. The token is required: without one the gateway answers only loopback requests and returns HTTP 421 to everything else. Docker binds to loopback by default, so LAN exposure must be explicit.
 
 Do not expose Qantara directly to the public internet.
 

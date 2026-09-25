@@ -4,7 +4,7 @@ Use this to record the public-launch clip. Target length: 45-60 seconds.
 
 ## Setup
 
-Start a local OpenAI-compatible backend, then run Qantara on LAN HTTPS:
+Start a local OpenAI-compatible backend, install `piper-tts` and the voices from `scripts/fetch_piper_voices.sh` (the Arabic shot needs the Piper Arabic voice; the default `auto` TTS then routes Arabic to Piper and English to Kokoro), then run Qantara on LAN HTTPS:
 
 ```bash
 QANTARA_AUTH_TOKEN="$(openssl rand -hex 24)" \
@@ -24,7 +24,7 @@ Open:
 https://<lan-ip>:8899/spike
 ```
 
-Enter the auth token on the setup page, allow microphone access, and use a headset for the cleanest barge-in recording.
+Enter the auth token on the setup page, press **Start** once on the voice page, allow microphone access, and use a headset (the default audio mode) for the cleanest barge-in recording.
 
 ## Shot List
 
@@ -32,7 +32,7 @@ Enter the auth token on the setup page, allow microphone access, and use a heads
 2. Ask in English: "Give me one sentence about Qantara."
 3. Interrupt while it is speaking: "Stop. Say it shorter."
 4. Ask in Arabic: "تتكلم عربي؟"
-5. Confirm the debug log shows `tts status: piper:ar_JO-kareem-medium`.
+5. Open the collapsed **Debug** section and confirm the TTS status reports the Arabic Piper voice (`ar_JO-kareem-medium`).
 6. End on the backend status showing the local model.
 
 ## What To Capture

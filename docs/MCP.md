@@ -24,7 +24,13 @@ QANTARA_MCP_CHAT_TOOL=chat \
 make spike-run-venv
 ```
 
-The setup page can list tools for configured stdio servers and private/loopback streamable HTTP URLs. Browser-driven stdio commands are intentionally not accepted; set `QANTARA_MCP_COMMAND` in the gateway environment.
+The setup page can list tools for configured stdio servers and private/loopback streamable HTTP URLs. Browser-driven stdio commands are intentionally not accepted; set `QANTARA_MCP_COMMAND` in the gateway environment. `/api/status` reports only the command's program basename and an `mcp_command_configured` flag, never the full command line or its arguments.
+
+## Sessions and cancellation
+
+The adapter keeps one long-lived MCP client session per adapter — one stdio server process, or one streamable-HTTP session — and reuses it for every turn, so a server that keeps state in memory remembers earlier turns. The tool list is cached per connection. The session is reopened after a connection failure and closed when the adapter is released (for example when the backend is reconfigured).
+
+Cancelling a turn (barge-in) sends MCP `notifications/cancelled` for the in-flight tool call and stops waiting for it, instead of letting the call run to completion in the background.
 
 ## Tool Arguments
 
@@ -38,6 +44,8 @@ The adapter inspects the MCP tool input schema and sends the transcript using th
 - `transcript`
 
 If the tool schema has `turn_context` or `context`, Qantara also includes the current voice turn context.
+
+When the schema also declares a session argument (`session_id`, `sessionId`, `conversation_id`, `conversationId`, `thread_id`, or `threadId`), Qantara sends a stable id for the voice session — the browser's `client_session_id` when known — so the server can keep one conversation per browser. When the schema declares `client_context`, Qantara sends the session's client context.
 
 ## Progress
 
@@ -86,4 +94,13 @@ The server also exposes read-only MCP resources:
 
 When there is exactly one active browser session, tools can omit `session_id` and `client_session_id`. With multiple active sessions, pass one of those IDs from `voice_get_status`.
 
-The gateway side is exposed through protected local endpoints under `/api/control/voice/*`. If `QANTARA_AUTH_TOKEN` is set on the gateway, MCP callers must send the same token through `QANTARA_GATEWAY_TOKEN`.
+The gateway side is exposed through protected local endpoints under `/api/control/voice/*`. If `QANTARA_AUTH_TOKEN` is set on the gateway, MCP callers must send the same token through `QANTARA_GATEWAY_TOKEN`. Python programs can use the same endpoints directly through `qantara.control.VoiceControl` (see [Python SDK](PYTHON_SDK.md#voice-control-client)).
+
+## Server binding and security
+
+The streamable HTTP server has no inbound authentication of its own, so it binds to loopback:
+
+- `QANTARA_MCP_SERVER_HOST` defaults to `127.0.0.1`, and an empty value also means `127.0.0.1` (an empty host would otherwise bind every interface).
+- `0.0.0.0`, `::`, or any other non-loopback host refuses to start unless `QANTARA_MCP_SERVER_ALLOW_INSECURE=1` is set. Use that only on a trusted network, and prefer stdio.
+
+The Docker Compose file runs only the gateway; the MCP server is a source-checkout process (`python mcp_server.py`).

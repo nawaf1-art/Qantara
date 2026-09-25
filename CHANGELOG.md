@@ -4,6 +4,93 @@ All notable changes to Qantara are documented here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reaches `1.0.0`. Until then, minor versions may include breaking changes — see the release notes on each tag.
 
+## [0.4.0] - Unreleased
+
+Remediation release for the 2026-09-24 platform audit ([report](docs/audits/QANTARA-audit-2026-09-24.md)). It contains breaking changes; read **Upgrade Notes** before upgrading. See also the [0.4.0 release notes](docs/RELEASE_NOTES_0.4.0.md).
+
+### Added
+- Console scripts `qantara` (the launcher), `qantara doctor [--mesh]`, and `qantara-doctor`, installed by every wheel, tagged-source, and editable install. `make doctor ARGS=--mesh`, `make lock`, and `make lock-check` wrap the same tools in a source checkout.
+- `qantara.control.VoiceControl`, an async client for a running gateway's voice-control API (`status()`, `speak()`, `interrupt()`).
+- `QANTARA_TTS_PROVIDER=auto` (new default) and `routed`: a language-routing TTS provider that sends English, Spanish, and French to Kokoro and Arabic (and anything Kokoro lacks) to Piper. Kokoro Spanish (`ef_dora`) and French (`ff_siwis`) voices are registered.
+- Setup-page **Automatic** TTS engine; choosing an engine now switches it immediately without a restart.
+- Whole-utterance STT capture with 400 ms pre-roll, capped by `QANTARA_MAX_UTTERANCE_MS` (default 30000).
+- `QANTARA_STT_LANGUAGES` (for example `en,ar`) restricts language detection, folding `fa`/`ur`/`ps` into `ar`; `QANTARA_WHISPER_BEAM_SIZE` (default 1 on CPU, 5 on CUDA); a hallucination filter for silence/noise segments.
+- `QANTARA_PIPER_IN_PROCESS` (default on): Piper runs in-process when `piper-tts` is importable. `QANTARA_TTS_WARMUP=1` loads TTS at startup. `QANTARA_OFFLINE` / `HF_HUB_OFFLINE` make Kokoro fail clearly instead of downloading its spaCy model.
+- `scripts/fetch_piper_voices.sh` also fetches `en_US-lessac-medium` and verifies a pinned SHA-256 for every file from a fixed voice-repository revision.
+- Browser auth: per-login server-side sessions (`QANTARA_AUTH_SESSION_TTL_SECONDS`, default 43200) and a failed-credential limiter (10 distinct wrong credentials per minute per client, then HTTP 429 with `Retry-After`).
+- `QANTARA_ALLOW_CGNAT=1` to allow CGNAT/Tailscale `100.64.0.0/10` backend targets.
+- Backend streaming controls `QANTARA_BACKEND_IDLE_TIMEOUT` (90 s), `QANTARA_BACKEND_CONNECT_TIMEOUT` (10 s), and bridge keep-alives every `QANTARA_BACKEND_KEEPALIVE_SECONDS` (10 s).
+- OpenAI-compatible adapter controls `QANTARA_OPENAI_REASONING_START` (`auto`|`inside`|`outside`), `QANTARA_OPENAI_HISTORY_CHAR_BUDGET` (8000), and `QANTARA_OPENAI_MAX_TOKENS` (512; `0` disables).
+- Voice API limits `QANTARA_VOICE_API_MAX_SPEAK_CHARS` (4000), `QANTARA_TRANSCRIBE_MAX_SECONDS` (120), and `QANTARA_VOICE_API_CONCURRENCY` (2).
+- Mesh: `QANTARA_MESH_ALLOW_INSECURE`; `hello` frames carry the sender's listening `port`; new `mesh_election_timeout` timeline event.
+- Events: `turn_failed` now reaches the browser for adapter exceptions, with `failure_kind` and `retriable`; `final_transcript_ready` gains `speech_ms` and `audio_ms`; turn `recoverable_error` events gain `stage`, `failure_kind`, and `retriable`.
+- Session-gateway HTTP protocol specification: [`protocols/session-gateway-http.md`](protocols/session-gateway-http.md).
+- `NOTICE` file for third-party license obligations; `.gitattributes` enforcing LF line endings; `scripts/lock_requirements.py` (uv) and `scripts/check_lock_hashes.py`.
+- CI: unit tests on Python 3.11–3.14, a lock-hash check, an extras-resolution matrix, and a Docker image build and `/api/status` smoke test on amd64 and arm64.
+
+### Changed
+- **Startup precedence is now explicit CLI flags > environment variables > selected YAML file > built-in defaults** (environment variables used to beat flags). A missing `--config` / `QANTARA_CONFIG` file stops startup with exit code 2; numeric environment errors name the variable; unknown YAML keys warn; `qantara.yml` in the current directory is checked before the source-checkout root. The launcher, config loader, and doctor moved into the `qantara` package; `cli.py` and `scripts/doctor.py` are shims.
+- **Without `QANTARA_AUTH_TOKEN` the gateway fails closed**: only `Host` values `localhost`, `127.0.0.0/8`, `::1`, or `QANTARA_ALLOWED_HOSTS` entries are served; others get HTTP 421 with `code: "lan_access_requires_token"`. `create_app(runtime, *, bind_host=None)` drives the startup warning, and `VoiceGateway(host=...)` now warns on a non-loopback bind without a token.
+- Default TTS provider changed from `piper` to `auto`. Text that no installed voice can speak raises `no_voice_for_language` (shown to the user as a plain message) instead of being read with a voice for another script. The Arabic Piper voice's default rate is 1.0; Japanese reports `tts_available: false`.
+- The session-gateway event stream has no total timeout: it fails only after `QANTARA_BACKEND_IDLE_TIMEOUT` of silence. `QANTARA_BACKEND_TIMEOUT` now bounds only short JSON requests, and `QANTARA_OLLAMA_TIMEOUT` is an idle bound.
+- OpenAI-compatible adapter: voice context is merged into a single system message, history is trimmed in whole exchanges within the character budget, a context-length rejection drops the oldest exchange and retries once, the user message is committed only when the turn succeeds, inline `<think>` reasoning is stripped from speech and history, and health is `degraded` when the configured model is not served.
+- Ollama bridge: final text is the raw model reply (markdown kept; it is stripped only for speech), inline reasoning is filtered, cancel aborts the upstream request immediately, and health is `degraded` when the model is not pulled.
+- MCP client adapter keeps one long-lived MCP session per adapter (server-side memory persists across turns), sends a stable `session_id`-style argument and `client_context` when the tool schema accepts them, and cancels in-flight calls with `notifications/cancelled`.
+- Mesh: a non-loopback bind refuses to start without a 24+ character `QANTARA_MESH_TOKEN` unless `QANTARA_MESH_ALLOW_INSECURE=1`; `QANTARA_MESH_ROLE` accepts `full`/`mic-only`/`speaker-only`, treats `off`/`false`/`0`/`no`/`none`/empty/`disabled` as disabled, and aborts on anything else; `QANTARA_MESH_NODE_ID` must match `^[A-Za-z0-9._-]{1,64}$`; a loopback bind starts no mDNS and a node never advertises loopback.
+- Mesh election: peer RMS is timed with the receiver's clock (1 s TTL); `mic-only` candidates drop out whenever a `full` candidate exists; ties go to the smallest `node_id`; `speaker-only` never wins. The election runs in the background and a voice turn waits at most 300 ms for it. Connects time out after 0.5 s, broadcasts are concurrent with a 0.5 s deadline, failed peers back off 1/2/4/8 s, and a malformed frame closes its connection.
+- Voice API: `/api/v1/speak?format=pcm` uses the content type `audio/pcm;rate=N;channels=1;encoding=signed-int;bits=16;endian=little` (was `audio/L16`; bytes unchanged); `X-Sample-Rate` is a plain integer; `X-Voice-Fallback-Reason` is `requested_voice_unavailable` or `fallback`; `X-Voice-Id` is sent only for plain identifiers; `/speak` text is limited to 4000 characters by default (413). `/transcribe` returns 400 for sample rates outside 8000–48000 Hz and clips over the length limit. `/converse` reports session-start failures as an SSE `turn_failed`, resets a stored session only on an unknown-session error, drops invalid event types, and always sends the final text before `turn_completed`.
+- Turn lifecycle: each turn owns its cancellation; `turn_interrupted` is sent before `cancel_status` and each exactly once; no assistant text is sent or recorded after an interrupt; interrupted transcript items hold only text already queued for speech, marked `interrupted: true`. A start/submit failure resets the backend session handle and retries once. Playback is paced up to 250 ms ahead of real time, and the next sentence is synthesized while the current one plays. The adapter contract now requires `assistant_text_final.text` to equal the joined deltas.
+- Speech text: the declared source language is forced in directional and live translation modes; the Arabic/English code-switch resolver uses letter-script shares and lets a confident detection win; TTS normalization no longer turns `/` into "or", applies English unit words only to English, and strips markdown; the sentence splitter keeps `3.5`, `10:30`, and `Dr.` intact and breaks on Arabic `؟` and `؛`.
+- Browser voice page: connects to `location.host` (works behind the Caddy/HTTPS proxy), opens on a conversation view that auto-connects and needs one **Start** click, collapses debug and voice settings, defaults to **Headset**, explains errors in plain language (including HTTPS being required on the LAN), and sends the speech-speed slider only after it is moved. Capture uses an AudioWorklet with an anti-aliasing filter and `echoCancellation: "all"` where supported (Chrome 141+); barge-in re-arms reliably. The setup page is keyboard-accessible; the translate page supports holding Space. Serving the client from a separate static server is no longer supported.
+- Security headers and checks: `/api/*` requests with `Sec-Fetch-Site: cross-site` get 403 unless the Origin is allowlisted; `/api/backends` and `/api/backends/stream` are Origin-checked; backend probing is cached for 10 s and single-flight; CSP adds `connect-src 'self'`; HTML pages send `Cache-Control: no-cache`; `/api/tts` and `/api/languages` require auth when a token is set; `/api/status` shows only the MCP program basename plus `mcp_command_configured`.
+- Tokens are compared as UTF-8 bytes (non-ASCII tokens work); tokens containing whitespace or control characters are rejected at startup.
+- Packaging: extras use minimum versions with major-version caps; Kokoro installs only on Python <3.13 (`.[speech]` installs STT only on 3.13+); the wheel no longer ships lock files; the release SBOM is generated from a clean wheel install; hash locks cover arm64, Windows, and Python 3.11 (all `markupsafe` hashes); CPU-only PyTorch install instructions are documented.
+- Docker: Hugging Face cache at `HF_HOME` in the `qantara-model-cache` volume, read-only application files for the runtime user, a `.dockerignore` that excludes internal files, and no Wyoming or MCP-server variables in Compose.
+- Release workflow split into `validate`, `docker`, and `publish` jobs; release notes come from `gh release create --generate-notes`. Dependabot ignores Docker Python minor/major and `mcp` major updates. Pinned `pip` is 26.2.1.
+- Documentation reconciled with the implementation (PR #35), including configuration, security, Voice API, protocol, mesh, and installation guides.
+
+### Removed
+- **The Home Assistant Wyoming satellite bridge**, all `QANTARA_WYOMING_*` settings (`ENABLED`, `HOST`, `PORT`, `NODE_NAME`, `AREA`), and the `wyoming` dependency from the `mesh` extra. It did not match Home Assistant's satellite model and bypassed authentication. A leftover `QANTARA_WYOMING_ENABLED` logs a warning. See [docs/HOMEASSISTANT.md](docs/HOMEASSISTANT.md).
+- The `resumable` field of `turn_interrupted` (it was always `true`).
+- The release-drafter workflow.
+
+### Fixed
+- Long questions lost their beginning: STT transcribed only the last 6 s of microphone audio. The whole utterance is now transcribed.
+- The voice page could not connect through the documented HTTPS proxy: it opened the WebSocket on port 8765 instead of the page's own host and port.
+- Backend failures (adapter exceptions in session start, submit, or stream) were silent; they now produce `turn_failed` and a `recoverable_error`.
+- Tool-using or slow CPU turns were cut off after 30 s by a total stream timeout.
+- Arabic replies were read with an English voice, and the Arabic/English code-switch router could pick the wrong language.
+- Inline `<think>` reasoning could be spoken and kept in history; strict chat templates rejected requests with multiple system messages.
+- Concurrent or repeated cancels duplicated `turn_interrupted`/`cancel_status`, text could arrive after an interrupt, and a cancelled speech task could silence the next reply.
+- A barge-in while the backend session was still starting was ignored.
+- The mesh could split-brain across clocks, deadlock `mic-only` and `full` nodes, stall the voice loop on unreachable peers, and advertise loopback addresses.
+- A barge-in no longer blocks the WebSocket receive loop; malformed control fields produce `recoverable_error` instead of closing the socket.
+- Docker failed to build on Apple Silicon and the native lock failed on Windows and Python 3.11 because `markupsafe` had only two hashes.
+- Adapters (HTTP clients, MCP processes) are closed when bindings are replaced and at shutdown.
+
+### Security
+- No-token deployments no longer serve LAN or reverse-proxied requests (see Changed).
+- Removed the unauthenticated Wyoming port.
+- A LAN device could inject markup into the setup page through mesh peer data; peer records with invalid ids or roles are dropped and the setup page builds dynamic content with `textContent`.
+- The mesh refuses unauthenticated LAN binds, enforces a 24-character token minimum, validates node ids and roles in mDNS records and frames, and closes connections on malformed frames. Replay of captured signed frames is still possible ([#26](https://github.com/nawaf1-art/Qantara/issues/26)).
+- Browser sessions are per-login and revocable, and failed credentials are rate-limited.
+- The SSRF allowlist is explicit (`10/8`, `172.16/12`, `192.168/16`, `127/8`, `::1`, `fc00::/7`) and denies link-local addresses including cloud metadata, `fe80::/10`, `fd00:ec2::254`, `2002::/16`, multicast, and `0/8`; URL-safety DNS resolution is asynchronous and bounded.
+- The MCP voice server treats an empty host as `127.0.0.1`; `""`, `0.0.0.0`, and `::` count as non-loopback and require `QANTARA_MCP_SERVER_ALLOW_INSECURE=1`.
+- Pinned `pip` 26.2.1 resolves PYSEC-2026-3721 in the CI and Docker toolchain.
+
+### Upgrade Notes
+- **LAN access requires a token.** Set `QANTARA_AUTH_TOKEN` (24+ characters) before opening Qantara from another device, through the Caddy setup (`Host: qantara.local`), or through Docker by LAN IP; otherwise requests get HTTP 421 `lan_access_requires_token`. Alternatively list exact hosts in `QANTARA_ALLOWED_HOSTS`, which serves them without authentication. Docker opened as `http://localhost:8765` is unaffected.
+- **Wyoming is gone.** Remove `QANTARA_WYOMING_*` settings, delete the Qantara Wyoming device in Home Assistant, and close port 10700. `qantara[mesh]` no longer installs `wyoming`.
+- **Mesh LAN nodes need a token.** A non-loopback `QANTARA_MESH_HOST` requires the same 24+ character `QANTARA_MESH_TOKEN` on every node (or `QANTARA_MESH_ALLOW_INSECURE=1`). Invalid `QANTARA_MESH_ROLE` or `QANTARA_MESH_NODE_ID` values now abort startup. Upgrade all mesh nodes together: older nodes reject the new `hello` frame and fall back to mDNS discovery.
+- **CLI flags now beat environment variables.** Scripts that relied on an exported `QANTARA_*` value overriding a flag must drop the flag. A `--config` or `QANTARA_CONFIG` path that does not exist now stops startup (exit code 2).
+- **Voice API PCM content type changed** to `audio/pcm;rate=N;channels=1;encoding=signed-int;bits=16;endian=little`; update clients that matched `audio/L16` or parsed `X-Sample-Rate: rate=N`. `/speak` text over 4000 characters now gets 413 (raise `QANTARA_VOICE_API_MAX_SPEAK_CHARS` if needed).
+- **`turn_interrupted.resumable` was removed.** Clients that read it should treat it as absent.
+- **Kokoro needs Python 3.11 or 3.12.** On Python 3.13+ `.[speech]` installs STT only; recreate native venvs with `python3.12 -m venv`. Native Kokoro installs also need `python -m spacy download en_core_web_sm`.
+- **Default TTS is `auto`.** Installs that set nothing now prefer Kokoro (and route Arabic to Piper when installed) instead of Piper. Set `QANTARA_TTS_PROVIDER=piper` to keep the old behavior. For Arabic speech output install `piper-tts` and run `scripts/fetch_piper_voices.sh`; the Docker image does not include Piper.
+- **Custom session backends** that stay silent for more than 90 s must send keep-alive activity or raise `QANTARA_BACKEND_IDLE_TIMEOUT`; `QANTARA_BACKEND_TIMEOUT` no longer bounds the event stream.
+- Browser logins are lost when the gateway restarts; users sign in again.
+- `0.4.0` is not yet tagged or published; the latest published GitHub Release is `v0.3.1`. PyPI remains out of scope.
+
 ## [0.3.1] - 2026-08-09
 
 ### Added
@@ -261,7 +348,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - 39 lint issues surfaced by ruff: unused imports, deprecated typing imports, missing `raise … from`, unused variables, import ordering.
 - Version references aligned on `0.1.9-pre` across `VERSION`, `AGENTS.md`, `README.md`, and `ROADMAP.md`.
 
-[Unreleased]: https://github.com/nawaf1-art/Qantara/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/nawaf1-art/Qantara/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/nawaf1-art/Qantara/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/nawaf1-art/Qantara/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/nawaf1-art/Qantara/compare/v0.2.12...v0.3.0
 [0.2.12]: https://github.com/nawaf1-art/Qantara/compare/v0.2.10...v0.2.12

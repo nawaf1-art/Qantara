@@ -1,19 +1,19 @@
 # Qantara Roadmap
 
-Current release line: `0.3.1`
+Current release line: `0.4.0`
 
 This roadmap describes direction, not a delivery promise. A feature is considered shipped only when it appears in the changelog and the public feature matrix. Proposed work should start with an issue so its scope and compatibility impact are visible.
 
 ## Current foundation
 
-The `0.3.x` line establishes Qantara as a local-first voice gateway with:
+The `0.3.x` line established, and `0.4.0` corrects and hardens, Qantara as a local-first voice gateway with:
 
 - a browser WebSocket PCM transport
 - local STT and TTS provider boundaries
 - explicit adapter contracts for model and agent backends
 - interruption, endpointing, session continuity, and Voice-as-API
 - Ollama and OpenAI-compatible paths
-- optional MCP, OpenClaw, mesh, Wyoming, translation, and expressive-TTS experiments
+- optional MCP, OpenClaw, mesh, translation, and expressive-TTS experiments
 - cross-platform unit CI and repeatable GitHub release artifacts
 
 Core paths are **Beta** until broader device and deployment evidence supports a 1.0 stability promise. Optional integrations are **Experimental** unless the [feature matrix](docs/FEATURES.md) says otherwise.
@@ -31,7 +31,7 @@ Core paths are **Beta** until broader device and deployment evidence supports a 
 
 - Provider and adapter conformance fixtures that third-party integrations can run independently.
 - Clear compatibility policies for protocol/schema evolution before 1.0.
-- More real-device validation for Arabic, translation, mesh, and Wyoming paths.
+- More real-device validation for Arabic, translation, and mesh paths (the `0.4.0` mesh election fixes are unit-tested on one machine, not yet across physical devices).
 - Smaller, explicit installation profiles for optional speech engines.
 
 ### Public project operations
@@ -42,10 +42,10 @@ Core paths are **Beta** until broader device and deployment evidence supports a 
 
 ## Architectural work requiring design first
 
-These items are intentionally not bundled into `0.3.1`:
+These items remain design-first work and are not completed by `0.4.0`:
 
 - **Namespace consolidation:** move legacy top-level packages under `qantara.*` while preserving public imports through a staged compatibility window. See [namespace migration ADR](docs/architecture/NAMESPACE_MIGRATION_ADR.md).
-- **Turn lifecycle hardening:** centralize ownership and cancellation semantics without destabilizing the current full-duplex path. See [turn lifecycle plan](docs/architecture/TURN_LIFECYCLE_HARDENING_PLAN.md).
+- **Turn lifecycle hardening:** `0.4.0` gives each turn its own cancellation ownership (one `turn_interrupted`, one `cancel_status`, no text after an interrupt); centralizing the remaining lifecycle state is still planned. See [turn lifecycle plan](docs/architecture/TURN_LIFECYCLE_HARDENING_PLAN.md).
 - **Shared stream decoder evolution:** consolidate NDJSON/SSE framing and add property/fuzz coverage beyond the bounded decoder fix. See [stream decoder plan](docs/architecture/STREAM_DECODER_HARDENING_PLAN.md).
 
 ## Later exploration
@@ -53,9 +53,11 @@ These items are intentionally not bundled into `0.3.1`:
 The following remain candidates rather than committed releases:
 
 - speech-native audio-in/audio-out adapters
+- Home Assistant integration through Wyoming ASR/TTS services or a conversation-API adapter (the `0.4.0` release removed the old Wyoming satellite bridge; see [Home Assistant](docs/HOMEASSISTANT.md))
 - screenshot plus voice context
 - an ambient announcement/event bus
 - richer multi-participant coordination
+- mesh frame replay protection ([#26](https://github.com/nawaf1-art/Qantara/issues/26)), once the mesh has real multi-device users
 - a reviewed community provider/adapter registry
 - opt-in hybrid routing to operator-selected external services
 

@@ -2,7 +2,7 @@
 
 The `qantara` command is Qantara's launcher. It selects a backend, applies startup configuration, optionally manages the Ollama or OpenClaw bridge, and starts the aiohttp gateway. The implementation lives in `qantara/cli.py`.
 
-- Installed package (built from current source): `qantara ...` and `qantara doctor` (also `qantara-doctor`). The `0.3.1` wheel predates these console scripts.
+- Installed package (`0.4.0` wheel, tagged source, or editable checkout): `qantara ...` and `qantara doctor` (also `qantara-doctor`). The published `0.3.1` wheel predates these console scripts.
 - Source checkout: `python cli.py ...` and `python scripts/doctor.py` are thin shims over the same code.
 
 ## Examples

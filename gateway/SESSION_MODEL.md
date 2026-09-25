@@ -46,7 +46,13 @@ listening
   -> listening
 ```
 
-An interruption can stop playback immediately, request adapter cancellation, and force-cancel the in-flight task after the configured grace period if the adapter does not cooperate. Late output from a cancelled or superseded turn must not become a second terminal result.
+Audio for one utterance is buffered from speech onset (plus 400 ms of pre-roll) until the turn is submitted, capped at `QANTARA_MAX_UTTERANCE_MS` (30 s by default), and the whole utterance goes to STT. A pause shorter than about 2 s continues the same utterance.
+
+Each turn owns its cancellation. The first cancel request claims the turn synchronously, stops its output (queued speech is cancelled), and schedules the teardown: the `interrupted` state, one `turn_interrupted`, the adapter cancel and at most one `cancel_status`, then a force-cancel of the in-flight task after the configured grace period if the adapter does not cooperate. Further cancel requests for the same turn are no-ops. After a cancel the gateway sends and records no more assistant text for that turn; the transcript keeps only text already queued for speech, marked `interrupted`. A barge-in that lands while the backend session is still starting prevents the turn from being submitted. Late output from a cancelled or superseded turn must not become a second terminal result.
+
+Adapter failures are visible: an exception while starting the session, submitting, or streaming produces a `recoverable_error` timeline event and a `turn_failed` message to the client (with `failure_kind` and `retriable`). A session-start or submit failure first drops the stored backend session handle and retries once. When a turn ends while the user is already speaking again, the session reports `listening`.
+
+Playback audio is paced against an absolute schedule, at most 250 ms ahead of real time, and the next sentence is synthesized while the current one plays.
 
 ## Backend bindings
 

@@ -44,6 +44,7 @@ The goal is to make latency and failure analysis possible from the first gateway
 - `mesh_peer_lost`
 - `mesh_election_started`
 - `mesh_election_resolved`
+- `mesh_election_timeout`
 - `turn_deferred_to_peer`
 
 ### Browser Transport
@@ -123,8 +124,10 @@ Recommended payload:
 Recommended payload:
 
 - `char_count`
-- `token_estimate`
-- `had_partial_transcript`
+- `engine`
+- `language`, `detected_language`, `language_probability`
+- `speech_ms` (milliseconds of detected speech in the utterance)
+- `audio_ms` (milliseconds of audio handed to STT, including pre-roll)
 
 ### `assistant_output_delta`
 
@@ -197,8 +200,9 @@ Emitted when a user barge-in cancels an in-flight turn. Distinct from `turn_canc
 Recommended payload:
 
 - `partial_text` (what had been spoken/streamed so far)
-- `resumable` (bool — whether the backend kept state that could resume)
 - `interrupted_during_state` (`thinking` | `speaking` — the state the session was in)
+
+Emitted once per cancelled turn, before `turn_cancel_acknowledged`. The `resumable` field was removed in `0.4.0` (it was always true).
 
 ### `mesh_peer_discovered`
 
@@ -234,6 +238,15 @@ Recommended payload:
 - `local_rms`
 - `peer_count`
 
+### `mesh_election_timeout`
+
+Emitted when a finalized voice turn waited the full 300 ms for a still-running mesh election. The node then responds itself rather than delaying the turn further.
+
+Recommended payload:
+
+- `session_id`
+- `deadline_ms`
+
 ### `turn_deferred_to_peer`
 
 Emitted when the local node lost a mesh election and another peer is taking the turn. Client-side cue to suppress the pending turn-submit UI.
@@ -247,9 +260,17 @@ Recommended payload:
 
 Recommended payload:
 
-- `component`
-- `error_code`
+- `component` (for example `stt`, `tts`, `cancel`, `turn`)
 - `message`
+- `engine` (speech components)
+
+For backend turn failures (`component: "turn"`) the payload also carries:
+
+- `stage` (`session_start` | `submit` | `stream` | `gateway`)
+- `turn_handle`
+- `failure_kind`
+- `retriable`
+- `retrying` (bool, on a session-start/submit failure that is retried once)
 
 ## Example Timeline
 

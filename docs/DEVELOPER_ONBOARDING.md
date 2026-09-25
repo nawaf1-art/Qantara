@@ -28,12 +28,12 @@ python3 -m venv .venv
 ./.venv/bin/pip install -e ".[test,dev]"
 ```
 
-That environment runs unit, documentation, release, and package checks without downloading speech models. Install `.[speech]` only when working on local STT/TTS. It installs faster-whisper and Kokoro; Piper's Python runtime and voice files remain operator-supplied.
+That environment runs unit, documentation, release, and package checks without downloading speech models. Install `.[speech]` only when working on local STT/TTS. It installs faster-whisper and, on Python 3.11/3.12 only, Kokoro (create the venv with `python3.12 -m venv .venv` for that work); Piper's `piper-tts` package and voice files remain operator-supplied (`scripts/fetch_piper_voices.sh`).
 
 Run the source-checkout launcher:
 
 ```bash
-./.venv/bin/python cli.py --backend mock
+./.venv/bin/qantara --backend mock      # or: ./.venv/bin/python cli.py --backend mock
 ```
 
 Run the complete Docker evaluation stack:

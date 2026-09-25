@@ -2,7 +2,7 @@
 
 This document defines how Qantara documentation is organized, which documents are authoritative, and what “documentation complete” means for a pre-1.0 release.
 
-Current source and published release line: `0.3.1`.
+Current source and published release line: `0.4.0`. The `v0.4.0` GitHub Release is published only through the owner-controlled [release process](RELEASE_PROCESS.md); until then the latest published release is `v0.3.1`.
 
 ## Authority order
 

@@ -14,7 +14,7 @@ backend:
 
 voice:
   stt: faster_whisper
-  tts: piper
+  tts: auto                 # auto | routed | kokoro | piper | chatterbox
 
 server:
   host: 127.0.0.1

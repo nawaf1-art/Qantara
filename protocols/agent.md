@@ -117,12 +117,39 @@ response and no partial text exists yet.
 | Field | Type | Notes |
 |---|---|---|
 | `partial_text` | string | Whatever the adapter had streamed before the cancel; may be empty |
-| `resumable` | bool | Whether the session can accept a follow-up turn |
 | `interrupted_during_state` | string | The turn phase when the cancel landed (usually `thinking` or `speaking`) |
+
+Ordering and uniqueness: each cancelled turn produces exactly one
+`turn_interrupted` and at most one `cancel_status` (the adapter's cancel
+result), and `turn_interrupted` is always sent first. Concurrent or repeated
+cancel requests for the same turn are no-ops. After the interrupt the gateway
+sends and records no further assistant text for that turn; the transcript
+keeps only the text that had already been queued for speech, marked
+`interrupted: true`.
 
 Cancellation is not cooperative-only: after asking the adapter to cancel,
 the gateway force-cancels the turn task once `QANTARA_TURN_CANCEL_GRACE_MS`
 (default 750 ms) expires, so a wedged adapter cannot pin the session.
+
+`0.4.0` removed the `resumable` field. It was always `true` and did not
+describe backend state, so no client could act on it. This is the one field
+removal made to v1; clients should ignore its absence.
+
+### `turn_failed`
+
+Sent when a turn ends in a failure: the adapter yielded `turn_failed`, or the
+adapter raised while starting a session, submitting the turn, or streaming.
+A start/submit failure resets the backend session handle and is retried once
+before it is reported.
+
+| Field | Type | Notes |
+|---|---|---|
+| `message` | string | Human-readable reason (exception messages are truncated to 300 characters) |
+| `failure_kind` | string | Optional. Passed through from an adapter `turn_failed`; for adapter exceptions the gateway uses the exception's `failure_kind` or derives `timeout`, `backend_unavailable` (session start/submit), or `backend_error` |
+| `retriable` | bool | Optional. Passed through from an adapter `turn_failed`; for adapter exceptions the exception's `retriable`, otherwise `true` |
+
+The gateway also records a `recoverable_error` timeline event for the failure
+with `component: "turn"`, `stage`, `failure_kind`, and `retriable`.
 
 ## Versioning
 

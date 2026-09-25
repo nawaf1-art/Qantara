@@ -84,12 +84,27 @@ After the first turn, subsequent responses are much faster.
 
 ### Voice sounds robotic, or you hear a tone instead of speech
 
-There is no automatic fallback between TTS engines: the gateway uses exactly the engine in `QANTARA_TTS_PROVIDER` (the native default is `piper`; Docker sets `kokoro`). If that engine is not usable, replies play a short synthetic tone instead of speech. Check the gateway log for the `engine=` field on playback events and run `qantara doctor`, then:
+The native default is `QANTARA_TTS_PROVIDER=auto`: at startup it routes by language when both Kokoro and a Piper voice are usable, uses Kokoro alone when only Kokoro is installed, and otherwise Piper. Docker sets `kokoro`. An explicit `piper`, `kokoro`, or `routed` value is used as-is. If no engine is usable, replies play a short synthetic tone instead of speech. Check the gateway log for the `engine=` field on playback events and run `qantara doctor`, then:
 - **Piper:** install the Piper runtime (`pip install piper-tts`) and a voice (`scripts/fetch_piper_voices.sh`, or `QANTARA_PIPER_MODEL`), or switch to `QANTARA_TTS_PROVIDER=kokoro`.
-- **Kokoro:** requires Python 3.11/3.12 and `espeak-ng` on the system (the Docker image includes it); allow ~1 GB of free RAM.
+- **Kokoro:** requires Python 3.11/3.12, `espeak-ng` on the system (the Docker image includes it), and the spaCy model (`python -m spacy download en_core_web_sm`); allow ~1 GB of free RAM. With `QANTARA_OFFLINE=1` a missing spaCy model is reported as an error instead of being downloaded.
+
+The setup page's engine choice (including **Automatic**) switches the engine immediately; it is not saved across restarts.
+
+### "No voice is installed for this reply's language"
+
+The reply is in a language no installed voice can speak — typically Arabic with only Kokoro (Docker, or a native install without Piper). Qantara shows this note instead of reading the text with a voice for another script. Install `piper-tts` and run `scripts/fetch_piper_voices.sh` on a native install; the default `auto` provider then sends Arabic to Piper.
+
+### The transcript is in the wrong language
+
+Set `QANTARA_STT_LANGUAGES` to the languages you actually speak (for example `en,ar`) so detection cannot pick an unrelated language. In directional and live translation modes the declared source language is used directly.
+
+### A backend error appears in the conversation, or long answers stop
+
+Backend failures are shown as a turn failure with a plain message instead of silence. Check the gateway log for the matching `recoverable_error` event (`stage`, `failure_kind`). For custom session backends, a turn fails after `QANTARA_BACKEND_IDLE_TIMEOUT` (90 s) with no events at all; send keep-alive activity while working or raise the timeout. The bundled Ollama/OpenClaw bridges send keep-alives automatically.
 
 ### Barge-in doesn't interrupt playback
 
+- Use the **Headset** audio mode (the default) when you can; **Speakers** raises the interruption threshold to avoid the assistant interrupting itself.
 - Make sure VAD is detecting your speech — watch the `vad_state` events in the browser console.
 - If VAD works but playback doesn't stop, check browser console for WebSocket errors during the cancel message.
 - Try a closer/louder mic setup; the default VAD threshold is tuned for headsets.
@@ -104,11 +119,19 @@ QANTARA_AUTH_TOKEN="$(openssl rand -hex 24)" QANTARA_SPIKE_HOST=0.0.0.0 make spi
 ```
 And in the browser on the other device, access `http://<your-host-ip>:8765`. For mic to work off-localhost you will need HTTPS — see the TLS note above.
 
-The token is required: without `QANTARA_AUTH_TOKEN` the gateway refuses requests whose `Host` is not loopback (a LAN IP, `qantara.local`, or a reverse proxy's forwarded Host). If the gateway exits immediately after setting auth, confirm the token is at least 24 characters.
+The token is required: without `QANTARA_AUTH_TOKEN` the gateway answers HTTP 421 (`code: "lan_access_requires_token"`) to requests whose `Host` is not loopback (a LAN IP, `qantara.local`, or a reverse proxy's forwarded Host). If the gateway exits immediately after setting auth, confirm the token is at least 24 characters and contains no spaces or control characters.
+
+### Login fails with HTTP 429
+
+More than 10 different wrong credentials were tried from your address within a minute. Wait for the `Retry-After` interval and use the correct token. Behind a loopback reverse proxy each client is identified by its `X-Forwarded-For` address.
+
+### The gateway refuses to start with a mesh error
+
+A non-loopback `QANTARA_MESH_HOST` needs `QANTARA_MESH_TOKEN` (24+ characters), and `QANTARA_MESH_ROLE` / `QANTARA_MESH_NODE_ID` must be valid values. See [Mesh](MESH.md#startup-rules).
 
 ### Setup page says Qantara is locked
 
-This means `QANTARA_AUTH_TOKEN` is enabled. Open `/setup`, enter the token, and the browser will receive a local HttpOnly session cookie. API clients can use `Authorization: Bearer <token>` instead.
+This means `QANTARA_AUTH_TOKEN` is enabled. Open `/setup`, enter the token, and the browser will receive an HttpOnly session cookie for a server-side session (12 hours by default). Sessions end at logout and when the gateway restarts, so you log in again after a restart. API clients can use `Authorization: Bearer <token>` instead.
 
 ### TLS cert not trusted on other devices
 

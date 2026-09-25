@@ -27,10 +27,11 @@ PRECEDENCE = (
 # The old wording, from when environment variables silently beat CLI flags.
 STALE_PRECEDENCE = ("environment variables > explicit CLI flags", "env vars > CLI flags")
 # Documents that must state the implemented precedence verbatim.
-# docs/CONFIGURATION.md joins this list once it is reconciled with the new order.
-PRECEDENCE_DOCS = ("docs/CLI.md",)
+PRECEDENCE_DOCS = ("docs/CLI.md", "docs/CONFIGURATION.md", "README.md")
 STALE_PRECEDENCE_SOURCES = (
+    "README.md",
     "docs/CLI.md",
+    "docs/CONFIGURATION.md",
     "docs/INSTALLATION_AND_FIRST_RUN_GUIDE.md",
     "qantara.example.yml",
     "qantara/cli.py",
@@ -122,7 +123,7 @@ def main() -> int:
         ),
         "providers/README.md": (
             "Default STT: `faster_whisper`",
-            "Default TTS: `piper`",
+            "Default TTS: `auto`",
         ),
     }
     for relative, fragments in required_fragments.items():

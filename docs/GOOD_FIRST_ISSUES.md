@@ -7,8 +7,8 @@ These candidates are intentionally small and should preserve Qantara's local-fir
 
 ## Documentation and diagnostics
 
-1. Add JSON output to `scripts/doctor.py` without changing the human-readable default.
-2. Add a trusted-LAN readiness mode to `scripts/doctor.py` covering token, TLS, Host/Origin, and bind settings.
+1. Add JSON output to `qantara doctor` (`qantara/doctor.py`) without changing the human-readable default.
+2. Extend `qantara doctor`'s non-loopback checks (it already checks the token and TLS) to report `QANTARA_ALLOWED_HOSTS` / `QANTARA_ALLOWED_ORIGINS` entries.
 3. Add one backend-specific example under `docs/examples/` after verifying it against a current local server.
 4. Add troubleshooting for browser autoplay/output-device selection using reproducible browser steps.
 5. Add a voice-registry contribution guide covering licensing, locale, sample rate, defaults, transforms, and fetch policy.

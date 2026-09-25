@@ -1,8 +1,8 @@
 # Qantara Documentation
 
-Current source and published release line: `0.3.1`.
+Current source and published release line: `0.4.0`.
 
-Qantara `0.3.1` is published as a GitHub Release with wheel, source archive, checksums, SPDX SBOM, and validation evidence. It is not published to PyPI. The [documentation governance](DOCUMENTATION_GOVERNANCE.md) file defines authority, document classes, and the completeness gate.
+Qantara `0.4.0` is the current source version. Its GitHub Release (wheel, source archive, checksums, SPDX SBOM, and validation evidence) is created only by the owner-controlled [release process](RELEASE_PROCESS.md); until the `v0.4.0` release is published, the latest published GitHub Release is `v0.3.1`. Qantara is not published to PyPI. The [documentation governance](DOCUMENTATION_GOVERNANCE.md) file defines authority, document classes, and the completeness gate.
 
 ## Start here
 
@@ -22,7 +22,7 @@ Qantara `0.3.1` is published as a GitHub Release with wheel, source archive, che
 - [Ollama compatibility](OLLAMA_COMPATIBILITY.md)
 - [MCP](MCP.md)
 - [Multi-device mesh](MESH.md)
-- [Home Assistant / Wyoming](HOMEASSISTANT.md)
+- [Home Assistant (Wyoming bridge removed in 0.4.0)](HOMEASSISTANT.md)
 
 ## Architecture, privacy, and security
 
@@ -60,6 +60,7 @@ Maintainer material is not a product contract. Revalidate demo, marketing, issue
 
 ## Versioned release notes
 
+- [Qantara 0.4.0](RELEASE_NOTES_0.4.0.md)
 - [Qantara 0.3.1](RELEASE_NOTES_0.3.1.md)
 - [Qantara 0.3.0](RELEASE_NOTES_0.3.0.md)
 - [Qantara 0.2.12](RELEASE_NOTES_0.2.12.md)

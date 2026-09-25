@@ -13,16 +13,16 @@ Browser microphone access works on `localhost` or a secure HTTPS origin. Another
 
 ## Distribution status
 
-Qantara `0.3.1` is published as a GitHub Release, not on PyPI. The release contains:
+Qantara is distributed as GitHub Releases, not on PyPI. `0.4.0` is the current source version; its `v0.4.0` GitHub Release is created by the owner-controlled [release process](RELEASE_PROCESS.md), and until it is published the latest published release is `v0.3.1`. A release contains:
 
-- `qantara-0.3.1-py3-none-any.whl`
-- `qantara-0.3.1.tar.gz`
+- `qantara-0.4.0-py3-none-any.whl`
+- `qantara-0.4.0.tar.gz`
 - `SHA256SUMS`
-- `qantara-0.3.1.spdx.json`
+- `qantara-0.4.0.spdx.json`
 - `release-validation.json`
 - GitHub provenance attestations
 
-Use Docker or a source checkout for the complete CLI/operations experience. Use the wheel for the SDK, package, embedded gateway, and optional-extra evaluation. Packages built from current source also install the `qantara` launcher and `qantara-doctor` commands (the `0.3.1` wheel predates them).
+Use Docker or a source checkout for the complete operations experience. Use the wheel for the SDK, package, embedded gateway, and optional-extra evaluation. From `0.4.0` every install (wheel, tagged source, or editable checkout) also provides the `qantara` launcher (`qantara --backend ...`, `qantara doctor`) and the `qantara-doctor` command; the `0.3.1` wheel predates them.
 
 ## Choose an installation mode
 
@@ -40,7 +40,7 @@ Use Docker or a source checkout for the complete CLI/operations experience. Use 
 
 | Extra | Purpose and major dependencies | External requirement / installation impact | Platform validation |
 |---|---|---|---|
-| `speech` | faster-whisper, Kokoro (Python 3.11/3.12 only), NumPy, SoundFile | Large ML/runtime downloads; on Linux, plain `pip` pulls the CUDA build of PyTorch unless you use the CPU install below. Piper is selectable but its executable/module and voice files are **not** installed by this extra. | CI dry-run resolves the extra for Python 3.11-3.13 on Linux x86_64/aarch64, Windows and macOS; real model execution requires local validation. |
+| `speech` | faster-whisper, Kokoro (Python 3.11/3.12 only), NumPy, SoundFile | Large ML/runtime downloads; on Linux, plain `pip` pulls the CUDA build of PyTorch unless you use the CPU install below. Kokoro needs the spaCy `en_core_web_sm` model (see below). Piper is selectable but the `piper-tts` package and voice files are **not** installed by this extra. | CI dry-run resolves the extra for Python 3.11-3.13 on Linux x86_64/aarch64, Windows and macOS; real model execution requires local validation. |
 | `mcp` | MCP Python SDK 1.x (`>=1.28,<2`), httpx | Adds MCP stdio and streamable-HTTP client/server support; an MCP server or command is still operator-supplied. | Contract tests run in Linux/macOS/Windows CI. |
 | `mesh` | Zeroconf | Adds discovery and the multi-device mesh (native installs; container networking blocks mDNS). LAN authentication and multicast remain deployment-specific. | Unit/regression tests run in Linux/macOS/Windows CI; real LAN topology is not emulated. |
 | `chatterbox` | Chatterbox TTS | Resource-heavy Experimental speech stack with model downloads. | Linux is the practical reference environment; other platforms are not claimed as validated. |
@@ -57,9 +57,11 @@ docker compose up
 
 Open [http://localhost:8765](http://localhost:8765). Docker publishes the gateway on loopback unless `QANTARA_DOCKER_BIND` is changed.
 
+The image ships faster-whisper and Kokoro (`QANTARA_TTS_PROVIDER=kokoro`), but not Piper, so it speaks English, Spanish, and French; Arabic replies are reported as having no matching voice instead of being read with an English voice. Use a native install with Piper for Arabic speech output.
+
 The first build is large and depends on registry/model download speed. Keep sufficient disk for container layers, the Python ML stack, and Ollama models. `docker system df` shows current Docker usage. The image installs the CPU build of PyTorch from a hash-locked requirements file on both amd64 and arm64 (Apple Silicon) hosts. Speech model weights are cached in the `qantara-model-cache` volume, so they download once and survive `docker compose down`.
 
-A token is optional while the port stays on `127.0.0.1`. It is **required** before you set `QANTARA_DOCKER_BIND` to a LAN address: the gateway refuses requests whose `Host` is not loopback when no token is configured. Set a strong token in your local shell or an untracked `.env` file before startup:
+A token is optional while you open the gateway as `http://localhost:8765` or `http://127.0.0.1:8765`. It is **required** before you set `QANTARA_DOCKER_BIND` to a LAN address or open the gateway by its LAN IP: without a token the gateway answers HTTP 421 (`code: "lan_access_requires_token"`) to any request whose `Host` is not loopback or a `QANTARA_ALLOWED_HOSTS` entry. Set a strong token in your local shell or an untracked `.env` file before startup:
 
 ```bash
 export QANTARA_AUTH_TOKEN="replace-with-a-random-value-of-at-least-24-characters"
@@ -77,9 +79,12 @@ git clone https://github.com/nawaf1-art/Qantara.git
 cd Qantara
 python3.12 -m venv .venv
 ./.venv/bin/pip install -e ".[speech]"
+./.venv/bin/python -m spacy download en_core_web_sm
 ./.venv/bin/qantara doctor
 ./.venv/bin/qantara --backend mock
 ```
+
+Kokoro's English pipeline needs the spaCy `en_core_web_sm` model. If it is missing, Kokoro tries to install it at first use; with `QANTARA_OFFLINE=1` or `HF_HUB_OFFLINE=1` it fails with a clear message instead, so download it while online. The Docker image installs a hash-pinned copy.
 
 `./.venv/bin/python cli.py --backend mock` is equivalent from a source checkout. Open [http://localhost:8765](http://localhost:8765).
 
@@ -117,24 +122,31 @@ py -3.12 -m venv .venv
 .venv\Scripts\qantara.exe --backend mock
 ```
 
-Piper requires its module/executable and compatible voice files outside the package extras. Kokoro and faster-whisper may download model artifacts on first use. See [Supply chain](SUPPLY_CHAIN.md) for offline preparation.
+**Arabic speech output (Piper).** With the default `QANTARA_TTS_PROVIDER=auto`, Qantara routes English, Spanish, and French to Kokoro and Arabic to Piper when both are usable. Install Piper and the pinned voices:
+
+```bash
+./.venv/bin/pip install piper-tts
+scripts/fetch_piper_voices.sh     # en_US lessac, es_ES davefx, fr_FR siwis, ar_JO kareem; SHA-256 verified
+```
+
+The script downloads from a fixed `rhasspy/piper-voices` revision into `models/piper/` and deletes any file whose checksum does not match. When `piper-tts` is importable, Piper runs in-process (`QANTARA_PIPER_IN_PROCESS=1`, the default) instead of starting a subprocess per sentence. Kokoro and faster-whisper may download model artifacts on first use. See [Supply chain](SUPPLY_CHAIN.md) for offline preparation.
 
 ## Option 3: Published GitHub Release wheel
 
-Download the wheel and `SHA256SUMS` from the `v0.3.1` release. Verify the wheel checksum before installation. The release validation file records the source commit used to build the attached artifacts.
+Download the wheel and `SHA256SUMS` from the `v0.4.0` release (or `v0.3.1`, the latest published release until `v0.4.0` is published). Verify the wheel checksum before installation. The release validation file records the source commit used to build the attached artifacts.
 
 Install the base wheel directly:
 
 ```bash
 python -m pip install \
-  "qantara @ https://github.com/nawaf1-art/Qantara/releases/download/v0.3.1/qantara-0.3.1-py3-none-any.whl"
+  "qantara @ https://github.com/nawaf1-art/Qantara/releases/download/v0.4.0/qantara-0.4.0-py3-none-any.whl"
 ```
 
 Install the same validated wheel with speech dependencies:
 
 ```bash
 python -m pip install \
-  "qantara[speech] @ https://github.com/nawaf1-art/Qantara/releases/download/v0.3.1/qantara-0.3.1-py3-none-any.whl"
+  "qantara[speech] @ https://github.com/nawaf1-art/Qantara/releases/download/v0.4.0/qantara-0.4.0-py3-none-any.whl"
 ```
 
 The package exposes:
@@ -145,7 +157,7 @@ from qantara import VoiceGateway
 VoiceGateway(host="127.0.0.1", port=8765).run()
 ```
 
-The wheel contains the SDK, gateway/adapters/providers, browser assets, identity registry, and public protocols/schemas. Wheels built from current source add the `qantara` launcher (`qantara --backend ...`, `qantara doctor`) and `qantara-doctor` commands. `mcp_server.py`, Docker/operations files, lock files, tests, and development scripts remain source-checkout surfaces. See [Python SDK](PYTHON_SDK.md).
+The wheel contains the SDK (`VoiceGateway`, `qantara.control.VoiceControl`), gateway/adapters/providers, browser assets, identity registry, public protocols/schemas, and the `qantara` launcher (`qantara --backend ...`, `qantara doctor`) and `qantara-doctor` commands. `mcp_server.py`, Docker/operations files, lock files, tests, and development scripts remain source-checkout surfaces. See [Python SDK](PYTHON_SDK.md).
 
 ## Option 4: Tagged package source
 
@@ -153,10 +165,10 @@ Use the immutable tag when a source build is specifically required:
 
 ```bash
 python -m pip install \
-  "qantara @ git+https://github.com/nawaf1-art/Qantara.git@v0.3.1"
+  "qantara @ git+https://github.com/nawaf1-art/Qantara.git@v0.4.0"
 
 python -m pip install \
-  "qantara[speech] @ git+https://github.com/nawaf1-art/Qantara.git@v0.3.1"
+  "qantara[speech] @ git+https://github.com/nawaf1-art/Qantara.git@v0.4.0"
 ```
 
 This installs the Python package from source; it is not equivalent to cloning the repository for root scripts and operations files.
@@ -184,7 +196,7 @@ Qantara accepts the base URL and probes `/v1/models`; do not append `/chat/compl
 
 Do not expose Qantara directly to the public internet. For a trusted LAN:
 
-1. Set a strong `QANTARA_AUTH_TOKEN` (24+ characters). This is required: without a token the gateway refuses every request whose `Host` is not loopback, including requests forwarded by a reverse proxy.
+1. Set a strong `QANTARA_AUTH_TOKEN` (24+ characters, no whitespace or control characters). This is required: without a token the gateway refuses every request whose `Host` is not loopback or listed in `QANTARA_ALLOWED_HOSTS`, including requests forwarded by a reverse proxy such as the Caddy setup (`Host: qantara.local`).
 2. Use HTTPS/WSS through Caddy or local TLS settings.
 3. Trust the local certificate on each client device.
 4. Bind only to the interface/network that needs access.
@@ -216,14 +228,16 @@ For the installed wheel:
 python -c "import qantara; print(qantara.__version__)"
 ```
 
-Expected release version: `0.3.1`.
+Expected release version: `0.4.0`.
 
 ## Common first-run problems
 
 - **Microphone blocked:** use `localhost` locally or HTTPS on the LAN, then review browser site permissions.
 - **No backend:** start the model server and confirm its private/loopback base URL is reachable from the gateway's deployment namespace.
 - **First turn is slow:** local STT, TTS, and model weights may be downloading or cold-loading.
-- **No Piper voice:** install Piper and a voice/config pair, or select another configured TTS provider.
+- **No Piper voice:** `pip install piper-tts`, then `scripts/fetch_piper_voices.sh` (or set `QANTARA_PIPER_MODEL`), or select another configured TTS provider.
+- **"No voice is installed for this reply's language" in the conversation view:** the reply's language has no installed voice (for example Arabic with only Kokoro). Install the matching Piper voice.
+- **HTTP 421 `lan_access_requires_token`:** you opened the gateway by a LAN name or IP without `QANTARA_AUTH_TOKEN`; set a token or use `localhost`.
 - **Docker cannot reach host Ollama:** container loopback is not host loopback; use the Compose service path or an explicit host gateway appropriate for the platform.
 - **An environment variable appears ignored:** explicit CLI flags take precedence over `QANTARA_*` variables, which take precedence over `qantara.yml`; see [CLI](CLI.md).
 - **Kokoro fails to install:** the venv uses Python 3.13 or newer; recreate it with `python3.12 -m venv .venv`.

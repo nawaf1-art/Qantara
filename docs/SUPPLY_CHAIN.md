@@ -22,8 +22,8 @@ Qantara combines ordinary Python packages, large ML wheels, speech/model artifac
 | Artifact | Typical source | Trigger |
 |---|---|---|
 | faster-whisper model | Hugging Face Hub | First STT model load unless pre-cached |
-| Kokoro model/voices | Hugging Face Hub or provider dependency | First TTS use unless pre-cached |
-| Piper voice and config | Operator-selected Piper voice source | Manual installation |
+| Kokoro model/voices | Hugging Face Hub or provider dependency | First TTS use unless pre-cached; with `QANTARA_OFFLINE=1` or `HF_HUB_OFFLINE=1` a missing spaCy model fails clearly instead of being downloaded |
+| Piper voice and config | `scripts/fetch_piper_voices.sh`: a pinned `rhasspy/piper-voices` revision with a SHA-256 checked for every file (mismatches are deleted), or an operator-selected source | Manual installation |
 | Ollama model | Ollama registry | `ollama pull` or Compose initialization |
 | Chatterbox assets | Its configured runtime/upstream | Optional provider initialization |
 
@@ -81,8 +81,9 @@ Do not copy browser profiles, `.env` files, tokens, private keys, transcripts, a
 
 ## Maintainer safeguards outside the repository
 
-For the `0.3.1` release line, repository settings enforce safeguards that cannot
-be expressed solely in source:
+As last verified for the `0.3.1` release, repository settings enforce safeguards
+that cannot be expressed solely in source (owners re-verify them, including the
+required-check list after the `0.4.0` CI changes, before tagging):
 
 - `main` requires a pull request, an up-to-date branch, all nine CI checks, and
   resolved review conversations; linear history is required and force-pushes or

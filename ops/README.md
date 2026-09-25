@@ -74,9 +74,9 @@ Open `https://<trusted-lan-ip>:9443`. The certificate must contain the hostname/
 
 ## Host and Origin policy
 
-The inbound Host guard accepts loopback, private LAN addresses, single-label local names, and names ending in `.local`, `.lan`, or `.home.arpa`.
+Without `QANTARA_AUTH_TOKEN` the inbound Host guard accepts only `localhost`, `127.0.0.0/8`, `::1`, and exact `QANTARA_ALLOWED_HOSTS` entries; anything else gets HTTP 421 `lan_access_requires_token`. With a token it also accepts private LAN addresses, single-label local names, and names ending in `.local`, `.lan`, or `.home.arpa`.
 
-- Add an exact extra internal hostname with `QANTARA_ALLOWED_HOSTS` only when it still resolves inside the trusted network.
+- Add an exact extra internal hostname with `QANTARA_ALLOWED_HOSTS` only when it still resolves inside the trusted network. Listing `qantara.local` there lets the Caddy topology work without a token; do that only if every device that can reach Caddy is trusted, because the gateway then performs no authentication.
 - Add an exact full origin to `QANTARA_ALLOWED_ORIGINS` only when a deliberate proxy topology causes browser Origin to differ from request authority.
 - Do not use either setting to approve a public hostname casually.
 
@@ -93,7 +93,7 @@ Model weights (faster-whisper, Kokoro) are cached in the `qantara-model-cache` n
 
 ## Mesh
 
-The mesh is an Experimental, native-only service: it relies on mDNS multicast discovery, which container bridge networking blocks, so the compose file does not configure it. It binds to loopback unless explicitly changed. Use a shared `QANTARA_MESH_TOKEN` on every mesh node when enabling LAN frames. See [`docs/MESH.md`](../docs/MESH.md).
+The mesh is an Experimental, native-only service: it relies on mDNS multicast discovery, which container bridge networking blocks, so the compose file does not configure it. It binds to loopback unless explicitly changed. A non-loopback mesh bind refuses to start without a shared `QANTARA_MESH_TOKEN` (24+ characters, the same on every node) unless `QANTARA_MESH_ALLOW_INSECURE=1` is set. Inspect peers with `qantara doctor --mesh`. See [`docs/MESH.md`](../docs/MESH.md).
 
 ## Verification
 
