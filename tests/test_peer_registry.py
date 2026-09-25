@@ -26,8 +26,8 @@ class PeerRegistryTests(unittest.TestCase):
     def test_record_rms_stores_latest_observation(self) -> None:
         reg = PeerRegistry(local_node_id="local")
         reg.upsert_peer(PeerRecord(node_id="a", role="full", host="10.0.0.2", port=8901))
-        reg.record_rms(node_id="a", session_id="s1", rms=0.5, monotonic_ms=_now_ms())
-        reg.record_rms(node_id="a", session_id="s1", rms=0.9, monotonic_ms=_now_ms())
+        reg.record_rms(node_id="a", session_id="s1", rms=0.5, received_ms=_now_ms())
+        reg.record_rms(node_id="a", session_id="s1", rms=0.9, received_ms=_now_ms())
         self.assertAlmostEqual(reg.latest_rms(node_id="a", now_ms=_now_ms()), 0.9)
 
     def test_latest_rms_returns_none_for_unknown_peer(self) -> None:
@@ -42,14 +42,14 @@ class PeerRegistryTests(unittest.TestCase):
         reg = PeerRegistry(local_node_id="local", rms_ttl_ms=5000.0)
         reg.upsert_peer(PeerRecord(node_id="a", role="full", host="10.0.0.2", port=8901))
         now = _now_ms()
-        reg.record_rms(node_id="a", session_id="peer-session-xyz", rms=0.7, monotonic_ms=now)
+        reg.record_rms(node_id="a", session_id="peer-session-xyz", rms=0.7, received_ms=now)
         self.assertAlmostEqual(reg.latest_rms(node_id="a", now_ms=now + 100.0), 0.7)
 
     def test_latest_rms_expires_after_ttl(self) -> None:
         reg = PeerRegistry(local_node_id="local", rms_ttl_ms=5000.0)
         reg.upsert_peer(PeerRecord(node_id="a", role="full", host="10.0.0.2", port=8901))
         now = _now_ms()
-        reg.record_rms(node_id="a", session_id="s1", rms=0.7, monotonic_ms=now)
+        reg.record_rms(node_id="a", session_id="s1", rms=0.7, received_ms=now)
         self.assertIsNone(reg.latest_rms(node_id="a", now_ms=now + 6000.0))
 
     def test_hello_with_zero_port_does_not_clobber_known_port(self) -> None:
@@ -74,7 +74,7 @@ class PeerRegistryTests(unittest.TestCase):
         reg = PeerRegistry(local_node_id="local", rms_ttl_ms=100)
         reg.upsert_peer(PeerRecord(node_id="a", role="full", host="10.0.0.2", port=8901))
         old = _now_ms() - 500  # way past TTL
-        reg.record_rms(node_id="a", session_id="s1", rms=0.5, monotonic_ms=old)
+        reg.record_rms(node_id="a", session_id="s1", rms=0.5, received_ms=old)
         reg.expire_stale(now_ms=_now_ms())
         self.assertIsNone(reg.latest_rms(node_id="a", now_ms=_now_ms()))
 

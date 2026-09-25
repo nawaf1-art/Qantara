@@ -8,6 +8,9 @@ from collections.abc import Awaitable, Callable
 from zeroconf import IPVersion, ServiceStateChange
 from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf
 
+from discovery.netinfo import is_loopback_host, resolve_source_ipv4
+from gateway.mesh.protocol import is_valid_node_id, is_valid_port, is_valid_role
+
 LOGGER = logging.getLogger(__name__)
 
 DEFAULT_SERVICE_TYPE = "_qantara._tcp.local."
@@ -17,20 +20,10 @@ RemovalCallback = Callable[[str], Awaitable[None]]
 
 
 def _resolve_local_ipv4() -> str:
-    """Best-effort local IPv4. We bind mDNS services to this address so
-    peers on the LAN can reach us. Falls back to 127.0.0.1 if nothing
-    else is available."""
-    try:
-        # Trick: UDP connect to a routable address doesn't actually send
-        # traffic but forces the OS to pick the right source interface.
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            sock.connect(("192.168.1.1", 9))
-            return sock.getsockname()[0]
-        finally:
-            sock.close()
-    except Exception:
-        return "127.0.0.1"
+    """Best-effort local IPv4. We advertise this address so peers on the
+    LAN can reach us. Returns 127.0.0.1 if nothing else is available, which
+    the advertiser then refuses to publish."""
+    return resolve_source_ipv4() or "127.0.0.1"
 
 
 def _build_txt_properties(
@@ -70,11 +63,22 @@ class MeshAdvertiser:
         self._role = role
         self._port = port
         self._capabilities = capabilities
-        self._host_ip = host_ip or _resolve_local_ipv4()
+        self._requested_host_ip = host_ip
+        self._host_ip: str | None = None
         self._aiozc: AsyncZeroconf | None = None
         self._info: AsyncServiceInfo | None = None
 
     async def start(self) -> None:
+        host_ip = self._requested_host_ip or _resolve_local_ipv4()
+        if is_loopback_host(host_ip):
+            # Advertising 127.0.0.1 makes every peer connect to itself
+            # (audit M-a). Nothing on the LAN can reach a loopback node.
+            LOGGER.warning(
+                "mesh: not advertising node %s: no LAN address (resolved %s)",
+                self._node_id, host_ip,
+            )
+            return
+        self._host_ip = host_ip
         self._aiozc = AsyncZeroconf(ip_version=IPVersion.V4Only)
         instance_name = f"{self._node_id}.{self._service_type}"
         self._info = AsyncServiceInfo(
@@ -123,6 +127,7 @@ class MeshBrowser:
         self._aiozc: AsyncZeroconf | None = None
         self._browser: AsyncServiceBrowser | None = None
         self._known_instances: dict[str, dict] = {}
+        self._tasks: set[asyncio.Task] = set()
 
     async def start(self) -> None:
         self._aiozc = AsyncZeroconf(ip_version=IPVersion.V4Only)
@@ -136,6 +141,8 @@ class MeshBrowser:
         if self._browser is not None:
             await self._browser.async_cancel()
             self._browser = None
+        for task in list(self._tasks):
+            task.cancel()
         if self._aiozc is not None:
             await self._aiozc.async_close()
             self._aiozc = None
@@ -147,11 +154,13 @@ class MeshBrowser:
         name: str,
         state_change: ServiceStateChange,
     ) -> None:
-        # Zeroconf callback is sync but we need async. Fire and forget a
-        # task on the current loop.
-        asyncio.get_running_loop().create_task(
+        # Zeroconf callback is sync but we need async. Run a task on the
+        # current loop, keeping a strong reference until it finishes.
+        task = asyncio.get_running_loop().create_task(
             self._handle_change(service_type, name, state_change)
         )
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
 
     async def _handle_change(self, service_type: str, name: str, state_change: ServiceStateChange) -> None:
         if state_change == ServiceStateChange.Removed:
@@ -172,15 +181,22 @@ class MeshBrowser:
             return
         props = info.properties or {}
         node_id = (props.get(b"node_id") or b"").decode("utf-8", errors="replace")
-        if not node_id or node_id == self._local_node_id:
-            return
+        role = (props.get(b"role") or b"full").decode("utf-8", errors="replace")
         addresses = info.parsed_addresses()
         host = addresses[0] if addresses else ""
+        port = info.port
+        # TXT records are unauthenticated LAN input and end up on the setup
+        # page, so drop anything that is not a well-formed identity (Q-09).
+        if not is_valid_node_id(node_id) or not is_valid_role(role):
+            LOGGER.debug("mesh: ignoring mDNS record %r with invalid node_id/role", name)
+            return
+        if not host or not is_valid_port(port) or node_id == self._local_node_id:
+            return
         record = {
             "node_id": node_id,
-            "role": (props.get(b"role") or b"full").decode("utf-8", errors="replace"),
+            "role": role,
             "host": host,
-            "port": info.port or 0,
+            "port": port,
             "capabilities_raw": (props.get(b"caps") or b"{}").decode("utf-8", errors="replace"),
         }
         self._known_instances[name] = record

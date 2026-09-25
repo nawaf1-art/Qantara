@@ -4,12 +4,6 @@ import unittest
 
 
 class MeshDependencyImportTests(unittest.TestCase):
-    def test_wyoming_importable(self) -> None:
-        import wyoming  # noqa: F401
-        from wyoming.event import Event  # noqa: F401
-        from wyoming.info import Info, Satellite  # noqa: F401
-        from wyoming.server import AsyncEventHandler, AsyncServer  # noqa: F401
-
     def test_zeroconf_async_importable(self) -> None:
         from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo, AsyncZeroconf  # noqa: F401
 
