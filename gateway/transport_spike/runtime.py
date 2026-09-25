@@ -28,13 +28,17 @@ from qantara.security import (
     redact_for_logging,
     sanitize_public_url,
 )
-from qantara.version import __version__
 
 _BRIDGE_SCRIPTS: dict[str, str] = {
     "ollama": os.path.join(REPO_ROOT, "gateway", "ollama_session_backend", "server.py"),
     "openclaw": os.path.join(REPO_ROOT, "gateway", "openclaw_session_backend", "server.py"),
 }
 LOGGER = logging.getLogger(__name__)
+
+# QANTARA_MESH_ROLE values. Anything outside both sets is a config error,
+# so a typo can never switch the mesh on.
+MESH_ROLES = frozenset({"full", "mic-only", "speaker-only"})
+MESH_DISABLED_VALUES = frozenset({"", "disabled", "off", "false", "0", "no", "none"})
 
 SESSION_STATES = {"idle", "listening", "thinking", "speaking", "interrupted"}
 SESSION_TIMELINE_LIMIT = int(os.environ.get("QANTARA_SESSION_TIMELINE_LIMIT", "200"))
@@ -115,7 +119,6 @@ class GatewayRuntime:
         # garbage-collected mid-flight and its exception silently dropped.
         self._background_tasks: set[asyncio.Task] = set()
         self.mesh_controller: Any | None = None
-        self.wyoming_bridge: Any | None = None
         # Defaults picked up by new sessions (populated via /api/configure).
         self.default_primary_language: str = "en"
         self.default_translation_mode: str | None = None
@@ -646,24 +649,60 @@ class GatewayRuntime:
                 self.retain_task(asyncio.create_task(_shutdown_bridge_process(binding.managed_bridge_proc)))
 
     async def start_mesh(self) -> None:
-        """Start the mesh controller if QANTARA_MESH_ROLE is set to a
-        non-disabled value. Called from the aiohttp app startup."""
-        role = os.environ.get("QANTARA_MESH_ROLE", "disabled").strip().lower()
-        if role == "disabled":
+        """Start the mesh controller if QANTARA_MESH_ROLE names a mesh role.
+        Called from the aiohttp app startup. Invalid mesh configuration
+        raises RuntimeError so the gateway refuses to start."""
+        raw_role = os.environ.get("QANTARA_MESH_ROLE", "disabled")
+        role = raw_role.strip().lower()
+        if role in MESH_DISABLED_VALUES:
             return
+        if role not in MESH_ROLES:
+            raise RuntimeError(
+                f"QANTARA_MESH_ROLE must be one of {', '.join(sorted(MESH_ROLES))} "
+                f"or 'disabled'; got {raw_role!r}"
+            )
         if self.mesh_controller is not None:
             return
         try:
             from gateway.mesh.controller import MeshController, MeshControllerConfig
+            from gateway.mesh.protocol import is_valid_node_id
         except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "QANTARA_MESH_ROLE is enabled, but mesh dependencies are not installed"
             ) from exc
-        node_id = os.environ.get("QANTARA_MESH_NODE_ID", f"qantara-{uuid.uuid4().hex[:8]}")
-        mesh_port = int(os.environ.get("QANTARA_MESH_PORT", "8901"))
-        mesh_host = os.environ.get("QANTARA_MESH_HOST", "127.0.0.1")
+        from discovery.netinfo import is_loopback_host
+        from gateway.transport_spike.auth import MIN_AUTH_TOKEN_LENGTH, load_auth_token
+
+        node_id = os.environ.get("QANTARA_MESH_NODE_ID", "").strip() or f"qantara-{uuid.uuid4().hex[:8]}"
+        if not is_valid_node_id(node_id):
+            raise RuntimeError(
+                "QANTARA_MESH_NODE_ID must be 1-64 characters of letters, digits, '.', '_' or '-'"
+            )
+        raw_port = os.environ.get("QANTARA_MESH_PORT", "8901").strip()
+        try:
+            mesh_port = int(raw_port)
+        except ValueError:
+            mesh_port = -1
+        if not 0 <= mesh_port <= 65535:
+            raise RuntimeError(f"QANTARA_MESH_PORT must be a TCP port number; got {raw_port!r}")
+        mesh_host = os.environ.get("QANTARA_MESH_HOST", "127.0.0.1").strip() or "127.0.0.1"
         service_type = os.environ.get("QANTARA_MESH_SERVICE_TYPE", "_qantara._tcp.local.")
-        mesh_token = os.environ.get("QANTARA_MESH_TOKEN", "").strip() or None
+        # Same rule as QANTARA_AUTH_TOKEN: optional, but >= 24 chars when set.
+        mesh_token = load_auth_token("QANTARA_MESH_TOKEN")
+        if mesh_token is None and not is_loopback_host(mesh_host):
+            opt_in = os.environ.get("QANTARA_MESH_ALLOW_INSECURE", "").strip().lower()
+            if opt_in not in {"1", "true", "yes", "on"}:
+                raise RuntimeError(
+                    f"Refusing to start the mesh on non-loopback host {mesh_host!r} without "
+                    f"QANTARA_MESH_TOKEN: any LAN device could then join elections unauthenticated. "
+                    f"Set QANTARA_MESH_TOKEN (at least {MIN_AUTH_TOKEN_LENGTH} characters, same "
+                    f"value on every node), bind QANTARA_MESH_HOST to 127.0.0.1, or set "
+                    f"QANTARA_MESH_ALLOW_INSECURE=1 to override on a trusted network."
+                )
+            LOGGER.warning(
+                "mesh: QANTARA_MESH_ALLOW_INSECURE=1 — mesh frames on %s are unauthenticated",
+                mesh_host,
+            )
         self.mesh_controller = MeshController(MeshControllerConfig(
             node_id=node_id,
             role=role,
@@ -676,7 +715,11 @@ class GatewayRuntime:
                 "tts": self.tts.available if self.tts else False,
             },
         ))
-        await self.mesh_controller.start()
+        try:
+            await self.mesh_controller.start()
+        except BaseException:
+            self.mesh_controller = None
+            raise
 
     async def stop_mesh(self) -> None:
         if self.mesh_controller is not None:
@@ -684,37 +727,14 @@ class GatewayRuntime:
             self.mesh_controller = None
 
     async def start_wyoming(self) -> None:
-        # Read env at call time (not import time) so tests can patch it
-        wyoming_enabled = os.environ.get("QANTARA_WYOMING_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
-        if not wyoming_enabled:
-            return
-        if self.wyoming_bridge is not None:
-            return
-        try:
-            from gateway.mesh.wyoming_bridge import WyomingBridge
-        except ModuleNotFoundError as exc:
-            raise RuntimeError(
-                "QANTARA_WYOMING_ENABLED is set, but Wyoming dependencies are not installed"
-            ) from exc
-        wyoming_port = int(os.environ.get("QANTARA_WYOMING_PORT", "10700"))
-        wyoming_host = os.environ.get("QANTARA_WYOMING_HOST", "127.0.0.1")
-        wyoming_node_name = os.environ.get("QANTARA_WYOMING_NODE_NAME", "qantara")
-        wyoming_area = os.environ.get("QANTARA_WYOMING_AREA", "")
-        self.wyoming_bridge = WyomingBridge(
-            node_name=wyoming_node_name, area=wyoming_area,
-            host=wyoming_host, port=wyoming_port, version=__version__, has_vad=False,
-            runtime=self,
-            register_zeroconf=wyoming_host not in {"127.0.0.1", "::1", "localhost"},
-        )
-        await self.wyoming_bridge.start()
-
-    async def stop_wyoming(self) -> None:
-        if self.wyoming_bridge is not None:
-            await self.wyoming_bridge.stop()
-            self.wyoming_bridge = None
+        """The Wyoming bridge was removed (audit Q-13). Kept as a no-op until
+        the server startup hook stops calling it; warns if still configured."""
+        if os.environ.get("QANTARA_WYOMING_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}:
+            LOGGER.warning(
+                "QANTARA_WYOMING_ENABLED is set, but the Wyoming bridge was removed; ignoring it"
+            )
 
     async def close(self) -> None:
-        await self.stop_wyoming()
         await self.stop_mesh()
         for binding in list(self._bindings.values()):
             if binding.managed_bridge_proc is not None:

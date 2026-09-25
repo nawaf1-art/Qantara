@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -11,6 +12,24 @@ from typing import Any
 # and RMS magnitude so a hostile peer can't poison elections or exhaust memory.
 _MAX_ID_LEN = 256
 _MAX_RMS = 1e6
+
+# Node ids and roles reach the setup page (/api/mesh/peers) and arrive from
+# unauthenticated mDNS TXT records as well as TCP Hello frames, so both are
+# held to a strict shape everywhere they enter the process (audit Q-09).
+NODE_ID_PATTERN = re.compile(r"[A-Za-z0-9._-]{1,64}")
+VALID_ROLES = frozenset({"full", "mic-only", "speaker-only"})
+
+
+def is_valid_node_id(value: Any) -> bool:
+    return isinstance(value, str) and NODE_ID_PATTERN.fullmatch(value) is not None
+
+
+def is_valid_role(value: Any) -> bool:
+    return isinstance(value, str) and value in VALID_ROLES
+
+
+def is_valid_port(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 65535
 
 
 @dataclass(slots=True)
@@ -22,14 +41,21 @@ class Hello:
     node_id: str
     role: str
     capabilities: dict[str, Any] = field(default_factory=dict)
+    # The sender's mesh listening port. The receiver only sees the inbound
+    # socket's ephemeral source port, so without this a peer learned from a
+    # Hello is unreachable. Optional for compatibility with older nodes.
+    port: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        frame: dict[str, Any] = {
             "type": "hello",
             "node_id": self.node_id,
             "role": self.role,
             "capabilities": self.capabilities,
         }
+        if self.port is not None:
+            frame["port"] = self.port
+        return frame
 
 
 @dataclass(slots=True)
@@ -129,6 +155,8 @@ def verify_frame(frame: dict[str, Any], token: str) -> dict[str, Any]:
     """Verify a signed frame and return it without the signature field.
     Raises ValueError for missing, malformed, or mismatched signatures so
     the transport drops the frame."""
+    if not isinstance(frame, dict):
+        raise ValueError("mesh frame is not a JSON object")
     signature = frame.get("sig")
     if not isinstance(signature, str):
         raise ValueError("missing mesh auth signature")
@@ -143,8 +171,10 @@ def decode_message(raw: dict[str, Any]) -> MeshMessage:
     """Turn a plain dict (from JSON) into the matching dataclass. Raises
     ValueError on unknown or malformed types — caller should log and
     drop the offending frame, not crash the connection."""
+    if not isinstance(raw, dict):
+        raise ValueError("mesh frame is not a JSON object")
     msg_type = raw.get("type")
-    if msg_type not in _DECODERS:
+    if not isinstance(msg_type, str) or msg_type not in _DECODERS:
         raise ValueError(f"unknown mesh message type: {msg_type!r}")
     cls = _DECODERS[msg_type]
     fields = {k: v for k, v in raw.items() if k != "type"}
@@ -174,8 +204,16 @@ def _validate_message(msg: MeshMessage) -> None:
             continue
         if not isinstance(value, str) or len(value) > _MAX_ID_LEN:
             raise ValueError(f"invalid {attr}")
-    if not getattr(msg, "node_id", ""):
-        raise ValueError("missing node_id")
+    if not is_valid_node_id(getattr(msg, "node_id", None)):
+        raise ValueError("invalid node_id")
+    winner = getattr(msg, "winner_node_id", None)
+    if winner is not None and not is_valid_node_id(winner):
+        raise ValueError("invalid winner_node_id")
+    if isinstance(msg, Hello):
+        if not is_valid_role(msg.role):
+            raise ValueError("invalid role")
+        if msg.port is not None and not is_valid_port(msg.port):
+            raise ValueError("invalid port")
     rms = getattr(msg, "rms", None)
     if rms is not None and (not _is_finite_number(rms) or rms < 0 or rms > _MAX_RMS):
         raise ValueError("invalid rms")

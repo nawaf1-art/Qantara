@@ -33,7 +33,9 @@ class MeshTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(received[1].rms, 0.5)
 
     async def test_malformed_frame_is_dropped_not_fatal(self) -> None:
-        """A bad JSON line from a buggy peer must not kill the server."""
+        """A bad JSON line from a buggy peer must not kill the server. The
+        offending connection is closed (so one socket cannot flood the log);
+        other connections keep working."""
         received: list = []
 
         async def on_message(msg, addr) -> None:
@@ -45,6 +47,13 @@ class MeshTransportTests(unittest.IsolatedAsyncioTestCase):
             addr = server.sockets[0].getsockname()
             reader, writer = await asyncio.open_connection(addr[0], addr[1])
             writer.write(b"not valid json\n")
+            writer.write(b'{"type":"hello","node_id":"dropped","role":"full"}\n')
+            await writer.drain()
+            self.assertEqual(await asyncio.wait_for(reader.read(), timeout=2.0), b"")
+            writer.close()
+            await writer.wait_closed()
+
+            reader, writer = await asyncio.open_connection(addr[0], addr[1])
             writer.write(b'{"type":"hello","node_id":"x","role":"full"}\n')
             await writer.drain()
             await asyncio.sleep(0.05)
@@ -53,9 +62,8 @@ class MeshTransportTests(unittest.IsolatedAsyncioTestCase):
         finally:
             await server.stop()
 
-        # The bad frame is dropped; the good one arrives.
-        self.assertEqual(len(received), 1)
-        self.assertEqual(received[0].node_id, "x")
+        # Nothing after the bad frame on its connection; the new one works.
+        self.assertEqual([m.node_id for m in received], ["x"])
 
 
 class MeshServerShutdownTests(unittest.IsolatedAsyncioTestCase):
