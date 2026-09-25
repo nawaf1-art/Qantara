@@ -1,6 +1,6 @@
 # Fake Session Backend
 
-This deterministic local backend exercises the generic session HTTP adapter against the current [`adapters/CONTRACT.md`](../../adapters/CONTRACT.md) and [`protocols/agent.md`](../../protocols/agent.md) semantics.
+This deterministic local backend exercises the generic session HTTP adapter against the current [`adapters/CONTRACT.md`](../../adapters/CONTRACT.md) and [`protocols/agent.md`](../../protocols/agent.md) semantics. It is the reference implementation of [`protocols/session-gateway-http.md`](../../protocols/session-gateway-http.md); start from it when writing your own backend.
 
 It is intended for repeatable session, turn, stream, and cancellation checks without a model or agent runtime.
 

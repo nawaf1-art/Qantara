@@ -78,8 +78,11 @@ class SpeakEndpointTests(VoiceAPITestBase):
     async def test_speak_pcm_format(self) -> None:
         resp = await self.client.post("/api/v1/speak?format=pcm", json={"text": "hi"})
         self.assertEqual(resp.status, 200)
-        self.assertEqual(resp.headers["Content-Type"], "audio/L16")
-        self.assertIn("rate=", resp.headers.get("X-Sample-Rate", "rate=") or "")
+        # Little-endian raw PCM is labelled honestly (audio/L16 is big-endian
+        # per RFC 3551) and X-Sample-Rate is a plain integer (audit HS-11).
+        self.assertTrue(resp.headers["Content-Type"].startswith("audio/pcm;"))
+        self.assertIn("endian=little", resp.headers["Content-Type"])
+        self.assertTrue(resp.headers.get("X-Sample-Rate", "").isdigit())
         body = await resp.read()
         self.assertEqual(len(body) % 2, 0)
         self.assertGreater(len(body), 0)

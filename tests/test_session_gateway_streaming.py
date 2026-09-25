@@ -51,6 +51,7 @@ class SessionGatewayStreamingTests(unittest.IsolatedAsyncioTestCase):
                 event
                 async for event in adapter.stream_assistant_output("session", "turn")
             ]
+            await adapter.aclose()
         finally:
             await server.close()
 

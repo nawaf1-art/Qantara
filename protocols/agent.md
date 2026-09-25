@@ -16,7 +16,9 @@ Adapter ──(stream events)──▶ Gateway ──(session events)──▶ B
 
 - **Adapter** (`adapters/base.py:RuntimeAdapter`): wraps a backend runtime
   (OpenAI-compatible server, MCP server, session-contract bridge). Yields
-  *stream events* from `stream_assistant_output()`.
+  *stream events* from `stream_assistant_output()`. The HTTP transport used
+  by session-contract backends is specified in
+  [`session-gateway-http.md`](session-gateway-http.md).
 - **Gateway**: validates and forwards adapter events, owns the session state
   machine, and emits *session events* to the browser over `/ws` and to the
   configured event sink.
@@ -49,11 +51,24 @@ idle → listening → thinking → speaking → idle
 | `assistant_text_final` | `text` | Authoritative full reply; unsent remainder is spoken |
 | `assistant_activity` | `activity_type`, `summary` | Non-spoken status; see below |
 | `cancel_acknowledged` | — | Adapter confirms a `cancel_turn`; ends the stream |
-| `turn_failed` | `message` | Terminal failure for this turn |
+| `turn_failed` | `message` | Terminal failure for this turn. Optional `failure_kind` and `retriable` are informational; the gateway does not retry |
 | `turn_completed` | — | Optional explicit completion marker |
+
+`assistant_text_final.text` must equal the concatenation of every
+`assistant_text_delta.text` the adapter yielded for the turn. The gateway
+speaks the not-yet-spoken remainder by character offset, so a final text that
+is reformatted (markdown stripped, whitespace collapsed) garbles the end of
+the reply. Normalize text for speech in the gateway, not in the final event.
 
 If the stream ends without `assistant_text_final`, the gateway flushes the
 buffered deltas as the final text.
+
+Hidden reasoning (separate `reasoning` fields or inline `<think>` blocks) must
+never appear in `assistant_text_delta` or `assistant_text_final`. Adapters
+may report it once per turn as an `assistant_activity` with
+`activity_type: "thinking"`. Long-running backends may also repeat such an
+activity as a keep-alive; see
+[`session-gateway-http.md`](session-gateway-http.md#keep-alives-and-timeouts).
 
 ### `assistant_activity` and tool-call metadata (v1)
 

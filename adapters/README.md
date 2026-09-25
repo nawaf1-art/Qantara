@@ -1,14 +1,14 @@
 # Adapters
 
-This directory owns Qantara's downstream runtime boundary. The implemented interface and event rules are documented in [CONTRACT.md](CONTRACT.md) and [`protocols/agent.md`](../protocols/agent.md).
+This directory owns Qantara's downstream runtime boundary. The implemented interface and event rules are documented in [CONTRACT.md](CONTRACT.md) and [`protocols/agent.md`](../protocols/agent.md). The HTTP protocol for third-party session backends is [`protocols/session-gateway-http.md`](../protocols/session-gateway-http.md).
 
 ## Implementations
 
 - `mock_adapter.py` — deterministic transport/UI test backend
 - `runtime_skeleton.py` — adapter-path development skeleton
-- `session_gateway_http.py` — generic Qantara session-contract HTTP backend
-- `openai_compatible.py` — direct local `/v1/chat/completions` adapter
-- `mcp_client.py` — MCP chat-tool adapter over stdio or streamable HTTP
+- `session_gateway_http.py` — generic Qantara session-contract HTTP backend (idle timeout instead of a total stream timeout; one HTTP client per adapter)
+- `openai_compatible.py` — direct local `/v1/chat/completions` adapter (single system message, pending user message until success, size-budgeted history, `<think>` filtering)
+- `mcp_client.py` — MCP chat-tool adapter over stdio or streamable HTTP (one long-lived MCP session per adapter, real cancellation)
 - `factory.py` — adapter selection
 - `base.py` — shared types, activity-event builder, and abstract interface
 

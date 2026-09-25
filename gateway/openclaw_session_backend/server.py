@@ -17,7 +17,9 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
+from adapters.base import make_activity_event  # noqa: E402
 from gateway.session_backend_prompts import build_voice_turn_user_message  # noqa: E402
+from qantara.streaming import NDJSONEventWriter  # noqa: E402
 
 DEFAULT_HOST = os.environ.get("QANTARA_REAL_BACKEND_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("QANTARA_REAL_BACKEND_PORT", "19120"))
@@ -35,6 +37,10 @@ MAX_CLIENT_SESSION_ID_CHARS = 256
 MAX_OPENCLAW_OUTPUT_BYTES = 2 * 1024 * 1024
 MAX_OPENCLAW_STDERR_BYTES = 256 * 1024
 MAX_ASSISTANT_TEXT_CHARS = 1024 * 1024
+# The OpenClaw CLI writes nothing until the agent finishes, so the bridge
+# sends an assistant_activity keep-alive at least this often; the gateway's
+# idle timeout (QANTARA_BACKEND_IDLE_TIMEOUT) then measures real silence.
+KEEPALIVE_SECONDS = float(os.environ.get("QANTARA_BACKEND_KEEPALIVE_SECONDS", "10"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 LOG = logging.getLogger("qantara.openclaw")
@@ -51,6 +57,12 @@ class TurnState:
     created_at: str = field(default_factory=utc_now)
     cancelled: bool = False
     final_text: str = ""
+    # Set on cancel so a turn queued behind the session lock wakes up.
+    cancel_event: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
+
+    def cancel(self) -> None:
+        self.cancelled = True
+        self.cancel_event.set()
 
 
 @dataclass
@@ -294,15 +306,51 @@ async def _escalate_cancel(turn_handle: str, process: asyncio.subprocess.Process
         await _terminate_process_group(process, hard=True)
 
 
+async def _acquire_unless_cancelled(lock: asyncio.Lock, turn: TurnState) -> bool:
+    """Wait for the session lock, or return False as soon as the turn is cancelled."""
+    if turn.cancelled:
+        return False
+    acquire = asyncio.ensure_future(lock.acquire())
+    cancelled = asyncio.ensure_future(turn.cancel_event.wait())
+
+    def got_lock() -> bool:
+        return acquire.done() and not acquire.cancelled() and acquire.exception() is None
+
+    try:
+        await asyncio.wait({acquire, cancelled}, return_when=asyncio.FIRST_COMPLETED)
+    except BaseException:
+        cancelled.cancel()
+        if got_lock():
+            lock.release()
+        else:
+            acquire.cancel()  # a cancelled acquire() never takes the lock
+        raise
+    cancelled.cancel()
+    if got_lock():
+        if turn.cancelled:
+            lock.release()
+            return False
+        return True
+    acquire.cancel()
+    return False
+
+
 async def _run_openclaw_turn(
     session_handle: str,
     turn_handle: str,
     transcript: str,
     turn_context: dict | None = None,
 ) -> tuple[str, dict]:
+    turn = BACKEND.sessions[session_handle].turns[turn_handle]
     command = _build_openclaw_command(session_handle, transcript, turn_context)
     subprocess_timeout = OPENCLAW_TIMEOUT_SECONDS + max(1.0, OPENCLAW_SUBPROCESS_TIMEOUT_BUFFER_SECONDS)
     started_at = time.monotonic()
+    lock = BACKEND.get_session_lock(session_handle)
+    # A turn cancelled while queued behind another turn must never start:
+    # its agent run could have real side effects.
+    if not await _acquire_unless_cancelled(lock, turn):
+        LOG.info("openclaw_turn_cancelled_before_start session=%s turn=%s", session_handle, turn_handle)
+        raise TurnCancelledError("turn cancelled")
     LOG.info(
         "openclaw_turn_start session=%s turn=%s agent=%s timeout_s=%s",
         session_handle,
@@ -310,7 +358,7 @@ async def _run_openclaw_turn(
         OPENCLAW_AGENT_ID,
         OPENCLAW_TIMEOUT_SECONDS,
     )
-    async with BACKEND.get_session_lock(session_handle):
+    try:
         process = await asyncio.create_subprocess_exec(
             *command,
             stdout=asyncio.subprocess.PIPE,
@@ -335,8 +383,9 @@ async def _run_openclaw_turn(
             raise RuntimeError(f"openclaw agent subprocess timed out after {int(subprocess_timeout)} seconds") from None
         finally:
             BACKEND.active_processes.pop(turn_handle, None)
+    finally:
+        lock.release()
 
-    turn = BACKEND.sessions[session_handle].turns[turn_handle]
     if turn.cancelled:
         LOG.info("openclaw_turn_cancelled session=%s turn=%s", session_handle, turn_handle)
         raise TurnCancelledError("turn cancelled")
@@ -546,69 +595,44 @@ async def stream_turn_events_handler(request: web.Request) -> web.StreamResponse
     )
     await response.prepare(request)
 
+    writer = NDJSONEventWriter(
+        response.write,
+        keepalive_seconds=KEEPALIVE_SECONDS,
+        keepalive_event=lambda: {
+            **make_activity_event("thinking", "Still working"),
+            "turn_handle": turn_handle,
+        },
+    )
+    try:
+        async with writer:
+            for event in await _turn_events(session_handle, turn_handle, turn):
+                await writer.send({**event, "turn_handle": turn_handle})
+        await response.write_eof()
+    except ConnectionResetError:
+        pass  # the gateway went away before the agent finished
+    return response
+
+
+async def _turn_events(session_handle: str, turn_handle: str, turn: TurnState) -> list[dict]:
+    """Run one OpenClaw turn and return the events to stream, ending with a terminal one."""
     try:
         final_text, meta = await _run_openclaw_turn(session_handle, turn_handle, turn.transcript, turn.turn_context)
-        if turn.cancelled:
-            await response.write((json.dumps({"type": "cancel_acknowledged", "turn_handle": turn_handle}) + "\n").encode("utf-8"))
-            await response.write_eof()
-            return response
-
-        turn.final_text = final_text
-        await response.write((json.dumps({"type": "assistant_text_delta", "text": final_text, "turn_handle": turn_handle}) + "\n").encode("utf-8"))
-        await response.write((json.dumps({"type": "assistant_text_final", "text": final_text, "turn_handle": turn_handle}) + "\n").encode("utf-8"))
-        await response.write(
-            (
-                json.dumps(
-                    {
-                        "type": "turn_completed",
-                        "turn_handle": turn_handle,
-                        "agent_id": OPENCLAW_AGENT_ID,
-                        "agent_meta": ((meta.get("result") or {}).get("meta") or {}).get("agentMeta") or {},
-                    }
-                )
-                + "\n"
-            ).encode("utf-8")
-        )
-        await response.write_eof()
-        return response
     except TurnCancelledError:
-        await response.write((json.dumps({"type": "cancel_acknowledged", "turn_handle": turn_handle}) + "\n").encode("utf-8"))
-        await response.write_eof()
-        return response
+        return [{"type": "cancel_acknowledged"}]
     except OpenClawGatewayTimeoutError as exc:
-        await response.write(
-            (
-                json.dumps(
-                    {
-                        "type": "turn_failed",
-                        "failure_kind": "timeout",
-                        "message": str(exc),
-                        "turn_handle": turn_handle,
-                        "retriable": True,
-                    }
-                )
-                + "\n"
-            ).encode("utf-8")
-        )
-        await response.write_eof()
-        return response
+        return [{"type": "turn_failed", "failure_kind": "timeout", "message": str(exc), "retriable": True}]
     except Exception as exc:
-        await response.write(
-            (
-                json.dumps(
-                    {
-                        "type": "turn_failed",
-                        "failure_kind": "agent_error",
-                        "message": str(exc),
-                        "turn_handle": turn_handle,
-                        "retriable": False,
-                    }
-                )
-                + "\n"
-            ).encode("utf-8")
-        )
-        await response.write_eof()
-        return response
+        return [{"type": "turn_failed", "failure_kind": "agent_error", "message": str(exc), "retriable": False}]
+    if turn.cancelled:
+        return [{"type": "cancel_acknowledged"}]
+
+    turn.final_text = final_text
+    agent_meta = ((meta.get("result") or {}).get("meta") or {}).get("agentMeta") or {}
+    return [
+        {"type": "assistant_text_delta", "text": final_text},
+        {"type": "assistant_text_final", "text": final_text},
+        {"type": "turn_completed", "agent_id": OPENCLAW_AGENT_ID, "agent_meta": agent_meta},
+    ]
 
 
 async def cancel_turn_handler(request: web.Request) -> web.Response:
@@ -620,7 +644,7 @@ async def cancel_turn_handler(request: web.Request) -> web.Response:
     if turn_handle not in BACKEND.sessions[session_handle].turns:
         return web.json_response({"error": "unknown turn handle"}, status=404)
 
-    BACKEND.sessions[session_handle].turns[turn_handle].cancelled = True
+    BACKEND.sessions[session_handle].turns[turn_handle].cancel()
     process = BACKEND.active_processes.get(turn_handle)
     if process and process.returncode is None:
         await _terminate_process_group(process, hard=False)
