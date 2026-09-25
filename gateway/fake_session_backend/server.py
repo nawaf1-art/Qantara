@@ -133,32 +133,32 @@ async def stream_turn_events_handler(request: web.Request) -> web.StreamResponse
     for chunk in chunks:
         if turn["cancelled"]:
             payload = {"type": "cancel_acknowledged", "turn_handle": turn_handle}
-            await response.write((json.dumps(payload) + "\n").encode("utf-8"))
+            await response.write((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8"))
             await response.write_eof()
             return response
 
         await asyncio.sleep(0.2)
         if turn["cancelled"]:
             payload = {"type": "cancel_acknowledged", "turn_handle": turn_handle}
-            await response.write((json.dumps(payload) + "\n").encode("utf-8"))
+            await response.write((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8"))
             await response.write_eof()
             return response
-        await response.write((json.dumps({"type": "assistant_text_delta", "text": chunk}) + "\n").encode("utf-8"))
+        await response.write((json.dumps({"type": "assistant_text_delta", "text": chunk}, ensure_ascii=False) + "\n").encode("utf-8"))
 
     if turn["cancelled"]:
-        await response.write((json.dumps({"type": "cancel_acknowledged", "turn_handle": turn_handle}) + "\n").encode("utf-8"))
+        await response.write((json.dumps({"type": "cancel_acknowledged", "turn_handle": turn_handle}, ensure_ascii=False) + "\n").encode("utf-8"))
         await response.write_eof()
         return response
 
     await asyncio.sleep(0.05)
     if turn["cancelled"]:
-        await response.write((json.dumps({"type": "cancel_acknowledged", "turn_handle": turn_handle}) + "\n").encode("utf-8"))
+        await response.write((json.dumps({"type": "cancel_acknowledged", "turn_handle": turn_handle}, ensure_ascii=False) + "\n").encode("utf-8"))
         await response.write_eof()
         return response
     await response.write(
-        (json.dumps({"type": "assistant_text_final", "text": response_text, "turn_handle": turn_handle}) + "\n").encode("utf-8")
+        (json.dumps({"type": "assistant_text_final", "text": response_text, "turn_handle": turn_handle}, ensure_ascii=False) + "\n").encode("utf-8")
     )
-    await response.write((json.dumps({"type": "turn_completed", "turn_handle": turn_handle}) + "\n").encode("utf-8"))
+    await response.write((json.dumps({"type": "turn_completed", "turn_handle": turn_handle}, ensure_ascii=False) + "\n").encode("utf-8"))
     await response.write_eof()
     return response
 
