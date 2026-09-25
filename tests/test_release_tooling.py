@@ -45,6 +45,7 @@ class ReleaseToolingTests(unittest.TestCase):
         module = _load_script("check_workflow_pins.py")
         self.assertEqual(module.main(), 0)
 
+    @unittest.skipUnless((ROOT / ".git").exists(), "needs a repository checkout (not in the sdist)")
     def test_tracked_artifacts_exclude_private_runtime_files(self) -> None:
         module = _load_script("check_tracked_artifacts.py")
         self.assertEqual(module.main(), 0)

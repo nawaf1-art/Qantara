@@ -1,12 +1,12 @@
 # Troubleshooting
 
-Common problems and how to fix them. If your issue isn't here, open a GitHub issue with the gateway log (stdout) and your OS / Python version.
+Common problems and how to fix them. Start with `qantara doctor` (or `python scripts/doctor.py` in a source checkout): it checks the Python version against Kokoro, the aiohttp version, whether the configured STT/TTS engines are importable, CPU vs CUDA PyTorch, and token/TLS settings for non-loopback binds. If your issue isn't here, open a GitHub issue with the doctor output, the gateway log (stdout) and your OS / Python version.
 
 ## Install and startup
 
 ### `docker compose up` is stuck "pulling" for minutes
 
-Expected on first run. The initial build downloads the Ollama image, the ~2.7 GB `qwen3.5:2b` model, and builds the Qantara image with Python/ML speech dependencies. Plan for roughly 8–10 GB of disk, plus temporary Docker build cache, and 5–10 minutes on a reasonable connection. Subsequent runs start in seconds.
+Expected on first run. The initial build downloads the Ollama image, the ~2.7 GB `qwen3.5:2b` model, and builds the Qantara image with Python/ML speech dependencies. Plan for roughly 8–10 GB of disk, plus temporary Docker build cache, and 5–10 minutes on a reasonable connection. Speech model weights download on first use into the `qantara-model-cache` volume and are reused after `docker compose down` (only `docker compose down --volumes` deletes them). Subsequent runs start in seconds.
 
 If you see no progress for 10+ minutes, check Docker Desktop's status and your disk space.
 
@@ -20,7 +20,13 @@ Or for the manual path, set `QANTARA_SPIKE_PORT` before `make spike-run`.
 
 ### `pip install` fails with dependency resolution errors
 
-Qantara pins exact versions with hashes. If you're on Python 3.10 or older, upgrade to 3.11+. If you're using an unusual platform (ARM without wheels), you may need to build `faster-whisper` or `kokoro` from source — see those projects' docs.
+- **Python 3.13 or newer and Kokoro:** every Kokoro release requires Python <3.13. On 3.13+ `pip install -e ".[speech]"` installs speech-to-text only; for Kokoro recreate the venv with `python3.12 -m venv .venv`.
+- **Python 3.10 or older:** upgrade to 3.11+.
+- **Hash mismatch from `requirements.txt`:** only the lock files (`ops/docker/requirements.txt`, `gateway/transport_spike/requirements.txt`) are hash-pinned; they cover CPython 3.11/3.12 on Linux x86_64/aarch64, Windows amd64 and macOS arm64. The `pyproject.toml` extras use version ranges and are not hash-pinned. If a lock install fails, you may be on another interpreter or platform; use the extras instead.
+
+### `pip install` downloads several GB of `nvidia-*` packages
+
+On Linux, PyPI's default PyTorch wheel is the CUDA build. On CPU-only machines install the CPU build first: `pip install torch --index-url https://download.pytorch.org/whl/cpu`, then `pip install -e ".[speech]"` (or use `uv pip install --torch-backend=cpu ...`). `qantara doctor` warns when a CUDA build is installed.
 
 ### Docker Desktop not running (macOS / Windows)
 
@@ -70,17 +76,17 @@ Expected in most first-run setups. OpenClaw is an advanced optional bridge and o
 ### First response is very slow (5+ seconds)
 
 Cold-start penalty. First time each of STT, TTS, and the LLM run they load weights. Expected:
-- `faster-whisper base.en`: 2–3s cold, ~100ms warm
+- `faster-whisper small` (the default `QANTARA_WHISPER_MODEL`; `tiny.en`/`base.en` are faster, English-only): a few seconds cold, faster warm
 - `kokoro`: 3–5s cold, ~800ms warm
 - `qwen3.5:2b`: timing varies by hardware; disable thinking for the lowest voice latency
 
 After the first turn, subsequent responses are much faster.
 
-### Voice sounds robotic or distorted
+### Voice sounds robotic, or you hear a tone instead of speech
 
-You may be using the Piper fallback instead of Kokoro. Check the gateway log for `tts_chunk_ready engine=piper`. If Kokoro failed to load, check:
-- Is `espeak-ng` installed? Kokoro depends on it.
-- Enough RAM? Kokoro needs ~1 GB free.
+There is no automatic fallback between TTS engines: the gateway uses exactly the engine in `QANTARA_TTS_PROVIDER` (the native default is `piper`; Docker sets `kokoro`). If that engine is not usable, replies play a short synthetic tone instead of speech. Check the gateway log for the `engine=` field on playback events and run `qantara doctor`, then:
+- **Piper:** install the Piper runtime (`pip install piper-tts`) and a voice (`scripts/fetch_piper_voices.sh`, or `QANTARA_PIPER_MODEL`), or switch to `QANTARA_TTS_PROVIDER=kokoro`.
+- **Kokoro:** requires Python 3.11/3.12 and `espeak-ng` on the system (the Docker image includes it); allow ~1 GB of free RAM.
 
 ### Barge-in doesn't interrupt playback
 
@@ -98,7 +104,7 @@ QANTARA_AUTH_TOKEN="$(openssl rand -hex 24)" QANTARA_SPIKE_HOST=0.0.0.0 make spi
 ```
 And in the browser on the other device, access `http://<your-host-ip>:8765`. For mic to work off-localhost you will need HTTPS — see the TLS note above.
 
-If the gateway exits immediately after setting auth, confirm the token is at least 24 characters.
+The token is required: without `QANTARA_AUTH_TOKEN` the gateway refuses requests whose `Host` is not loopback (a LAN IP, `qantara.local`, or a reverse proxy's forwarded Host). If the gateway exits immediately after setting auth, confirm the token is at least 24 characters.
 
 ### Setup page says Qantara is locked
 
@@ -113,8 +119,9 @@ See `ops/TRUST_CERT_WINDOWS.md` (Windows) and the `ops/README.md` for macOS/Linu
 ### How to gather a good bug report
 
 ```bash
-# Gateway version
+# Gateway version and environment check
 cat VERSION
+python scripts/doctor.py        # or: qantara doctor
 
 # Gateway log — redirect stdout to a file and reproduce the issue
 python3 gateway/transport_spike/server.py 2>&1 | tee /tmp/qantara.log

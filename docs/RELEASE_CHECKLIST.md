@@ -4,12 +4,12 @@ Use this checklist with [Release process](RELEASE_PROCESS.md) and [Documentation
 
 ## Source preparation
 
-- [ ] Version matches in `VERSION`, `pyproject.toml`, changelog, README, roadmap, and current release notes.
+- [ ] Version matches in `VERSION`, `pyproject.toml`, changelog, README, roadmap, docs index/governance, install guide, and current release notes (`check_release_consistency.py` enforces the literals).
 - [ ] Changelog entry is complete and upgrade notes identify compatibility/security changes.
 - [ ] README, feature matrix, configuration, install, API/protocol, and component docs describe implemented behavior only.
 - [ ] Every top-level `docs/*.md` document is classified and linked by `docs/README.md`.
 - [ ] Historical snapshots carry the standard not-current-guidance marker.
-- [ ] Dependency/lock changes were reviewed and audited.
+- [ ] Dependency/lock changes were reviewed and audited; locks were regenerated with `scripts/lock_requirements.py` and `scripts/check_lock_hashes.py` passes.
 - [ ] No secrets, certificates, logs, model weights, audio, private notes, caches, or unintended large files are tracked or packaged.
 
 ## Pull request validation
@@ -18,7 +18,7 @@ Use this checklist with [Release process](RELEASE_PROCESS.md) and [Documentation
 - [ ] Required CI jobs pass on the exact release commit.
 - [ ] Wheel and sdist pass metadata/content checks and clean-install smoke tests.
 - [ ] The source distribution contains the current feature matrix and intended public documentation.
-- [ ] Docker configuration is valid; a clean build/health check was run when Docker or its dependencies changed.
+- [ ] Docker configuration is valid; the `Docker image` workflow (amd64 + arm64 build and `/api/status` smoke test) passed when Docker or its dependencies changed.
 - [ ] Relevant real backend/browser/device checks and gaps are recorded.
 - [ ] Security/privacy, migration, compatibility, and rollback implications were reviewed.
 
@@ -29,7 +29,7 @@ Use this checklist with [Release process](RELEASE_PROCESS.md) and [Documentation
 - [ ] Manual release workflow is dispatched from that tag with matching `X.Y.Z` input.
 - [ ] Draft assets include wheel, sdist, checksums, SPDX SBOM, validation evidence, and provenance.
 - [ ] `sha256sum --check SHA256SUMS` succeeds from the release download directory without path rewriting.
-- [ ] The SPDX SBOM identifies `qantara` at the release version and includes the required `aiohttp` runtime dependency.
+- [ ] The SPDX SBOM identifies `qantara` at the release version, includes the required `aiohttp` runtime dependency, and lists no lock-only packages (torch, transformers, ...).
 - [ ] Checksums and validation commit/tag are reviewed independently.
 - [ ] Draft notes contain accurate install, upgrade, security, status, and known-gap guidance.
 - [ ] GitHub Release is published manually; PyPI remains a separate explicit decision.
