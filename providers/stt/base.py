@@ -16,6 +16,9 @@ class STTResult:
     text: str
     language: str | None = None
     language_probability: float | None = None
+    # Speech duration after VAD, when the provider knows it. Prefer this over
+    # the raw buffer length for language-confidence gating.
+    speech_duration_ms: float | None = None
 
     def __str__(self) -> str:
         return self.text
@@ -39,10 +42,27 @@ class STTProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def transcribe(self, samples: list[int], sample_rate: int) -> STTResult:
+    async def transcribe(
+        self,
+        samples: list[int],
+        sample_rate: int,
+        language: str | None = None,
+    ) -> STTResult:
+        """Transcribe PCM16 samples.
+
+        ``language`` (ISO 639-1, e.g. ``"ar"``) forces the recognition
+        language; ``None`` keeps auto-detection. Providers written before
+        this parameter existed may not accept it, so callers should pass it
+        only when set.
+        """
         raise NotImplementedError
 
-    async def transcribe_partial(self, samples: list[int], sample_rate: int) -> STTResult:
+    async def transcribe_partial(
+        self,
+        samples: list[int],
+        sample_rate: int,
+        language: str | None = None,
+    ) -> STTResult:
         raise NotImplementedError("this provider does not support partial transcription")
 
     @property
